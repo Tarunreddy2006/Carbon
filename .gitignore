@@ -1,6 +1,10 @@
 # Confidential files
 .env
 *.json
+secrets.json
+config_private.json
+api_keys.json
+detrixai.json
 .hintrc
 
 # Database

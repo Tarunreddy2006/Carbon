@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Carbon Biomass Intelligence Engine</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="" />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <!-- Application stylesheet -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <div class="app-shell">
+
+    <!-- ── Top bar ──────────────────────────────────────────────────────── -->
+    <header class="topbar">
+      <div class="topbar-logo">
+        <span class="leaf">🌿</span>
+        Carbon Biomass Intelligence Engine
+        <span class="topbar-badge">MVP</span>
+      </div>
+      <span class="api-badge">POST /estimate-carbon</span>
+      <span class="topbar-sub">Karnataka, India · Sentinel-2 SR · GEE</span>
+    </header>
+
+    <!-- ── Sidebar ──────────────────────────────────────────────────────── -->
+    <aside class="sidebar">
+
+      <!-- Input form -->
+      <div class="sidebar-section">
+        <h3>Land Parcel Input</h3>
+
+        <div class="form-grid" id="parcel-form">
+
+          <div class="form-group form-group--full">
+            <label for="f-state">State</label>
+            <input id="f-state" type="text" value="Karnataka" placeholder="Karnataka" />
+          </div>
+
+          <div class="form-group">
+            <label for="f-district">District</label>
+            <select id="f-district" disabled>
+              <option value="" disabled selected>Loading districts…</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="f-taluk">Taluk</label>
+            <select id="f-taluk" disabled>
+              <option value="" disabled selected>— Select district—</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="f-hobli">Hobli</label>
+            <select id="f-hobli" disabled>
+              <option value="" disabled selected>— Select taluk—</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="f-village">Village</label>
+            <select id="f-village" disabled>
+              <option value="" disabled selected>— Select hobli—</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="f-survey">Survey No.</label>
+            <select id="f-survey" disabled>
+              <option value="" disabled selected>— Select village—</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="f-hissa">Hissa</label>
+            <input id="f-hissa" type="text" value="2" placeholder="2" />
+          </div>
+
+          <div class="form-group form-group--full form-group--actions">
+            <button class="btn btn--primary" id="btn-estimate" onclick="runEstimate()">
+              <span>🛰️</span> Run Estimation
+            </button>
+            <button class="btn btn--demo" id="btn-demo" onclick="runDemo()">
+              ⚡ Demo Mode (no GEE)
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Status banner -->
+      <div id="status-banner" class="status-banner"></div>
+
+      <!-- Results -->
+      <div class="sidebar-section results-panel" id="results-panel">
+        <h3>Estimation Results</h3>
+
+        <div class="parcel-chip" id="res-parcel-id">—</div>
+
+        <!-- CO₂ hero card -->
+        <div class="co2-hero">
+          <div class="co2-hero__label">CO₂ Equivalent Sequestered</div>
+          <div class="co2-hero__value" id="res-co2">—</div>
+          <div class="co2-hero__unit">metric tonnes CO₂e</div>
+        </div>
+
+        <!-- Metric grid -->
+        <div class="metric-grid">
+
+          <div class="metric-card metric-card--ndvi">
+            <div class="metric-card__label">NDVI Mean</div>
+            <div class="metric-card__value" id="res-ndvi">—</div>
+            <div class="metric-card__unit">−1 → +1</div>
+          </div>
+
+          <div class="metric-card metric-card--canopy">
+            <div class="metric-card__label">Canopy Area</div>
+            <div class="metric-card__value" id="res-canopy">—</div>
+            <div class="metric-card__unit">hectares</div>
+          </div>
+
+          <div class="metric-card metric-card--biomass">
+            <div class="metric-card__label">Biomass</div>
+            <div class="metric-card__value" id="res-biomass">—</div>
+            <div class="metric-card__unit">metric tonnes</div>
+          </div>
+
+          <div class="metric-card metric-card--carbon">
+            <div class="metric-card__label">Carbon Stock</div>
+            <div class="metric-card__value" id="res-carbon">—</div>
+            <div class="metric-card__unit">tonnes C</div>
+          </div>
+
+          <div class="metric-card metric-card--area">
+            <div class="metric-card__label">Parcel Area</div>
+            <div class="metric-card__value" id="res-area">—</div>
+            <div class="metric-card__unit">hectares</div>
+          </div>
+
+          <div class="metric-card metric-card--pixels">
+            <div class="metric-card__label">Veg. Pixels</div>
+            <div class="metric-card__value" id="res-pixels">—</div>
+            <div class="metric-card__unit">@ 10 m × 10 m</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Provenance -->
+      <div class="sidebar-section results-panel" id="prov-panel">
+        <h3>Data Provenance</h3>
+        <div class="provenance" id="prov-rows"></div>
+      </div>
+
+    </aside>
+
+    <!-- ── Map ──────────────────────────────────────────────────────────── -->
+    <div id="map"></div>
+
+  </div>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/sp98="
+    crossorigin=""
+  ></script>
+
+  <!-- Application logic -->
+  <script src="map.js"></script>
+</body>
+</html>
