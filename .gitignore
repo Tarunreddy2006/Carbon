@@ -1,0 +1,19 @@
+# Confidential files
+.env
+*.json
+.hintrc
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+Thumbs.db
+.DS_Store 
