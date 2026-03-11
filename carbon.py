@@ -1,29 +1,18 @@
-"""
-main.py
-─────────────────────────────────────────────────────────────────────────────
-Carbon Biomass Intelligence Engine – FastAPI application entry point.
-
-Run with:
-    uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-Swagger UI:   http://localhost:8000/docs
-ReDoc:        http://localhost:8000/redoc
-OpenAPI JSON: http://localhost:8000/openapi.json
-─────────────────────────────────────────────────────────────────────────────
-"""
-
 from __future__ import annotations
 
 import logging
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # ── Load .env before any service imports that read os.getenv ──────────────────
 load_dotenv()
@@ -39,28 +28,14 @@ logging.basicConfig(
 logger = logging.getLogger("carbon_engine")
 
 # ── Lazy GEE initialisation import (after .env is loaded) ────────────────────
-from services.service import initialise_gee    # noqa: E402
-from routes.estimate import router as estimate_router  # noqa: E402
+from services.service import initialise_gee
+from routes.estimate import router as estimate_router
 
 
 # ─── Lifespan handler (startup / shutdown) ────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """
-    Application lifespan context manager.
-
-    Startup
-    ───────
-    • Attempt GEE authentication eagerly so that the first request is not
-      slowed by the OAuth handshake.  If GEE credentials are not configured
-      (e.g. CI environment) we log a warning and continue – the /demo
-      endpoint still works without GEE.
-
-    Shutdown
-    ────────
-    • Nothing to clean up (stateless service).
-    """
     logger.info("═══════════════════════════════════════════════════════")
     logger.info("  Carbon Biomass Intelligence Engine – starting up")
     logger.info("  ENV: %s", os.getenv("APP_ENV", "development"))
@@ -86,25 +61,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(
         title       = "Carbon Biomass Intelligence Engine",
-        description = (
-            "Geospatial API that estimates vegetation biomass, carbon storage, "
-            "and CO₂ equivalent from Sentinel-2 satellite imagery for land "
-            "parcels in Karnataka, India.\n\n"
-        ),
+        description = "Geospatial API estimating vegetation biomass, carbon, and CO₂.",
         version     = "1.0.0",
-        contact     = {
-            "name":  "Carbon Engine Team",
-            "email": "team@carbon-engine.example.com",
-        },
-        license_info= {
-            "name": "MIT",
-        },
         lifespan    = lifespan,
-        docs_url    = "/docs",
-        redoc_url   = "/redoc",
     )
 
-    # ── CORS ──────────────────────────────────────────────────────────────
+    @app.middleware("http")
+    async def add_process_time_header(request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - start) * 1_000
+        response.headers["X-Process-Time"] = f"{elapsed_ms:.1f}ms"
+        return response
+
     raw_origins = os.getenv(
         "CORS_ORIGINS",
         "http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500"
@@ -119,8 +88,85 @@ def create_app() -> FastAPI:
         allow_headers     = ["*"],
     )
 
-    # ── Routers ───────────────────────────────────────────────────────────
     app.include_router(estimate_router)
+
+    # ── K-GIS admin-hierarchy proxy endpoints ─────────────────────────────
+    from starlette.concurrency import run_in_threadpool as _run_in_threadpool
+    from services.lookup import (
+        KGIS_BASE_URL, KGIS_DEPT_CODE, KGIS_APPLN_CODE,
+        KGIS_TIMEOUT, _build_http_session, _normalise_hierarchy_response,
+    )
+
+    _proxy_session = _build_http_session()
+
+    def _kgis_hierarchy(type_label: str, code: str):
+        verify_ssl = os.getenv("KGIS_VERIFY_SSL", "true").lower() != "false"
+        url    = f"{KGIS_BASE_URL.rstrip('/')}/kgisadminhierarchy"
+        params = {
+            "deptcode":  KGIS_DEPT_CODE,
+            "applncode": KGIS_APPLN_CODE,
+            "type":      type_label,
+            "code":      code,
+        }
+        resp = _proxy_session.get(url, params=params,
+                                  timeout=KGIS_TIMEOUT, verify=verify_ssl)
+        resp.raise_for_status()
+
+        try:
+            raw = resp.json()
+        except Exception as json_exc:
+            raise ValueError("K-GIS returned non-JSON") from json_exc
+
+        return _normalise_hierarchy_response(raw, context=f"{type_label} proxy")
+
+    @app.get("/districts", tags=["K-GIS Proxy"])
+    async def list_districts():
+        try:
+            return await _run_in_threadpool(_kgis_hierarchy, "District", "0")
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"K-GIS error: {exc}")
+
+    @app.get("/taluks/{district_code}", tags=["K-GIS Proxy"])
+    async def list_taluks(district_code: str):
+        try:
+            return await _run_in_threadpool(_kgis_hierarchy, "Taluk", district_code)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"K-GIS error: {exc}")
+
+    @app.get("/hoblis/{taluk_code}", tags=["K-GIS Proxy"])
+    async def list_hoblis(taluk_code: str):
+        try:
+            return await _run_in_threadpool(_kgis_hierarchy, "Hobli", taluk_code)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"K-GIS error: {exc}")
+
+    @app.get("/villages/{hobli_code}", tags=["K-GIS Proxy"])
+    async def list_villages(hobli_code: str):
+        try:
+            return await _run_in_threadpool(_kgis_hierarchy, "Village", hobli_code)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"K-GIS error: {exc}")
+
+    @app.get("/surveynumbers/{village_code}", tags=["K-GIS Proxy"])
+    async def list_survey_numbers(village_code: str):
+        try:
+            verify_ssl = os.getenv("KGIS_VERIFY_SSL", "true").lower() != "false"
+            url    = f"{KGIS_BASE_URL.rstrip('/')}/kgissurveynumber"
+            params = {
+                "deptcode":  KGIS_DEPT_CODE,
+                "applncode": KGIS_APPLN_CODE,
+                "villcode":  village_code,
+            }
+
+            def _fetch():
+                r = _proxy_session.get(url, params=params,
+                                       timeout=KGIS_TIMEOUT, verify=verify_ssl)
+                r.raise_for_status()
+                return _normalise_hierarchy_response(r.json(), context="surveynumbers proxy")
+
+            return await _run_in_threadpool(_fetch)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"K-GIS error: {exc}")
 
     # ── Global exception handlers ─────────────────────────────────────────
 
@@ -128,6 +174,11 @@ def create_app() -> FastAPI:
     async def unhandled_exception_handler(
         request: Request, exc: Exception
     ) -> JSONResponse:
+        
+        # FIX: Do not swallow intentional API validation or routing errors!
+        if isinstance(exc, (StarletteHTTPException, RequestValidationError)):
+            raise exc
+
         logger.error(
             "Unhandled exception on %s %s: %s",
             request.method, request.url.path, exc,
@@ -143,33 +194,11 @@ def create_app() -> FastAPI:
             },
         )
 
-    # ── Root probe ────────────────────────────────────────────────────────
-
-    @app.get(
-        "/",
-        summary="Root health check",
-        tags=["Health"],
-        status_code=status.HTTP_200_OK,
-    )
-    async def root() -> dict:
-        return {
-            "service": "Carbon Biomass Intelligence Engine",
-            "version": "1.0.0",
-            "status":  "running",
-            "docs":    "/docs",
-        }
-
-    @app.get(
-        "/health",
-        summary="Liveness probe",
-        tags=["Health"],
-        status_code=status.HTTP_200_OK,
-    )
+    @app.get("/health", tags=["Health"])
     async def health() -> dict:
         return {"status": "ok"}
 
     return app
 
 
-# ─── ASGI application object ──────────────────────────────────────────────────
 app = create_app()
