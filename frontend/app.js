@@ -13,7 +13,7 @@
 /* ── Configuration ────────────────────────────────────────────────────────── */
 
 const CONFIG = {
-  API_BASE:         'http://127.0.0.1:8000',
+  API_BASE:         'http://localhost:8000',
   MAP_CENTER:       [12.295, 76.639],
   MAP_ZOOM:         10,
   TILE_URL:         'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -63,6 +63,14 @@ let _satelliteTileLayer = null;
 let _isSatelliteActive  = false;
 let _currentZoomToken   = null;
 
+/**
+ * True when K-GIS hierarchy API is unavailable and all cascade selects have
+ * been replaced with plain text inputs.  Checked by every cascade load
+ * function (early-return guard) and by _getSelectName / _getSelectCode
+ * (reads .value instead of .selectedOptions[0]).
+ */
+let _manualMode = false;
+
 /* ── K-GIS cascade helpers ────────────────────────────────────────────────── */
 
 function _normaliseItems(items) {
@@ -105,16 +113,86 @@ function _setSelectError(selectId, message) {
   el.classList.add('select--error');
 }
 
+/**
+ * Read the display name from a field that may be a <select> or a plain
+ * <input> (manual-mode replacement).
+ *
+ * In select mode: returns the text of the selected option (not its value),
+ *   which is the human-readable name (district / taluk / village name).
+ * In manual mode: the <select> has been replaced with an <input id="...">
+ *   so we just return input.value.trim().
+ */
+function _getSelectName(selectId) {
+  const el = document.getElementById(selectId);
+  if (!el) return '';
+  if (el.tagName === 'INPUT') return el.value.trim();   // manual mode
+  const opt = el.selectedOptions[0];
+  return (opt && !opt.disabled && opt.value) ? opt.textContent.trim() : '';
+}
+
+/**
+ * Read the code/value from a field that may be a <select> or a plain <input>.
+ *
+ * In select mode: returns option.value (the numeric K-GIS code).
+ * In manual mode: returns input.value.trim() — the user types the value directly.
+ */
 function _getSelectCode(selectId) {
-  const el  = document.getElementById(selectId);
+  const el = document.getElementById(selectId);
+  if (!el) return '';
+  if (el.tagName === 'INPUT') return el.value.trim();   // manual mode
   const opt = el.selectedOptions[0];
   return (opt && !opt.disabled && opt.value) ? opt.value : '';
 }
 
-function _getSelectName(selectId) {
-  const el  = document.getElementById(selectId);
-  const opt = el.selectedOptions[0];
-  return (opt && !opt.disabled && opt.value) ? opt.textContent.trim() : '';
+/* ── Manual input fallback ────────────────────────────────────────────────── */
+
+/**
+ * Called when K-GIS hierarchy returns an empty list for /districts.
+ *
+ * Replaces all five cascade <select> elements with plain <input type="text">
+ * elements that share the same IDs.  Because .form-group input already has
+ * the same visual rules as .form-group select, no CSS changes are needed.
+ *
+ * After this runs:
+ *  • _manualMode is true — all cascade load functions early-return
+ *  • _getSelectName / _getSelectCode handle INPUT elements transparently
+ *  • buildPayload() is unchanged — it still calls _getSelectName / _getSelectCode
+ *  • The zoom animation's _districtCentre() still works via _getSelectName
+ */
+function _switchToManualMode() {
+  if (_manualMode) return;
+  _manualMode = true;
+
+  const fields = [
+    { id: 'f-district', placeholder: 'e.g. Mysuru' },
+    { id: 'f-taluk',    placeholder: 'e.g. Nanjangud' },
+    { id: 'f-hobli',    placeholder: 'e.g. Nanjangud (optional)' },
+    { id: 'f-village',  placeholder: 'e.g. Somanahalli' },
+    { id: 'f-survey',   placeholder: 'e.g. 45' },
+  ];
+
+  fields.forEach(function({ id, placeholder }) {
+    const select = document.getElementById(id);
+    if (!select || select.tagName !== 'SELECT') return;
+
+    const input = document.createElement('input');
+    input.type        = 'text';
+    input.id          = id;                     // keep same ID — buildPayload unchanged
+    input.placeholder = placeholder;
+    // Inherit the select's class list (minus any error state)
+    input.className   = select.className.replace(/\bselect--error\b/g, '').trim();
+
+    select.parentNode.replaceChild(input, select);
+  });
+
+  // Show a one-line notice inside the status banner so the user knows what happened
+  // and what to do.  Uses the existing 'loading' style as a neutral info colour.
+  setStatus(
+    'loading',
+    '\u26a0\uFE0F  K-GIS lookup unavailable — type district, taluk, village and survey number directly'
+  );
+
+  console.info('[cascade] K-GIS hierarchy unavailable — switched to manual text-entry mode');
 }
 
 /* ── Cascade fetch functions ──────────────────────────────────────────────── */
@@ -127,15 +205,27 @@ async function loadDistricts() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const raw   = await resp.json();
     const items = _normaliseItems(Array.isArray(raw) ? raw : (raw.data || []));
-    if (!items.length) throw new Error('Empty district list returned');
+
+    if (!items.length) {
+      // K-GIS returned [] (null response, SSL failure, or service down).
+      // Switch to manual entry so the form remains usable.
+      _switchToManualMode();
+      return;
+    }
+
     _populateSelect('f-district', items, '— Select District —');
   } catch (err) {
-    _setSelectError('f-district', 'Failed to load districts');
-    console.error('[cascade] loadDistricts:', err);
+    // Network error or non-200 — also switch to manual mode rather than
+    // leaving the dropdown permanently broken.
+    _switchToManualMode();
+    console.warn('[cascade] loadDistricts network error — switching to manual mode:', err);
   }
 }
 
 async function _loadTaluks() {
+  // In manual mode the user types directly — cascade loads are not needed.
+  if (_manualMode) return;
+
   const districtCode = _getSelectCode('f-district');
   ['f-taluk', 'f-hobli', 'f-village', 'f-survey'].forEach(id => _resetSelect(id, '— Select district first —'));
   if (!districtCode) return;
@@ -155,6 +245,8 @@ async function _loadTaluks() {
 }
 
 async function _loadHoblis() {
+  if (_manualMode) return;
+
   const talukCode = _getSelectCode('f-taluk');
   ['f-hobli', 'f-village', 'f-survey'].forEach(id => _resetSelect(id, '— Select taluk first —'));
   if (!talukCode) return;
@@ -174,6 +266,8 @@ async function _loadHoblis() {
 }
 
 async function _loadVillages() {
+  if (_manualMode) return;
+
   const hobliCode = _getSelectCode('f-hobli');
   ['f-village', 'f-survey'].forEach(id => _resetSelect(id, '— Select hobli first —'));
   if (!hobliCode) return;
@@ -193,6 +287,8 @@ async function _loadVillages() {
 }
 
 async function _loadSurveyNumbers() {
+  if (_manualMode) return;
+
   const villageCode = _getSelectCode('f-village');
   _resetSelect('f-survey', '— Select village first —');
   if (!villageCode) return;
@@ -284,10 +380,6 @@ function renderResults(data) {
 
 /* ── Map helpers ──────────────────────────────────────────────────────────── */
 
-/**
- * Draw the parcel boundary polygon on the map and open a summary popup.
- * skipFit=true suppresses fitBounds when the cinematic animation owns the view.
- */
 function drawParcel(geojsonGeom, data, skipFit) {
   skipFit = skipFit || false;
   if (parcelLayer) { map.removeLayer(parcelLayer); parcelLayer = null; }
@@ -310,24 +402,7 @@ function drawParcel(geojsonGeom, data, skipFit) {
 }
 
 /* ── Cinematic zoom animation ─────────────────────────────────────────────── */
-/*
- * Instagram-style space → parcel zoom sequence.
- *
- * Stage sequence:
- *   1  snap   India overview      z=4   (instant setView — no disorienting long-haul fly)
- *   2  fly    Karnataka           z=7   (dark basemap, establish state context)
- *   3  fly    District centroid   z=10  (uses DISTRICT_CENTRES table for accurate waypoint)
- *   4  fly    Parcel centroid     z=14  (arrive at the farm neighbourhood)
- *   5  swap   → Esri satellite          (replace dark tiles with aerial imagery)
- *   6  fly    Parcel bounds       fit   (cinematic landing on the exact plot)
- *   7  draw   Parcel polygon             (materialise the red boundary + popup)
- *
- * Cancellation: each run mints a Symbol token stored in _currentZoomToken.
- * Every await checkpoint calls stale(); a mismatch means a newer run started
- * and this one returns silently without throwing or leaving map artifacts.
- */
 
-/** Karnataka district → [lat, lon] centroids for stage-3 waypoints. */
 const DISTRICT_CENTRES = {
   'Mysuru':           [12.2958,  76.6394],
   'Bengaluru':        [12.9716,  77.5946],
@@ -352,10 +427,6 @@ const DISTRICT_CENTRES = {
   'Ramanagara':       [12.7157,  77.2780],
 };
 
-/**
- * Bounding-box midpoint of a GeoJSON Polygon.
- * More stable than ring-average for non-convex parcels.
- */
 function _polygonCentroid(geojson) {
   const ring = geojson.coordinates[0];
   const lons = ring.map(function(c) { return c[0]; });
@@ -366,10 +437,6 @@ function _polygonCentroid(geojson) {
   ];
 }
 
-/**
- * Leaflet-compatible LatLngBounds from a GeoJSON Polygon.
- * Returns [[minLat, minLon], [maxLat, maxLon]].
- */
 function _polygonBounds(geojson) {
   const ring = geojson.coordinates[0];
   const lons = ring.map(function(c) { return c[0]; });
@@ -382,8 +449,8 @@ function _polygonBounds(geojson) {
 
 /**
  * Best [lat, lon] waypoint for the district stage.
- * Looks up the current f-district selection in DISTRICT_CENTRES;
- * falls back to the parcel centroid when the district is not in the table.
+ * Works in both select mode (reads selected option text) and manual mode
+ * (reads input.value) because _getSelectName handles both element types.
  */
 function _districtCentre(fallback) {
   const raw    = _getSelectName('f-district');
@@ -391,15 +458,10 @@ function _districtCentre(fallback) {
   return DISTRICT_CENTRES[titled] || fallback;
 }
 
-/** Pause for ms milliseconds. */
 function sleep(ms) {
   return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
 
-/**
- * Resolve on Leaflet's next 'moveend' event.
- * Safety timeout prevents hanging on zero-distance flyTo calls.
- */
 function _waitForMoveEnd(timeoutMs) {
   timeoutMs = timeoutMs || 6000;
   return new Promise(function(resolve) {
@@ -408,10 +470,6 @@ function _waitForMoveEnd(timeoutMs) {
   });
 }
 
-/**
- * flyTo a waypoint and wait for the animation to finish, then dwell briefly
- * so the user can absorb the view before the next stage begins.
- */
 async function _flyAndWait(centre, zoom, durSec) {
   var dur = durSec !== undefined ? durSec : CONFIG.ZOOM_ANIM.FLY_DURATION;
   map.flyTo(centre, zoom, { animate: true, duration: dur, easeLinearity: CONFIG.ZOOM_ANIM.EASE_LINEARITY });
@@ -419,7 +477,6 @@ async function _flyAndWait(centre, zoom, durSec) {
   await sleep(CONFIG.ZOOM_ANIM.PAUSE_BETWEEN_STAGES);
 }
 
-/** Replace the dark CARTO basemap with Esri satellite imagery (lazy, idempotent). */
 function _swapToSatellite() {
   if (_isSatelliteActive) return;
   if (_baseTileLayer) _baseTileLayer.remove();
@@ -433,7 +490,6 @@ function _swapToSatellite() {
   _isSatelliteActive = true;
 }
 
-/** Restore the dark CARTO basemap (idempotent). */
 function _swapToBase() {
   if (!_isSatelliteActive) return;
   if (_satelliteTileLayer) _satelliteTileLayer.remove();
@@ -441,11 +497,6 @@ function _swapToBase() {
   _isSatelliteActive = false;
 }
 
-/**
- * Run the full cinematic space → parcel zoom sequence.
- * renderResults() is called before this by callEstimateEndpoint() so
- * the sidebar populates while the camera is still in flight.
- */
 async function animateZoomSequence(geojsonGeom, data) {
   var token       = Symbol('zoom');
   _currentZoomToken = token;
@@ -454,40 +505,33 @@ async function animateZoomSequence(geojsonGeom, data) {
   var centroid   = _polygonCentroid(geojsonGeom);
   var distCentre = _districtCentre(centroid);
 
-  // Stage 0: clean slate — remove previous overlay, restore dark basemap
   if (parcelLayer) { map.removeLayer(parcelLayer); parcelLayer = null; }
   _swapToBase();
 
-  // Stage 1: India overview — instant snap, no long-haul fly-out
   setStatus('loading', '\uD83D\uDEF0\uFE0F  Acquiring satellite lock\u2026');
   map.setView(CONFIG.ZOOM_STAGES.INDIA.center, CONFIG.ZOOM_STAGES.INDIA.zoom, { animate: false });
   await sleep(400);
   if (stale()) return;
 
-  // Stage 2: Karnataka
   setStatus('loading', '\uD83D\uDDFA\uFE0F  Zooming to Karnataka\u2026');
   await _flyAndWait(CONFIG.ZOOM_STAGES.KARNATAKA.center, CONFIG.ZOOM_STAGES.KARNATAKA.zoom);
   if (stale()) return;
 
-  // Stage 3: District centroid
   var districtName = _getSelectName('f-district') || 'district';
   setStatus('loading', '\uD83D\uDCCD Closing in on ' + districtName + '\u2026');
   await _flyAndWait(distCentre, CONFIG.ZOOM_STAGES.DISTRICT_ZOOM);
   if (stale()) return;
 
-  // Stage 4: Village / parcel neighbourhood
   var villageName = _getSelectName('f-village') || 'village';
   setStatus('loading', '\uD83C\uDFD8\uFE0F  Locating ' + villageName + '\u2026');
   await _flyAndWait(centroid, CONFIG.ZOOM_STAGES.VILLAGE_ZOOM);
   if (stale()) return;
 
-  // Stage 5: Swap to satellite imagery
   setStatus('loading', '\uD83D\uDEF0\uFE0F  Switching to satellite view\u2026');
   _swapToSatellite();
   await sleep(CONFIG.ZOOM_ANIM.PAUSE_BEFORE_SATELLITE);
   if (stale()) return;
 
-  // Stage 6: Final flyToBounds onto the exact parcel
   setStatus('loading', '\uD83C\uDF3F Zooming to parcel\u2026');
   map.flyToBounds(_polygonBounds(geojsonGeom), {
     padding:       [80, 80],
@@ -498,17 +542,12 @@ async function animateZoomSequence(geojsonGeom, data) {
   await _waitForMoveEnd(CONFIG.ZOOM_ANIM.FLY_DURATION_FINAL * 1000 + 2000);
   if (stale()) return;
 
-  // Stage 7: Draw polygon (skipFit — animation already positioned the viewport)
-  await sleep(250);   // dramatic beat before the boundary materialises
+  await sleep(250);
   if (stale()) return;
   drawParcel(geojsonGeom, data, true);
   if (parcelLayer) parcelLayer.openPopup();
 }
 
-/**
- * Public entry point — wraps animateZoomSequence with a graceful fallback.
- * If the animation throws, falls back to an instant fitBounds draw.
- */
 async function zoomToParcel(geojsonGeom, data) {
   try {
     await animateZoomSequence(geojsonGeom, data);
@@ -520,6 +559,13 @@ async function zoomToParcel(geojsonGeom, data) {
 
 /* ── API layer ────────────────────────────────────────────────────────────── */
 
+/**
+ * Build the POST body from current form state.
+ *
+ * Works identically in both dropdown mode and manual text-entry mode because
+ * _getSelectName / _getSelectCode detect the element type (SELECT vs INPUT)
+ * and return the appropriate value in each case.  No branching needed here.
+ */
 function buildPayload() {
   return {
     state:     document.getElementById('f-state').value.trim(),
@@ -552,10 +598,7 @@ async function callEstimateEndpoint(endpoint, loadingMsg, successMsg, successIco
     var data = await response.json();
     parcelData = data;
 
-    // Populate sidebar immediately — visible while camera is still flying
     renderResults(data);
-
-    // Run cinematic sequence; success banner shown only after animation resolves
     await zoomToParcel(data.parcel_polygon, data);
 
     var co2Formatted = fmt(data.co2_equivalent_tons, 1);
