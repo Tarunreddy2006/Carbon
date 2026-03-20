@@ -64,12 +64,17 @@ let _isSatelliteActive  = false;
 let _currentZoomToken   = null;
 
 /**
- * True when K-GIS hierarchy API is unavailable and all cascade selects have
- * been replaced with plain text inputs.  Checked by every cascade load
- * function (early-return guard) and by _getSelectName / _getSelectCode
- * (reads .value instead of .selectedOptions[0]).
+ * True when K-GIS district/taluk data is unavailable and ALL fields
+ * have been replaced with plain text inputs.
  */
 let _manualMode = false;
+
+/**
+ * True when district+taluk dropdowns work (static data) but
+ * hobli/village/survey fields have no K-GIS data and use free-text inputs.
+ * This is the normal operating mode without K-GIS credentials.
+ */
+let _partialManualMode = false;
 
 /* ── K-GIS cascade helpers ────────────────────────────────────────────────── */
 
@@ -159,9 +164,14 @@ function _getSelectCode(selectId) {
  *  • buildPayload() is unchanged — it still calls _getSelectName / _getSelectCode
  *  • The zoom animation's _districtCentre() still works via _getSelectName
  */
+/**
+ * Switch ALL five fields to plain text inputs.
+ * Only triggered when even the static district/taluk data fails to load.
+ */
 function _switchToManualMode() {
   if (_manualMode) return;
   _manualMode = true;
+  _partialManualMode = true;
 
   const fields = [
     { id: 'f-district', placeholder: 'e.g. Mysuru' },
@@ -174,25 +184,47 @@ function _switchToManualMode() {
   fields.forEach(function({ id, placeholder }) {
     const select = document.getElementById(id);
     if (!select || select.tagName !== 'SELECT') return;
-
     const input = document.createElement('input');
     input.type        = 'text';
-    input.id          = id;                     // keep same ID — buildPayload unchanged
+    input.id          = id;
     input.placeholder = placeholder;
-    // Inherit the select's class list (minus any error state)
     input.className   = select.className.replace(/\bselect--error\b/g, '').trim();
-
     select.parentNode.replaceChild(input, select);
   });
 
-  // Show a one-line notice inside the status banner so the user knows what happened
-  // and what to do.  Uses the existing 'loading' style as a neutral info colour.
-  setStatus(
-    'loading',
-    '\u26a0\uFE0F  K-GIS lookup unavailable — type district, taluk, village and survey number directly'
-  );
+  setStatus('loading', '\u26a0\uFE0F  K-GIS unavailable — type all fields directly');
+  console.info('[cascade] fully switched to manual text-entry mode');
+}
 
-  console.info('[cascade] K-GIS hierarchy unavailable — switched to manual text-entry mode');
+/**
+ * Switch ONLY hobli / village / survey to plain text inputs.
+ * District and taluk keep their working dropdowns (static data).
+ * This is the normal mode when K-GIS credentials are not available.
+ */
+function _switchToPartialManualMode() {
+  if (_partialManualMode) return;
+  _partialManualMode = true;
+
+  const fields = [
+    { id: 'f-hobli',   placeholder: 'e.g. Nanjangud (optional)' },
+    { id: 'f-village', placeholder: 'e.g. Somanahalli' },
+    { id: 'f-survey',  placeholder: 'e.g. 45' },
+  ];
+
+  fields.forEach(function({ id, placeholder }) {
+    const select = document.getElementById(id);
+    if (!select || select.tagName !== 'SELECT') return;
+    const input = document.createElement('input');
+    input.type        = 'text';
+    input.id          = id;
+    input.placeholder = placeholder;
+    input.className   = select.className.replace(/\bselect--error\b/g, '').trim();
+    select.parentNode.replaceChild(input, select);
+  });
+
+  // Clear the loading status — district/taluk dropdowns are working fine
+  clearStatus();
+  console.info('[cascade] hobli/village/survey switched to text inputs (K-GIS credentials needed for these levels)');
 }
 
 /* ── Cascade fetch functions ──────────────────────────────────────────────── */
@@ -248,8 +280,14 @@ async function _loadHoblis() {
   if (_manualMode) return;
 
   const talukCode = _getSelectCode('f-taluk');
-  ['f-hobli', 'f-village', 'f-survey'].forEach(id => _resetSelect(id, '— Select taluk first —'));
+  if (!_partialManualMode) {
+    ['f-hobli', 'f-village', 'f-survey'].forEach(id => _resetSelect(id, '— Select taluk first —'));
+  }
   if (!talukCode) return;
+
+  // If already in partial manual mode, hobli/village/survey are text inputs
+  if (_partialManualMode) return;
+
   _setSelectLoading('f-hobli');
   ['f-village', 'f-survey'].forEach(id => _resetSelect(id, '— Select hobli first —'));
   try {
@@ -257,11 +295,15 @@ async function _loadHoblis() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const raw   = await resp.json();
     const items = _normaliseItems(Array.isArray(raw) ? raw : (raw.data || []));
-    if (!items.length) throw new Error('Empty hobli list returned');
+    if (!items.length) {
+      // No hobli data available — switch hobli/village/survey to text inputs
+      _switchToPartialManualMode();
+      return;
+    }
     _populateSelect('f-hobli', items, '— Select Hobli —');
   } catch (err) {
-    _setSelectError('f-hobli', 'Failed to load hoblis');
-    console.error('[cascade] _loadHoblis:', err);
+    _switchToPartialManualMode();
+    console.warn('[cascade] _loadHoblis: no data, switched to partial manual mode:', err);
   }
 }
 

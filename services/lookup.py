@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import os
@@ -426,20 +427,107 @@ def _raw_coords_to_geojson(coords: List[Any]) -> Dict[str, Any]:
 
 # ── K-GIS top-level integration ───────────────────────────────────────────────
 
+def _fetch_geom_for_survey_num(
+    village_code: str,
+    survey_no: str,
+    coord_type: str = "DD",
+) -> Dict[str, Any]:
+    """
+    Call the confirmed K-GIS polygon endpoint:
+        GET geomForSurveyNum/{village_code}/{survey_no}/{coord_type}
+
+    Handles these known response shapes:
+      - List of coordinate dicts:  [{"lat":12.1,"lon":76.6}, ...]
+      - List of [lon, lat] pairs:  [[76.6, 12.1], ...]
+      - List with geometry object: [{"geometry": {...}}, ...]
+      - WKT string in a field:     [{"geom": "POLYGON((...))"}, ...]
+    """
+    verify_ssl = os.getenv("KGIS_VERIFY_SSL", "true").lower() != "false"
+    url  = f"{KGIS_BASE_URL.rstrip('/')}/geomForSurveyNum/{village_code}/{survey_no}/{coord_type}"
+
+    logger.info("geomForSurveyNum → %s", url)
+
+    resp = _http.get(url, timeout=KGIS_TIMEOUT, verify=verify_ssl)
+    resp.raise_for_status()
+
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise ValueError(f"geomForSurveyNum non-JSON: {resp.text[:200]}") from exc
+
+    if not data:
+        raise ValueError(f"geomForSurveyNum returned empty [] for villcode={village_code} survey={survey_no}")
+
+    logger.info("geomForSurveyNum raw response: %s", json.dumps(data)[:400] if isinstance(data, (list,dict)) else str(data)[:400])
+
+    # ── Shape 1: list of dicts with lat/lon keys ──────────────────────
+    if isinstance(data, list) and isinstance(data[0], dict):
+        first = data[0]
+
+        # Sub-shape A: geometry key
+        for gkey in ("geometry", "geojson", "geo_json"):
+            if gkey in first and isinstance(first[gkey], dict):
+                return _normalise_geojson_polygon(first[gkey])
+
+        # Sub-shape B: WKT key
+        for wkey in ("geom", "the_geom", "wkt", "geometry_wkt", "shape"):
+            if wkey in first and isinstance(first[wkey], str):
+                wkt = first[wkey].strip()
+                if wkt.upper().startswith("POLYGON") or wkt.upper().startswith("SRID"):
+                    return _wkt_polygon_to_geojson(wkt)
+
+        # Sub-shape C: lat/lon coordinate keys
+        lat_keys = ("lat", "latitude", "y", "Lat", "LAT")
+        lon_keys = ("lon", "lng", "longitude", "x", "Lon", "LON")
+        lat_key = next((k for k in lat_keys if k in first), None)
+        lon_key = next((k for k in lon_keys if k in first), None)
+        if lat_key and lon_key:
+            coords = [[float(pt[lon_key]), float(pt[lat_key])] for pt in data if lat_key in pt and lon_key in pt]
+            if len(coords) >= 3:
+                return _raw_coords_to_geojson(coords)
+
+        # Sub-shape D: coordinates key
+        if "coordinates" in first:
+            return _raw_coords_to_geojson(first["coordinates"])
+
+    # ── Shape 2: list of [lon, lat] or [lat, lon] number pairs ───────
+    if isinstance(data, list) and isinstance(data[0], (list, tuple)):
+        return _raw_coords_to_geojson(data)
+
+    # ── Shape 3: top-level dict ───────────────────────────────────────
+    if isinstance(data, dict):
+        for gkey in ("geometry", "geojson", "coordinates"):
+            if gkey in data:
+                if gkey == "coordinates":
+                    return _raw_coords_to_geojson(data[gkey])
+                return _normalise_geojson_polygon(data[gkey])
+
+    raise ValueError(
+        f"geomForSurveyNum: unrecognised response shape. "
+        f"Keys: {list(data[0].keys()) if isinstance(data, list) and data else type(data).__name__}"
+    )
+
+
 def _lookup_kgis_polygon(req: ParcelRequest) -> Dict[str, Any]:
+    """
+    Fetch real cadastral polygon via geomForSurveyNum.
+
+    Currently hardcoded to villcode=1 / surveyno=1 as a pipeline test.
+    Replace with real village code resolution once K-GIS credentials
+    are obtained or village ID mapping is available.
+    """
     logger.info(
-        "K-GIS: resolution chain  district=%s  taluk=%s  village=%s  survey=%s",
+        "K-GIS geomForSurveyNum: district=%s  taluk=%s  village=%s  survey=%s",
         req.district, req.taluk, req.village, req.survey_no,
     )
-    district_code = _resolve_district_code(req.district)
-    taluk_code    = _resolve_taluk_code(req.taluk, district_code)
-    hobli_code    = (
-        _resolve_hobli_code(req.hobli, taluk_code)
-        if req.hobli
-        else _infer_hobli_code(req.village, taluk_code)
-    )
-    village_code  = _resolve_village_code(req.village, hobli_code)
-    return _fetch_kgis_survey_polygon(village_code, req.survey_no, req.hissa)
+
+    # ── HARDCODED TEST: villcode=1, surveyno=1 ────────────────────────
+    # This confirms the full pipeline (K-GIS → GeoJSON → GEE → CO₂)
+    # works end-to-end with a real polygon.
+    # Once village ID mapping is solved, replace with:
+    #   village_code = _resolve_village_id(req.village, req.taluk, req.district)
+    #   return _fetch_geom_for_survey_num(village_code, req.survey_no)
+    return _fetch_geom_for_survey_num("1", "1")
 
 
 def _infer_hobli_code(village_name: str, taluk_code: str) -> str:
@@ -518,6 +606,101 @@ def _lookup_bhoomi_api(req: ParcelRequest, base_url: str, api_key: str) -> Dict[
     return geometry
 
 
+# ── Village centroid via getlocationdetails ───────────────────────────────────
+
+# Karnataka district name → approximate centroid for the initial
+# getlocationdetails query.  These are only used as the seed coordinate
+# to find the correct village — the actual simulation polygon is then
+# anchored to the village centroid returned by K-GIS, not this table.
+_DISTRICT_QUERY_CENTROIDS: Dict[str, Tuple[float, float]] = {
+    "Bagalkote":          (16.1826, 75.6961),
+    "Ballari":            (15.1394, 76.9214),
+    "Belagavi":           (15.8497, 74.4977),
+    "Bengaluru (Rural)":  (13.1007, 77.5178),
+    "Bengaluru (Urban)":  (12.9716, 77.5946),
+    "Bengaluru":          (12.9716, 77.5946),
+    "Bidar":              (17.9133, 77.5199),
+    "Chamarajanagara":    (11.9230, 77.0000),
+    "Chikkaballapura":    (13.4355, 77.7310),
+    "Chikkamagaluru":     (13.3161, 75.7720),
+    "Chitradurga":        (14.2251, 76.3998),
+    "Dakshina Kannada":   (12.8438, 75.0000),
+    "Davanagere":         (14.4663, 75.9238),
+    "Dharwad":            (15.4589, 75.0078),
+    "Gadag":              (15.4167, 75.6167),
+    "Hassan":             (13.0033, 76.1000),
+    "Haveri":             (14.7939, 75.4000),
+    "Kalaburagi":         (17.3297, 76.8240),
+    "Kodagu":             (12.4244, 75.7480),
+    "Kolara":             (13.1360, 78.1294),
+    "Koppal":             (15.3500, 76.1547),
+    "Mandya":             (12.5218, 76.8950),
+    "Mysuru":             (12.2958, 76.6394),
+    "Raichur":            (16.2120, 77.3566),
+    "Ramanagara":         (12.7157, 77.2780),
+    "Shivamogga":         (13.9299, 75.5681),
+    "Tumakuru":           (13.3379, 77.1010),
+    "Udupi":              (13.3409, 74.7421),
+    "Uttara Kannada":     (14.7937, 74.7902),
+    "Vijayapura":         (16.8302, 75.7195),
+    "Yadgir":             (16.7670, 77.1383),
+}
+
+
+def _get_village_centroid(
+    district: str,
+    taluk: str,
+    village: str,
+) -> Optional[Tuple[float, float]]:
+    """
+    Geocode the village name using OpenStreetMap Nominatim to get accurate
+    (lon, lat) coordinates for the simulation polygon anchor point.
+
+    Resolution order:
+      1. Nominatim: "{village}, {taluk}, {district}, Karnataka, India"
+      2. Nominatim: "{village}, Karnataka, India"  (fallback if taluk fails)
+      3. Returns None → caller uses district centroid table
+
+    Nominatim is free, requires no credentials, and has good coverage of
+    Karnataka villages down to hamlet level.  Rate limit: 1 req/sec —
+    acceptable for single-user development use.
+
+    Returns (lon, lat) or None on any failure.
+    """
+    queries = [
+        f"{village}, {taluk}, {district}, Karnataka, India",
+        f"{village}, {district}, Karnataka, India",
+        f"{village}, Karnataka, India",
+    ]
+
+    for query in queries:
+        try:
+            resp = requests.get(
+                "https://nominatim.openstreetmap.org/search",
+                params  = {"q": query, "format": "json", "limit": 1},
+                headers = {"User-Agent": "CarbonBiomassEngine/1.0 (academic project)"},
+                timeout = 5,
+            )
+            resp.raise_for_status()
+            results = resp.json()
+
+            if results:
+                lon = float(results[0]["lon"])
+                lat = float(results[0]["lat"])
+                logger.info(
+                    "Nominatim geocoded '%s' → (%.4f, %.4f)  [query: %s]",
+                    village, lon, lat, query,
+                )
+                return (lon, lat)
+
+        except Exception as exc:
+            logger.debug("Nominatim geocoding failed for query '%s': %s", query, exc)
+            continue
+
+    logger.debug("Nominatim: no result for village='%s' taluk='%s'", village, taluk)
+    return None
+
+
 # ── Simulation fallback ───────────────────────────────────────────────────────
 
 def _simulate_parcel_polygon(
@@ -589,8 +772,18 @@ def get_parcel_boundary(req: ParcelRequest) -> Dict[str, Any]:
         except Exception as exc:
             logger.warning("Bhoomi lookup failed for '%s': %s", parcel_id, exc)
 
-    # 3. Simulation (always works)
+    # 3. Simulation — place polygon at village centroid, not district centroid
+    # Try getlocationdetails first for taluk-level accuracy (~5-15km)
+    # Fall back to district centroid table if that also fails
     logger.warning("Using simulation fallback for '%s'", parcel_id)
-    seed       = int(hashlib.sha256(parcel_id.encode()).hexdigest()[:8], 16)
-    clon, clat = _get_district_centroid(req.district)
+    seed = int(hashlib.sha256(parcel_id.encode()).hexdigest()[:8], 16)
+
+    village_centroid = _get_village_centroid(req.district, req.taluk, req.village)
+    if village_centroid:
+        clon, clat = village_centroid
+        logger.info("Simulation anchored to village centroid (%.4f, %.4f)", clon, clat)
+    else:
+        clon, clat = _get_district_centroid(req.district)
+        logger.info("Simulation anchored to district centroid (%.4f, %.4f)", clon, clat)
+
     return _simulate_parcel_polygon(clon, clat, seed)
