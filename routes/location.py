@@ -9,6 +9,67 @@ urllib3.disable_warnings()
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Locations"])
 
+KGIS_WS_BASE = os.getenv("KGIS_BASE_URL", "https://kgis.ksrsac.in:9000/genericwebservices/ws").rstrip("/")
+KGIS_TIMEOUT = int(os.getenv("KGIS_TIMEOUT", "15"))
+KGIS_VERIFY_SSL = os.getenv("KGIS_VERIFY_SSL", "true").lower() != "false"
+
+
+def _kgis_json(endpoint: str, params: dict | None = None):
+    url = f"{KGIS_WS_BASE}/{endpoint.lstrip('/')}"
+    resp = requests.get(url, params=params or {}, timeout=KGIS_TIMEOUT, verify=KGIS_VERIFY_SSL)
+    resp.raise_for_status()
+    data = resp.json()
+    if isinstance(data, dict):
+        for key in ("data", "result", "Data", "Result"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        return [data]
+    return data if isinstance(data, list) else []
+
+
+def _district_list_from_kgis():
+    rows = _kgis_json("districtcode")
+    out = []
+
+    for row in rows:
+        if isinstance(row, str) and row.strip():
+            out.append({"code": row.strip(), "name": row.strip()})
+            continue
+        if not isinstance(row, dict):
+            continue
+
+        # K-GIS payloads vary by deployment; accept both camelCase and generic keys.
+        name = str(
+            row.get("districtName")
+            or row.get("distname")
+            or row.get("name")
+            or row.get("district")
+            or ""
+        ).strip()
+        code = str(
+            row.get("districtCode")
+            or row.get("distcode")
+            or row.get("DISTCODE")
+            or row.get("code")
+            or ""
+        ).strip()
+
+        # Some K-GIS envs return name-only rows; keep them instead of failing.
+        if name and not code:
+            code = name
+        if code and not name:
+            name = code
+
+        if name and code:
+            out.append({"code": code, "name": name})
+
+    if not out:
+        raise ValueError("districtcode returned no usable district rows")
+
+    # Deduplicate while preserving stable output for the UI.
+    uniq = {(r["code"], r["name"]): r for r in out}
+    return sorted(uniq.values(), key=lambda x: x["name"].lower())
+
 # ── Karnataka static hierarchy ────────────────────────────────────────────────
 # District names use canonical K-GIS spellings confirmed from districtcode
 # endpoint probing. Taluk names use standard Karnataka revenue records.
@@ -92,8 +153,12 @@ def _coordinates(surveyno: str):
 
 @router.get("/districts")
 async def get_districts():
-    """Returns all 30 Karnataka districts from static data — always succeeds."""
-    return _district_list()
+    """Returns districts from K-GIS /districtcode as [{code, name}]."""
+    try:
+        return await run_in_threadpool(_district_list_from_kgis)
+    except Exception as exc:
+        logger.warning("K-GIS districtcode failed, using static district fallback: %s", exc)
+        return _district_list()
 
 
 @router.get("/taluks/{districtcode}")
