@@ -316,6 +316,12 @@ def _extract_code_from_payload(payload: Any, preferred_keys: Tuple[str, ...]) ->
     return None
 
 
+def _is_probable_admin_code(value: str) -> bool:
+    """Reject obvious name-like values; accept codes that contain digits."""
+    v = value.strip()
+    return bool(v) and any(ch.isdigit() for ch in v)
+
+
 def _lookup_code_endpoint(
     endpoint: str,
     req: ParcelRequest,
@@ -371,7 +377,7 @@ def _lookup_code_endpoint(
         try:
             payload = _kgis_get(endpoint, params)
             code = _extract_code_from_payload(payload, preferred_keys)
-            if code:
+            if code and _is_probable_admin_code(code):
                 return code
         except Exception as exc:
             last_exc = exc
@@ -388,7 +394,7 @@ def _resolve_village_code_via_endpoint(req: ParcelRequest, hobli_code: str) -> s
         return _lookup_code_endpoint(
             "villagecode", req,
             extra_params={"hoblicode": hobli_code, "hcode": hobli_code},
-            preferred_keys=("villageCode", "vcode", "villagecode", "code", "VCODE"),
+            preferred_keys=("villageCode", "vcode", "villagecode", "VCODE"),
         )
     except Exception:
         return _resolve_village_code(req.village, hobli_code)
@@ -403,7 +409,7 @@ def _resolve_codes_via_dedicated_endpoints(req: ParcelRequest) -> Tuple[str, str
     try:
         district_code = _lookup_code_endpoint(
             "districtcode", req, extra_params=None,
-            preferred_keys=("districtCode", "districtcode", "distcode", "code", "DISTCODE"),
+            preferred_keys=("districtCode", "districtcode", "distcode", "DISTCODE"),
         )
     except Exception:
         district_code = _resolve_district_code(req.district)
@@ -412,7 +418,7 @@ def _resolve_codes_via_dedicated_endpoints(req: ParcelRequest) -> Tuple[str, str
         taluk_code = _lookup_code_endpoint(
             "talukcode", req,
             extra_params={"districtcode": district_code, "distcode": district_code},
-            preferred_keys=("talukCode", "talukcode", "code", "TALUKCODE"),
+            preferred_keys=("talukCode", "talukcode", "TALUKCODE"),
         )
     except Exception:
         taluk_code = _resolve_taluk_code(req.taluk, district_code)
@@ -422,7 +428,7 @@ def _resolve_codes_via_dedicated_endpoints(req: ParcelRequest) -> Tuple[str, str
             hobli_code = _lookup_code_endpoint(
                 "hoblicode", req,
                 extra_params={"talukcode": taluk_code, "tcode": taluk_code},
-                preferred_keys=("hobliCode", "hoblicode", "code", "HOBLICODE"),
+                preferred_keys=("hobliCode", "hoblicode", "HOBLICODE"),
             )
         except Exception:
             hobli_code = _resolve_hobli_code(req.hobli, taluk_code)
