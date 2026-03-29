@@ -294,14 +294,14 @@ def _resolve_village_code(village_name: str, hobli_code: str) -> str:
 
 def _fetch_kgis_survey_polygon(
     village_code: str,
-    survey_no: str,
+    surveyno: str,
     hissa: Optional[str],
 ) -> Dict[str, Any]:
     params: Dict[str, Any] = {
         "deptcode":  KGIS_DEPT_CODE,
         "applncode": KGIS_APPLN_CODE,
         "villcode":  village_code,
-        "surveyno":  survey_no,
+        "surveyno":  surveyno,
     }
     if hissa:
         params["hissano"] = hissa
@@ -314,7 +314,7 @@ def _fetch_kgis_survey_polygon(
     if isinstance(data, list):
         if not data:
             raise ValueError(
-                f"K-GIS returned an empty list for village={village_code} survey={survey_no}"
+                f"K-GIS returned an empty list for village={village_code} survey={surveyno}"
             )
         data = data[0]
 
@@ -322,7 +322,7 @@ def _fetch_kgis_survey_polygon(
     if not isinstance(data, dict):
         raise ValueError(
             f"K-GIS survey response is {type(data).__name__}, expected dict "
-            f"(village={village_code} survey={survey_no})"
+            f"(village={village_code} survey={surveyno})"
         )
 
     inner = data.get("data")
@@ -429,7 +429,7 @@ def _raw_coords_to_geojson(coords: List[Any]) -> Dict[str, Any]:
 
 def _fetch_geom_for_survey_num(
     village_code: str,
-    survey_no: str,
+    surveyno: str,
     coord_type: str = "DD",
 ) -> Dict[str, Any]:
     """
@@ -443,7 +443,7 @@ def _fetch_geom_for_survey_num(
       - WKT string in a field:     [{"geom": "POLYGON((...))"}, ...]
     """
     verify_ssl = os.getenv("KGIS_VERIFY_SSL", "true").lower() != "false"
-    url  = f"{KGIS_BASE_URL.rstrip('/')}/geomForSurveyNum/{village_code}/{survey_no}/{coord_type}"
+    url  = f"{KGIS_BASE_URL.rstrip('/')}/geomForSurveyNum/{village_code}/{surveyno}/{coord_type}"
 
     logger.info("geomForSurveyNum → %s", url)
 
@@ -456,7 +456,7 @@ def _fetch_geom_for_survey_num(
         raise ValueError(f"geomForSurveyNum non-JSON: {resp.text[:200]}") from exc
 
     if not data:
-        raise ValueError(f"geomForSurveyNum returned empty [] for villcode={village_code} survey={survey_no}")
+        raise ValueError(f"geomForSurveyNum returned empty [] for villcode={village_code} survey={surveyno}")
 
     logger.info("geomForSurveyNum raw response: %s", json.dumps(data)[:400] if isinstance(data, (list,dict)) else str(data)[:400])
 
@@ -530,24 +530,24 @@ def _lookup_kgis_polygon(req: ParcelRequest) -> Dict[str, Any]:
     return _fetch_geom_for_survey_num("1", "1")
 
 
-def _infer_hobli_code(village_name: str, taluk_code: str) -> str:
+def _infer_hobli_code(village_name: str, talukcode: str) -> str:
     logger.warning(
         "hobli not provided — scanning all hoblis in taluk %s for village '%s'. "
         "Supply 'hobli' in the request to avoid this performance penalty.",
-        taluk_code, village_name,
+        talukcode, village_name,
     )
     params = {
         "deptcode":  KGIS_DEPT_CODE,
         "applncode": KGIS_APPLN_CODE,
         "type":      "Hobli",
-        "code":      taluk_code,
+        "code":      talukcode,
     }
     hoblis = _normalise_hierarchy_response(
         _kgis_get("kgisadminhierarchy", params),
-        context=f"Hobli scan (taluk={taluk_code})",
+        context=f"Hobli scan (taluk={talukcode})",
     )
     if not hoblis:
-        raise ValueError(f"K-GIS: no hoblis for taluk '{taluk_code}'")
+        raise ValueError(f"K-GIS: no hoblis for taluk '{talukcode}'")
 
     target = village_name.strip().lower()
     for hobli in hoblis:
@@ -571,7 +571,7 @@ def _infer_hobli_code(village_name: str, taluk_code: str) -> str:
         except Exception:
             continue
 
-    raise ValueError(f"K-GIS: village '{village_name}' not found in any hobli under taluk '{taluk_code}'")
+    raise ValueError(f"K-GIS: village '{village_name}' not found in any hobli under taluk '{talukcode}'")
 
 
 # ── Legacy Bhoomi stub ────────────────────────────────────────────────────────

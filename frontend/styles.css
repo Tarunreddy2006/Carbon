@@ -76,6 +76,39 @@ body {
   height: 100vh;
 }
 
+/* Better spacing */
+.form-grid {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+/* Location section highlight */
+.form-grid--location {
+  background: rgba(63, 185, 80, 0.05);
+  padding: 14px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(63, 185, 80, 0.15);
+}
+
+/* Make inputs premium */
+.form-group input,
+.form-group select {
+  height: 38px;
+  transition: all 0.2s ease;
+}
+
+/* Hover effect */
+.form-group input:hover,
+.form-group select:hover {
+  border-color: var(--green-bright);
+}
+
+/* Focus glow (already good, just enhance) */
+.form-group input:focus,
+.form-group select:focus {
+  transform: scale(1.02);
+}
+
 
 /* ── 4. Top bar ───────────────────────────────────────────────────────────── */
 

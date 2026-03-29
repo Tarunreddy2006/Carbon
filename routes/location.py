@@ -57,13 +57,13 @@ def _district_list():
     ]
 
 
-def _taluk_list(district_code: str):
+def _taluk_list(districtcode: str):
     """Return taluks for a district as [{code, name}]."""
-    taluks = KARNATAKA_HIERARCHY.get(district_code, [])
+    taluks = KARNATAKA_HIERARCHY.get(districtcode, [])
     return [{"code": t, "name": t} for t in sorted(taluks)]
 
 
-def _hobli_list(taluk_code: str):
+def _hobli_list(talukcode: str):
     """
     Hobli data requires K-GIS credentials — not available without auth.
     Return a single placeholder entry that signals the frontend to switch
@@ -81,6 +81,12 @@ def _survey_list(village_code: str):
     """Survey data requires K-GIS credentials."""
     return []
 
+def _polygon_list(surveyno: str):
+    """Survey data requires K-GIS credentials."""
+    return []
+def _coordinates(surveyno: str):
+    return []
+
 
 # ── Proxy endpoints ───────────────────────────────────────────────────────────
 
@@ -90,19 +96,19 @@ async def get_districts():
     return _district_list()
 
 
-@router.get("/taluks/{district_code}")
-async def get_taluks(district_code: str):
+@router.get("/taluks/{districtcode}")
+async def get_taluks(districtcode: str):
     """Returns taluks for the given district from static data."""
-    return _taluk_list(district_code)
+    return _taluk_list(districtcode)
 
 
-@router.get("/hoblis/{taluk_code}")
-async def get_hoblis(taluk_code: str):
+@router.get("/hoblis/{talukcode}")
+async def get_hoblis(talukcode: str):
     """
     Returns [] — hobli data requires K-GIS credentials.
     Frontend switches hobli/village/survey to free-text inputs.
     """
-    return _hobli_list(taluk_code)
+    return _hobli_list(talukcode)
 
 
 @router.get("/villages/{hobli_code}")
