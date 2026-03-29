@@ -337,6 +337,7 @@ def _lookup_code_endpoint(
         "districtcode": ("districtname", "distname", "name", "district"),
         "talukcode": ("talukname", "name", "taluk"),
         "hoblicode": ("hobliname", "name", "hobli"),
+        "villagecode": ("villagename", "vname", "name", "village"),
     }
     value_map: Dict[str, str] = {
         "districtname": req.district,
@@ -346,7 +347,10 @@ def _lookup_code_endpoint(
         "taluk": req.taluk,
         "hobliname": req.hobli or "",
         "hobli": req.hobli or "",
-        "name": req.hobli or req.taluk or req.district,
+        "villagename": req.village,
+        "vname": req.village,
+        "village": req.village,
+        "name": req.village or req.hobli or req.taluk or req.district,
     }
 
     attempts: List[Dict[str, Any]] = []
@@ -354,8 +358,10 @@ def _lookup_code_endpoint(
         val = value_map.get(key, "")
         if not val:
             continue
-        params = {"deptcode": KGIS_DEPT_CODE, "applncode": KGIS_APPLN_CODE, key: val, **extra_params}
-        attempts.append(params)
+        # Dedicated endpoints are shown without deptcode/applncode in K-GIS docs.
+        attempts.append({key: val, **extra_params})
+        # Keep legacy variant for environments where deptcode/applncode is required.
+        attempts.append({"deptcode": KGIS_DEPT_CODE, "applncode": KGIS_APPLN_CODE, key: val, **extra_params})
 
     if not attempts:
         raise ValueError(f"No parameter attempts available for endpoint '{endpoint}'")
@@ -376,6 +382,18 @@ def _lookup_code_endpoint(
     raise ValueError(f"K-GIS {endpoint} lookup returned no code after {len(attempts)} attempts")
 
 
+def _resolve_village_code_via_endpoint(req: ParcelRequest, hobli_code: str) -> str:
+    """Resolve village id via dedicated villagecode endpoint, with hierarchy fallback."""
+    try:
+        return _lookup_code_endpoint(
+            "villagecode", req,
+            extra_params={"hoblicode": hobli_code, "hcode": hobli_code},
+            preferred_keys=("villageCode", "vcode", "villagecode", "code", "VCODE"),
+        )
+    except Exception:
+        return _resolve_village_code(req.village, hobli_code)
+
+
 def _resolve_codes_via_dedicated_endpoints(req: ParcelRequest) -> Tuple[str, str, str]:
     """
     Resolve district/taluk/hobli via dedicated K-GIS endpoints.
@@ -385,7 +403,7 @@ def _resolve_codes_via_dedicated_endpoints(req: ParcelRequest) -> Tuple[str, str
     try:
         district_code = _lookup_code_endpoint(
             "districtcode", req, extra_params=None,
-            preferred_keys=("districtcode", "distcode", "code", "DISTCODE"),
+            preferred_keys=("districtCode", "districtcode", "distcode", "code", "DISTCODE"),
         )
     except Exception:
         district_code = _resolve_district_code(req.district)
@@ -394,7 +412,7 @@ def _resolve_codes_via_dedicated_endpoints(req: ParcelRequest) -> Tuple[str, str
         taluk_code = _lookup_code_endpoint(
             "talukcode", req,
             extra_params={"districtcode": district_code, "distcode": district_code},
-            preferred_keys=("talukcode", "code", "TALUKCODE"),
+            preferred_keys=("talukCode", "talukcode", "code", "TALUKCODE"),
         )
     except Exception:
         taluk_code = _resolve_taluk_code(req.taluk, district_code)
@@ -404,7 +422,7 @@ def _resolve_codes_via_dedicated_endpoints(req: ParcelRequest) -> Tuple[str, str
             hobli_code = _lookup_code_endpoint(
                 "hoblicode", req,
                 extra_params={"talukcode": taluk_code, "tcode": taluk_code},
-                preferred_keys=("hoblicode", "code", "HOBLICODE"),
+                preferred_keys=("hobliCode", "hoblicode", "code", "HOBLICODE"),
             )
         except Exception:
             hobli_code = _resolve_hobli_code(req.hobli, taluk_code)
@@ -422,6 +440,9 @@ def _resolve_survey_for_village(village_code: str, survey_no: str, hissa: Option
     for a resolved village id. Returns the best survey token to use.
     """
     params_variants = [
+        {"villagecode": village_code, "surveyno": survey_no},
+        {"villagecode": village_code, "survey": survey_no},
+        {"villcode": village_code, "surveyno": survey_no},
         {
             "deptcode": KGIS_DEPT_CODE,
             "applncode": KGIS_APPLN_CODE,
@@ -709,7 +730,7 @@ def _lookup_kgis_polygon(req: ParcelRequest) -> Dict[str, Any]:
 
     district_code, taluk_code, hobli_code = _resolve_codes_via_dedicated_endpoints(req)
 
-    village_code = _resolve_village_code(req.village, hobli_code)
+    village_code = _resolve_village_code_via_endpoint(req, hobli_code)
 
     logger.info(
         "K-GIS codes resolved: district=%s taluk=%s hobli=%s village=%s",
