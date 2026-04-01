@@ -1,0 +1,397 @@
+{
+  "Bagalkote": {
+    "districtCode": "02",
+    "taluks": [
+      { "talukName": "Bagalkote", "talukCode": "0205" },
+      { "talukName": "Badami", "talukCode": "0204" },
+      { "talukName": "Bilagi", "talukCode": "0202" },
+      { "talukName": "Hungund", "talukCode": "0206" },
+      { "talukName": "Jamakhandi", "talukCode": "0201" },
+      { "talukName": "Mudhol", "talukCode": "0203" },
+      { "talukName": "Ilkal", "talukCode": "0208" },
+      { "talukName": "Terdal", "talukCode": "0210" },
+      { "talukName": "Guledgudda", "talukCode": "0207" },
+      { "talukName": "Rabakavi-Banahatti", "talukCode": "0209" }
+    ]
+  },
+  "Ballari": {
+    "districtCode": "12",
+    "taluks": [
+      { "talukName": "Ballari", "talukCode": "1205" },
+      { "talukName": "Kurugodu", "talukCode": "1208" },
+      { "talukName": "Kampli", "talukCode": "1210" },
+      { "talukName": "Sonduru", "talukCode": "1206" },
+      { "talukName": "Siruguppa", "talukCode": "1204" }
+    ]
+  },
+  "Belagavi": {
+    "districtCode": "01",
+    "taluks": [
+      { "talukName": "Savadatti", "talukCode": "0108" },
+      { "talukName": "Athani", "talukCode": "0102" },
+      { "talukName": "Bailhongal", "talukCode": "0109" },
+      { "talukName": "Belagavi", "talukCode": "0106" },
+      { "talukName": "Chikkodi", "talukCode": "0101" },
+      { "talukName": "Gokak", "talukCode": "0104" },
+      { "talukName": "Hukkeri", "talukCode": "0105" },
+      { "talukName": "Khanapur", "talukCode": "0107" },
+      { "talukName": "Mudalgi", "talukCode": "0114" },
+      { "talukName": "Nippani", "talukCode": "0112" },
+      { "talukName": "Raibag", "talukCode": "0103" },
+      { "talukName": "Ramadurg", "talukCode": "0110" },
+      { "talukName": "Kagwad", "talukCode": "0113" },
+      { "talukName": "Yaragatti", "talukCode": "0115" },
+      { "talukName": "Kitthuru", "talukCode": "0111" }
+    ]
+  },
+  "Bengaluru (Rural)": {
+    "districtCode": "21",
+    "taluks": [
+      { "talukName": "Devanahalli", "talukCode": "2103" },
+      { "talukName": "Doddaballapura", "talukCode": "2102" },
+      { "talukName": "Nelamangala", "talukCode": "2101" },
+      { "talukName": "Hoskote", "talukCode": "2104" }
+    ]
+  },
+  "Bengaluru (Urban)": {
+    "districtCode": "20",
+    "taluks": [
+      { "talukName": "Anekal", "talukCode": "2003" },
+      { "talukName": "Bangalore-East", "talukCode": "2004" },
+      { "talukName": "Bangalore-North", "talukCode": "2001" },
+      { "talukName": "Bangalore-South", "talukCode": "2002" },
+      { "talukName": "Yelahanka", "talukCode": "2005" }
+    ]
+  },
+  "Bengaluru South": {
+    "districtCode": "29",
+    "taluks": [
+      { "talukName": "Magadi", "talukCode": "2901" },
+      { "talukName": "Ramanagara", "talukCode": "2902" },
+      { "talukName": "Channapatna", "talukCode": "2903" },
+      { "talukName": "Kanakpura", "talukCode": "2904" },
+      { "talukName": "Harohalli", "talukCode": "2905" }
+    ]
+  },
+  "Bidar": {
+    "districtCode": "05",
+    "taluks": [
+      { "talukName": "Aurad", "talukCode": "0503" },
+      { "talukName": "Bhalki", "talukCode": "0502" },
+      { "talukName": "Bidar", "talukCode": "0504" },
+      { "talukName": "Humnabad", "talukCode": "0505" },
+      { "talukName": "Basavakalyan", "talukCode": "0501" },
+      { "talukName": "Hulsoor", "talukCode": "0508" },
+      { "talukName": "Chitguppa", "talukCode": "0506" },
+      { "talukName": "Kamalnagar", "talukCode": "0507" }
+    ]
+  },
+  "Chamarajanagara": {
+    "districtCode": "27",
+    "taluks": [
+      { "talukName": "Chamarajanagara", "talukCode": "2702" },
+      { "talukName": "Kollegal", "talukCode": "2704" },
+      { "talukName": "Gundlupet", "talukCode": "2701" },
+      { "talukName": "Yalandur", "talukCode": "2703" },
+      { "talukName": "Hanur", "talukCode": "2705" }
+    ]
+  },
+  "Chikkaballapura": {
+    "districtCode": "28",
+    "taluks": [
+      { "talukName": "Bagepalli", "talukCode": "2804" },
+      { "talukName": "Chikkaballapura", "talukCode": "2802" },
+      { "talukName": "Gauribidanur", "talukCode": "2801" },
+      { "talukName": "Gudibande", "talukCode": "2803" },
+      { "talukName": "Chinthamani", "talukCode": "2806" },
+      { "talukName": "Shidlagatta", "talukCode": "2805" },
+      { "talukName": "Manchenahalli", "talukCode": "2807" },
+      { "talukName": "Chelur", "talukCode": "2808" }
+    ]
+  },
+  "Chikkamagaluru": {
+    "districtCode": "17",
+    "taluks": [
+      { "talukName": "Chikkamagaluru", "talukCode": "1706" },
+      { "talukName": "Kadur", "talukCode": "1705" },
+      { "talukName": "Koppa", "talukCode": "1702" },
+      { "talukName": "Mudigere", "talukCode": "1707" },
+      { "talukName": "Sringeri", "talukCode": "1701" },
+      { "talukName": "Tarikere", "talukCode": "1704" },
+      { "talukName": "Ajjampura", "talukCode": "1708" },
+      { "talukName": "Kalasa", "talukCode": "1709" },
+      { "talukName": "Narasimharajapura", "talukCode": "1703" }
+    ]
+  },
+  "Chitradurga": {
+    "districtCode": "13",
+    "taluks": [
+      { "talukName": "Challakere", "talukCode": "1302" },
+      { "talukName": "Chitradurga", "talukCode": "1303" },
+      { "talukName": "Hiriyur", "talukCode": "1306" },
+      { "talukName": "Holalkere", "talukCode": "1304" },
+      { "talukName": "Hosadurga", "talukCode": "1305" },
+      { "talukName": "Molakalmuru", "talukCode": "1301" }
+    ]
+  },
+  "Dakshina Kannada": {
+    "districtCode": "24",
+    "taluks": [
+      { "talukName": "Belthangady", "talukCode": "2403" },
+      { "talukName": "Mangaluru", "talukCode": "2401" },
+      { "talukName": "Puttur", "talukCode": "2404" },
+      { "talukName": "Sullia", "talukCode": "2405" },
+      { "talukName": "Bantwal", "talukCode": "2402" },
+      { "talukName": "Ullala", "talukCode": "2409" },
+      { "talukName": "Moodubidire", "talukCode": "2406" },
+      { "talukName": "Mulki", "talukCode": "2408" },
+      { "talukName": "Kadaba", "talukCode": "2407" }
+    ]
+  },
+  "Davanagere": {
+    "districtCode": "14",
+    "taluks": [
+      { "talukName": "Channagiri", "talukCode": "1406" },
+      { "talukName": "Davanagere", "talukCode": "1404" },
+      { "talukName": "Honnali", "talukCode": "1405" },
+      { "talukName": "Harihar", "talukCode": "1401" },
+      { "talukName": "Jagaluru", "talukCode": "1403" },
+      { "talukName": "Nyamati", "talukCode": "1407" }
+    ]
+  },
+  "Dharwad": {
+    "districtCode": "09",
+    "taluks": [
+      { "talukName": "Dharwad", "talukCode": "0901" },
+      { "talukName": "Hubballi", "talukCode": "0903" },
+      { "talukName": "Hubballi Urban", "talukCode": "0906" },
+      { "talukName": "Alnavar", "talukCode": "0907" },
+      { "talukName": "Annigeri", "talukCode": "0908" },
+      { "talukName": "kalgatgi", "talukCode": "0904" },
+      { "talukName": "Kundgol", "talukCode": "0905" },
+      { "talukName": "Navalagund", "talukCode": "0902" }
+    ]
+  },
+  "Gadag": {
+    "districtCode": "08",
+    "taluks": [
+      { "talukName": "Gadag", "talukCode": "0803" },
+      { "talukName": "Mundargi", "talukCode": "0805" },
+      { "talukName": "Gajendragad", "talukCode": "0806" },
+      { "talukName": "Naragund", "talukCode": "0801" },
+      { "talukName": "Laxmeshwar", "talukCode": "0807"},
+      { "talukName": "Ron", "talukCode": "0802" },
+      { "talukName": "Shirahatti", "talukCode": "0804" }
+    ]
+  },
+  "Hassan": {
+    "districtCode": "23",
+    "taluks": [
+      { "talukName": "Alur", "talukCode": "2305" },
+      { "talukName": "Arkalgud", "talukCode": "2306" },
+      { "talukName": "Belur", "talukCode": "2302" },
+      { "talukName":  "Arsikere", "talukCode": "2303" },
+      { "talukName": "Channarayapatna", "talukCode": "2308" },
+      { "talukName": "Hassan", "talukCode": "2304" },
+      { "talukName": "Holenarasipura", "talukCode": "2307" },
+      { "talukName": "Sakleshpura", "talukCode": "2301" }
+    ]
+  },
+  "Haveri": {
+    "districtCode": "11",
+    "taluks": [
+      { "talukName": "Hangal", "talukCode": "1103" },
+      { "talukName": "Haveri", "talukCode": "1104" },
+      { "talukName": "Hirekerur", "talukCode": "1106" },
+      { "talukName": "Ranebennur", "talukCode": "1107" },
+      { "talukName": "Savanur", "talukCode": "1102" },
+      { "talukName": "Shiggaon", "talukCode": "1101" },
+      { "talukName": "Byadagi", "talukCode": "1105" },
+      { "talukName": "Rattihalli", "talukCode": "1108" }
+    ]
+  },
+  "Kalaburgi": {
+    "districtCode": "04",
+    "taluks": [
+      { "talukName": "Aland", "talukCode": "0401" },
+      { "talukName": "Afzalpur", "talukCode": "0402" },
+      { "talukName": "Kalaburgi", "talukCode": "0403" },
+      { "talukName": "Chincholi", "talukCode": "0404" },
+      { "talukName": "Sedam", "talukCode": "0405" },
+      { "talukName": "Chittapur", "talukCode": "0406" },
+      { "talukName": "Jewargi", "talukCode": "0407" },
+      { "talukName": "Kalagi", "talukCode": "0411" },
+      { "talukName": "Kamalapur", "talukCode": "0412" },
+      { "talukName": "Yadrami", "talukCode": "0413" },
+      { "talukName": "Shahabad", "talukCode": "0417" }
+    ]
+  },
+  "Kodagu": {
+    "districtCode": "25",
+    "taluks": [
+      { "talukName": "Madikeri", "talukCode": "2501" },
+      { "talukName": "Somavarapete", "talukCode": "2502" },
+      { "talukName": "Virajpet", "talukCode": "2503" },
+      { "talukName": "Ponnampet", "talukCode": "2504" },
+      { "talukName": "Kushalnagar", "talukCode": "2505" }
+    ]
+  },
+  "Kolara": {
+    "districtCode": "19",
+    "taluks": [
+      { "talukName": "Bangarpet", "talukCode": "1910" },
+      { "talukName": "Kolara", "talukCode": "1908" },
+      { "talukName": "Malur", "talukCode": "1909" },
+      { "talukName": "Mulabagilu", "talukCode": "1911" },
+      { "talukName": "Srinivaspura", "talukCode": "1907" },
+      { "talukName": "Kolar Gold Field", "talukCode": "1912" }
+    ]
+  },
+  "Koppal": {
+    "districtCode": "07",
+    "taluks": [
+      { "talukName": "Gangavathi", "talukCode": "0703" },
+      { "talukName": "Koppal", "talukCode": "0704" },
+      { "talukName": "Kushtagi", "talukCode": "0702" },
+      { "talukName": "Kanakagiri", "talukCode": "0707" },
+      { "talukName": "Karatagi", "talukCode": "0705" },
+      { "talukName": "Kukanoor", "talukCode": "0706" },
+      { "talukName": "Yelburga", "talukCode": "0701" }
+    ]
+  },
+  "Mandya": {
+    "districtCode": "22",
+    "taluks": [
+      { "talukName": "Maddur", "talukCode": "2206" },
+      { "talukName": "Malavalli", "talukCode": "2207" },
+      { "talukName": "Mandya", "talukCode": "2205" },
+      { "talukName": "Nagamangala", "talukCode": "2202" },
+      { "talukName": "Srirangapatna", "talukCode": "2204" },
+      { "talukName": "Pandavpura", "talukCode": "2203" },
+      { "talukName": "Krishnarajpet", "talukCode": "2201" }
+    ]
+  },
+  "Mysuru": {
+    "districtCode": "26",
+    "taluks": [
+      { "talukName": "Hunsur", "talukCode": "2602" },
+      { "talukName": "Mysuru", "talukCode": "2604" },
+      { "talukName": "Nanjangud", "talukCode": "2606" },
+      { "talukName": "Saligrama", "talukCode": "2609" },
+      { "talukName": "Saraguru", "talukCode": "2608" },
+      { "talukName": "K.R.Nagar", "talukCode": "2603" },
+      { "talukName": "Piriyapatna", "talukCode": "2601" },
+      { "talukName": "T.Narasipura", "talukCode": "2607" },
+      { "talukName": "Heggadadevanakote", "talukCode": "2605" }
+    ]
+  },
+  "Raichur": {
+    "districtCode": "06",
+    "taluks": [
+      { "talukName": "Manvi", "talukCode": "0604" },
+      { "talukName": "Raichur", "talukCode": "0603" },
+      { "talukName": "Devdurga", "talukCode": "0602" },
+      { "talukName": "Sirwar", "talukCode": "0607" },
+      { "talukName": "Maski", "talukCode": "0606" },
+      { "talukName": "Arakera", "talukCode": "0608" },
+      { "talukName": "Lingasuguru", "talukCode": "0601" },
+      { "talukName": "Sindhanuru", "talukCode": "0605" }
+    ]
+  },
+  "Shivamogga": {
+    "districtCode": "15",
+    "taluks": [
+      { "talukName": "Sagara", "talukCode": "1501" },
+      { "talukName": "Shivamogga", "talukCode": "1506" },
+      { "talukName": "Soraba", "talukCode": "1502" },
+      { "talukName": "Thirthahalli", "talukCode": "1505" },
+      { "talukName": "Bhadravathi", "talukCode": "1507" },
+      { "talukName": "Hosanagar", "talukCode": "1504" },
+      { "talukName": "Shikaripura", "talukCode": "1503" }
+    ]
+  },
+  "Tumakuru": {
+    "districtCode": "18",
+    "taluks": [
+      { "talukName": "Gubbi", "talukCode": "1807" },
+      { "talukName": "Koratagere", "talukCode": "1805" },
+      { "talukName": "Kunigal", "talukCode": "1810" },
+      { "talukName": "Madhugiri", "talukCode": "1804" },
+      { "talukName": "Pavagada", "talukCode": "1803" },
+      { "talukName": "Sira", "talukCode": "1802" },
+      { "talukName": "Tiptur", "talukCode": "1808" },
+      { "talukName": "Tumakuru", "talukCode": "1806" },
+      { "talukName": "Turuvekere", "talukCode": "1809" },
+      { "talukName": "Chiknayakanahalli", "talukCode": "1801" }
+    ]
+  },
+  "Udupi": {
+    "districtCode": "16",
+    "taluks": [
+      { "talukName": "Karkala", "talukCode": "1603" },
+      { "talukName": "Kundapura", "talukCode": "1601" },
+      { "talukName": "Udupi", "talukCode": "1602" },
+        { "talukName": "Bainduru", "talukCode": "1604" },
+        { "talukName": "Kapu", "talukCode": "1606" },
+        { "talukName": "Brahmavara", "talukCode": "1605" },
+        { "talukName": "Hebri", "talukCode": "1607" }
+    ]
+  },
+  "Uttara Kannada": {
+    "districtCode": "10",
+    "taluks": [
+      { "talukName": "Ankola", "talukCode": "1007" },
+      { "talukName": "Bhatkal", "talukCode": "1011" },
+      { "talukName": "Dandeli", "talukCode": "1012" },
+      { "talukName": "Haliyal", "talukCode": "1003" },
+      { "talukName": "Joida", "talukCode": "1002" },
+      { "talukName": "Karwar", "talukCode": "1001" },
+      { "talukName": "Kumta", "talukCode": "1008" },
+      { "talukName": "Mundgod", "talukCode": "1005" },
+      { "talukName": "Siddapur", "talukCode": "1009" },
+      { "talukName": "Yellapur", "talukCode": "1004" },
+      { "talukName": "Honnavar", "talukCode": "1010" },
+      { "talukName": "Sirsi", "talukCode": "1006" }
+    ]
+  },
+  "Vijayapura": {
+    "districtCode": "03",
+    "taluks": [
+      { "talukName": "Indi", "talukCode": "0302" },
+      { "talukName": "Sindagi", "talukCode": "0303" },
+      { "talukName": "Vijayapura", "talukCode": "0301" },
+      { "talukName": "Babaleshwar", "talukCode": "0307" },
+      { "talukName": "Almel", "talukCode": "0313" },
+      { "talukName": "Chadchan", "talukCode": "0308" },
+      { "talukName": "Tikota", "talukCode": "0310" },
+      { "talukName": "Talikoti", "talukCode": "0309" },
+      { "talukName": "Kolhar", "talukCode": "0311" },
+      { "talukName": "Basavanabagewadi", "talukCode": "0304" },
+      { "talukName": "Muddebihala", "talukCode": "0305" },
+      { "talukName": "Devara Hipparagi", "talukCode": "0312" },
+      { "talukName": "Nidagundi", "talukCode": "0306" }
+    ]
+  },
+  "Vijayanagara": {
+    "districtCode": "31",
+    "taluks": [
+      { "talukName": "Hosapete", "talukCode": "3101" },
+      { "talukName": "Kudligi", "talukCode": "3102" },
+      { "talukName": "Harapanahalli", "talukCode": "3104" },
+      { "talukName": "Hadagali", "talukCode": "3106" },
+      { "talukName": "Kotturu", "talukCode": "3105" },
+      { "talukName": "Hagaribommanahalli", "talukCode": "3103" }
+    ]
+  },
+  "Yadgir": {
+    "districtCode": "30",
+    "taluks": [
+      { "talukName": "Hunasagi", "talukCode": "3006" },
+      { "talukName": "Shorapur", "talukCode": "3003" },
+      { "talukName": "Yadgir", "talukCode": "3001" },
+      { "talukName": "Gurmitakal", "talukCode": "3004" },
+      { "talukName": "Wadagera", "talukCode": "3005" },
+      { "talukName": "Shahpur", "talukCode": "3002" }
+    ]
+  }
+}
