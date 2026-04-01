@@ -290,7 +290,216 @@ def _resolve_village_code(village_name: str, hobli_code: str) -> str:
     )
 
 
+def _extract_code_from_payload(payload: Any, preferred_keys: Tuple[str, ...]) -> Optional[str]:
+    """Best-effort extraction of a code value from variable K-GIS payload shapes."""
+    candidates: List[Dict[str, Any]] = []
+
+    if isinstance(payload, list):
+        candidates = [row for row in payload if isinstance(row, dict)]
+    elif isinstance(payload, dict):
+        nested = None
+        for key in ("data", "result", "Data", "Result"):
+            if isinstance(payload.get(key), list):
+                nested = payload[key]
+                break
+        if nested is not None:
+            candidates = [row for row in nested if isinstance(row, dict)]
+        else:
+            candidates = [payload]
+
+    for row in candidates:
+        for key in preferred_keys:
+            val = row.get(key)
+            if val is not None and str(val).strip() != "":
+                return str(val).strip()
+
+    return None
+
+
+def _is_probable_admin_code(value: str) -> bool:
+    """Reject obvious name-like values; accept codes that contain digits."""
+    v = value.strip()
+    return bool(v) and any(ch.isdigit() for ch in v)
+
+
+def _lookup_code_endpoint(
+    endpoint: str,
+    req: ParcelRequest,
+    extra_params: Optional[Dict[str, Any]],
+    preferred_keys: Tuple[str, ...],
+) -> str:
+    """
+    Resolve a K-GIS code from dedicated endpoints such as:
+      - districtcode
+      - talukcode
+      - hoblicode
+
+    The K-GIS service can be inconsistent in accepted query parameter names,
+    so this tries a few common variants per endpoint.
+    """
+    extra_params = extra_params or {}
+
+    key_candidates: Dict[str, Tuple[str, ...]] = {
+        "districtcode": ("districtname", "distname", "name", "district"),
+        "talukcode": ("talukname", "name", "taluk"),
+        "hoblicode": ("hobliname", "name", "hobli"),
+        "villagecode": ("villagename", "vname", "name", "village"),
+    }
+    value_map: Dict[str, str] = {
+        "districtname": req.district,
+        "distname": req.district,
+        "district": req.district,
+        "talukname": req.taluk,
+        "taluk": req.taluk,
+        "hobliname": req.hobli or "",
+        "hobli": req.hobli or "",
+        "villagename": req.village,
+        "vname": req.village,
+        "village": req.village,
+        "name": req.village or req.hobli or req.taluk or req.district,
+    }
+
+    attempts: List[Dict[str, Any]] = []
+    for key in key_candidates.get(endpoint, ("name",)):
+        val = value_map.get(key, "")
+        if not val:
+            continue
+        # Dedicated endpoints are shown without deptcode/applncode in K-GIS docs.
+        attempts.append({key: val, **extra_params})
+        # Keep legacy variant for environments where deptcode/applncode is required.
+        attempts.append({"deptcode": KGIS_DEPT_CODE, "applncode": KGIS_APPLN_CODE, key: val, **extra_params})
+
+    if not attempts:
+        raise ValueError(f"No parameter attempts available for endpoint '{endpoint}'")
+
+    last_exc: Optional[Exception] = None
+    for params in attempts:
+        try:
+            payload = _kgis_get(endpoint, params)
+            code = _extract_code_from_payload(payload, preferred_keys)
+            if code and _is_probable_admin_code(code):
+                return code
+        except Exception as exc:
+            last_exc = exc
+            continue
+
+    if last_exc:
+        raise ValueError(f"K-GIS {endpoint} lookup failed after {len(attempts)} attempts: {last_exc}")
+    raise ValueError(f"K-GIS {endpoint} lookup returned no code after {len(attempts)} attempts")
+
+
+def _resolve_village_code_via_endpoint(req: ParcelRequest, hobli_code: str) -> str:
+    """Resolve village id via dedicated villagecode endpoint, with hierarchy fallback."""
+    try:
+        return _lookup_code_endpoint(
+            "villagecode", req,
+            extra_params={"hoblicode": hobli_code, "hcode": hobli_code},
+            preferred_keys=("villageCode", "vcode", "villagecode", "VCODE"),
+        )
+    except Exception:
+        return _resolve_village_code(req.village, hobli_code)
+
+
+def _resolve_codes_via_dedicated_endpoints(req: ParcelRequest) -> Tuple[str, str, str]:
+    """
+    Resolve district/taluk/hobli via dedicated K-GIS endpoints.
+
+    Falls back to admin-hierarchy resolvers at each step when needed.
+    """
+    try:
+        district_code = _lookup_code_endpoint(
+            "districtcode", req, extra_params=None,
+            preferred_keys=("districtCode", "districtcode", "distcode", "DISTCODE"),
+        )
+    except Exception:
+        district_code = _resolve_district_code(req.district)
+
+    try:
+        taluk_code = _lookup_code_endpoint(
+            "talukcode", req,
+            extra_params={"districtcode": district_code, "distcode": district_code},
+            preferred_keys=("talukCode", "talukcode", "TALUKCODE"),
+        )
+    except Exception:
+        taluk_code = _resolve_taluk_code(req.taluk, district_code)
+
+    if req.hobli:
+        try:
+            hobli_code = _lookup_code_endpoint(
+                "hoblicode", req,
+                extra_params={"talukcode": taluk_code, "tcode": taluk_code},
+                preferred_keys=("hobliCode", "hoblicode", "HOBLICODE"),
+            )
+        except Exception:
+            hobli_code = _resolve_hobli_code(req.hobli, taluk_code)
+    else:
+        hobli_code = _infer_hobli_code(req.village, taluk_code)
+
+    return district_code, taluk_code, hobli_code
+
+
 # ── Survey polygon fetcher ────────────────────────────────────────────────────
+
+def _resolve_survey_for_village(village_code: str, survey_no: str, hissa: Optional[str]) -> str:
+    """
+    Try K-GIS `surveyno` endpoint to validate/normalise survey number
+    for a resolved village id. Returns the best survey token to use.
+    """
+    params_variants = [
+        {"villagecode": village_code, "surveyno": survey_no},
+        {"villagecode": village_code, "survey": survey_no},
+        {"villcode": village_code, "surveyno": survey_no},
+        {
+            "deptcode": KGIS_DEPT_CODE,
+            "applncode": KGIS_APPLN_CODE,
+            "villcode": village_code,
+            "villagecode": village_code,
+            "surveyno": survey_no,
+        },
+        {
+            "deptcode": KGIS_DEPT_CODE,
+            "applncode": KGIS_APPLN_CODE,
+            "village_id": village_code,
+            "survey": survey_no,
+        },
+    ]
+    if hissa:
+        for p in params_variants:
+            p["hissano"] = hissa
+            p["hissa"] = hissa
+
+    desired = survey_no.strip().lower()
+    desired_with_hissa = f"{desired}/{hissa.strip().lower()}" if hissa else desired
+
+    for params in params_variants:
+        try:
+            payload = _kgis_get("surveyno", params)
+        except Exception:
+            continue
+
+        rows: List[Dict[str, Any]] = []
+        if isinstance(payload, list):
+            rows = [r for r in payload if isinstance(r, dict)]
+        elif isinstance(payload, dict):
+            for key in ("data", "result", "Data", "Result"):
+                if isinstance(payload.get(key), list):
+                    rows = [r for r in payload[key] if isinstance(r, dict)]
+                    break
+            if not rows:
+                rows = [payload]
+
+        for row in rows:
+            for key in ("surveyno", "survey_no", "survey", "sno", "SURVEYNO"):
+                val = row.get(key)
+                if val is None:
+                    continue
+                token = str(val).strip()
+                t = token.lower()
+                if t == desired_with_hissa or t == desired:
+                    return token
+
+    return survey_no
+
 
 def _fetch_kgis_survey_polygon(
     village_code: str,
@@ -510,24 +719,41 @@ def _fetch_geom_for_survey_num(
 
 def _lookup_kgis_polygon(req: ParcelRequest) -> Dict[str, Any]:
     """
-    Fetch real cadastral polygon via geomForSurveyNum.
+    Fetch real cadastral polygon by resolving the administrative hierarchy
+    to the exact K-GIS village code, then querying the parcel geometry.
 
-    Currently hardcoded to villcode=1 / surveyno=1 as a pipeline test.
-    Replace with real village code resolution once K-GIS credentials
-    are obtained or village ID mapping is available.
+    Resolution chain:
+      District → Taluk → (optional) Hobli → Village
+
+    Geometry fetch strategy:
+      1. geomForSurveyNum (preferred endpoint for polygon boundary)
+      2. kgissurveynumber fallback (supports hissa/sub-division explicitly)
     """
     logger.info(
-        "K-GIS geomForSurveyNum: district=%s  taluk=%s  village=%s  survey=%s",
-        req.district, req.taluk, req.village, req.survey_no,
+        "K-GIS geomForSurveyNum: district=%s  taluk=%s  village=%s  survey=%s  hissa=%s",
+        req.district, req.taluk, req.village, req.survey_no, req.hissa,
     )
 
-    # ── HARDCODED TEST: villcode=1, surveyno=1 ────────────────────────
-    # This confirms the full pipeline (K-GIS → GeoJSON → GEE → CO₂)
-    # works end-to-end with a real polygon.
-    # Once village ID mapping is solved, replace with:
-    #   village_code = _resolve_village_id(req.village, req.taluk, req.district)
-    #   return _fetch_geom_for_survey_num(village_code, req.survey_no)
-    return _fetch_geom_for_survey_num("1", "1")
+    district_code, taluk_code, hobli_code = _resolve_codes_via_dedicated_endpoints(req)
+
+    village_code = _resolve_village_code_via_endpoint(req, hobli_code)
+
+    logger.info(
+        "K-GIS codes resolved: district=%s taluk=%s hobli=%s village=%s",
+        district_code, taluk_code, hobli_code, village_code,
+    )
+
+    resolved_survey_no = _resolve_survey_for_village(village_code, req.survey_no, req.hissa)
+
+    try:
+        return _fetch_geom_for_survey_num(village_code, resolved_survey_no)
+    except Exception as exc:
+        logger.warning(
+            "geomForSurveyNum failed for village=%s survey=%s: %s. "
+            "Falling back to kgissurveynumber.",
+            village_code, resolved_survey_no, exc,
+        )
+        return _fetch_kgis_survey_polygon(village_code, resolved_survey_no, req.hissa)
 
 
 def _infer_hobli_code(village_name: str, talukcode: str) -> str:
