@@ -1,81 +1,17 @@
 from fastapi import APIRouter
 from starlette.concurrency import run_in_threadpool
+import json
 import logging
 import os
-import requests
-import urllib3
-urllib3.disable_warnings()
+from pathlib import Path
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Locations"])
 
-KGIS_WS_BASE = os.getenv("KGIS_BASE_URL", "https://kgis.ksrsac.in:9000/genericwebservices/ws").rstrip("/")
-KGIS_TIMEOUT = int(os.getenv("KGIS_TIMEOUT", "15"))
-KGIS_VERIFY_SSL = os.getenv("KGIS_VERIFY_SSL", "true").lower() != "false"
+CODES_JSON_PATH = Path(os.getenv("LOCATION_CODES_JSON", "codes.json"))
 
-
-def _kgis_json(endpoint: str, params: dict | None = None):
-    url = f"{KGIS_WS_BASE}/{endpoint.lstrip('/')}"
-    resp = requests.get(url, params=params or {}, timeout=KGIS_TIMEOUT, verify=KGIS_VERIFY_SSL)
-    resp.raise_for_status()
-    data = resp.json()
-    if isinstance(data, dict):
-        for key in ("data", "result", "Data", "Result"):
-            if isinstance(data.get(key), list):
-                return data[key]
-        return [data]
-    return data if isinstance(data, list) else []
-
-
-def _district_list_from_kgis():
-    rows = _kgis_json("districtcode")
-    out = []
-
-    for row in rows:
-        if isinstance(row, str) and row.strip():
-            out.append({"code": row.strip(), "name": row.strip()})
-            continue
-        if not isinstance(row, dict):
-            continue
-
-        # K-GIS payloads vary by deployment; accept both camelCase and generic keys.
-        name = str(
-            row.get("districtName")
-            or row.get("distname")
-            or row.get("name")
-            or row.get("district")
-            or ""
-        ).strip()
-        code = str(
-            row.get("districtCode")
-            or row.get("distcode")
-            or row.get("DISTCODE")
-            or row.get("code")
-            or ""
-        ).strip()
-
-        # Some K-GIS envs return name-only rows; keep them instead of failing.
-        if name and not code:
-            code = name
-        if code and not name:
-            name = code
-
-        if name and code:
-            out.append({"code": code, "name": name})
-
-    if not out:
-        raise ValueError("districtcode returned no usable district rows")
-
-    # Deduplicate while preserving stable output for the UI.
-    uniq = {(r["code"], r["name"]): r for r in out}
-    return sorted(uniq.values(), key=lambda x: x["name"].lower())
-
-# ── Karnataka static hierarchy ────────────────────────────────────────────────
-# District names use canonical K-GIS spellings confirmed from districtcode
-# endpoint probing. Taluk names use standard Karnataka revenue records.
-# Hobli and village data requires K-GIS credentials — those fields use
-# free-text input which is passed directly to the estimation backend.
-
+# ── Karnataka static hierarchy (fallback only) ───────────────────────────────
 KARNATAKA_HIERARCHY = {
     "Bagalkote":         ["Bagalkote","Bilagi","Hungund","Jamakhandi","Mudhol","Rabakavi Banhatti"],
     "Ballari":           ["Ballari","Hadagali","Hagaribommanahalli","Hospete","Kudligi","Sandur","Siruguppa"],
@@ -110,69 +46,131 @@ KARNATAKA_HIERARCHY = {
 }
 
 
-def _district_list():
-    """Return all districts as [{code, name}] sorted alphabetically."""
-    return [
-        {"code": name, "name": name}
-        for name in sorted(KARNATAKA_HIERARCHY.keys())
-    ]
+def _first(d: Dict[str, Any], keys: List[str]) -> str:
+    for k in keys:
+        v = d.get(k)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""
 
 
-def _taluk_list(districtcode: str):
-    """Return taluks for a district as [{code, name}]."""
+def _normalise_codes_dataset(raw: Any) -> Dict[str, Any]:
+    """Return {'districts':[{'code','name','taluks':[{'code','name'}]}]} from variable codes.json shapes."""
+    districts: List[Dict[str, Any]] = []
+
+    source: List[Any]
+    if isinstance(raw, dict) and isinstance(raw.get("districts"), list):
+        source = raw["districts"]
+    elif isinstance(raw, list):
+        source = raw
+    elif isinstance(raw, dict):
+        # Shape: {"Bagalkote": {"code":"02", "taluks":[...]}, ...}
+        source = [{"name": k, **(v if isinstance(v, dict) else {})} for k, v in raw.items()]
+    else:
+        source = []
+
+    for item in source:
+        if not isinstance(item, dict):
+            continue
+        d_name = _first(item, ["name", "districtName", "district", "distname"])
+        d_code = _first(item, ["code", "districtCode", "district_code", "distcode", "DISTCODE"])
+        taluks_raw = item.get("taluks") or item.get("talukList") or item.get("children") or []
+
+        taluks: List[Dict[str, str]] = []
+        if isinstance(taluks_raw, list):
+            for t in taluks_raw:
+                if isinstance(t, str):
+                    taluks.append({"code": t, "name": t})
+                    continue
+                if not isinstance(t, dict):
+                    continue
+                t_name = _first(t, ["name", "talukName", "taluk", "talukname"])
+                t_code = _first(t, ["code", "talukCode", "taluk_code", "talukcode", "TALUKCODE"])
+                if t_name and not t_code:
+                    t_code = t_name
+                if t_code and not t_name:
+                    t_name = t_code
+                if t_name and t_code:
+                    taluks.append({"code": t_code, "name": t_name})
+
+        if d_name and not d_code:
+            d_code = d_name
+        if d_code and not d_name:
+            d_name = d_code
+
+        if d_name and d_code:
+            districts.append({"code": d_code, "name": d_name, "taluks": taluks})
+
+    return {"districts": districts}
+
+
+def _load_codes_json() -> Dict[str, Any]:
+    if not CODES_JSON_PATH.exists():
+        raise FileNotFoundError(f"codes.json not found at: {CODES_JSON_PATH}")
+    with CODES_JSON_PATH.open("r", encoding="utf-8") as f:
+        return _normalise_codes_dataset(json.load(f))
+
+
+def _district_list() -> List[Dict[str, str]]:
+    data = _load_codes_json()
+    rows = [{"code": d["code"], "name": d["name"]} for d in data["districts"]]
+    if not rows:
+        raise ValueError("codes.json has no districts")
+    return sorted(rows, key=lambda x: x["name"].lower())
+
+
+def _taluk_list(districtcode: str) -> List[Dict[str, str]]:
+    data = _load_codes_json()
+    target = districtcode.strip().lower()
+    for district in data["districts"]:
+        if district["code"].strip().lower() == target or district["name"].strip().lower() == target:
+            return sorted(district.get("taluks", []), key=lambda x: x["name"].lower())
+    return []
+
+
+def _district_list_fallback() -> List[Dict[str, str]]:
+    return [{"code": name, "name": name} for name in sorted(KARNATAKA_HIERARCHY.keys())]
+
+
+def _taluk_list_fallback(districtcode: str) -> List[Dict[str, str]]:
     taluks = KARNATAKA_HIERARCHY.get(districtcode, [])
     return [{"code": t, "name": t} for t in sorted(taluks)]
 
 
 def _hobli_list(talukcode: str):
-    """
-    Hobli data requires K-GIS credentials — not available without auth.
-    Return a single placeholder entry that signals the frontend to switch
-    the hobli and village fields to free-text input.
-    """
     return []
 
 
 def _village_list(hobli_code: str):
-    """Village data requires K-GIS credentials."""
     return []
 
 
 def _survey_list(village_code: str):
-    """Survey data requires K-GIS credentials."""
     return []
 
-def _polygon_list(surveyno: str):
-    """Survey data requires K-GIS credentials."""
-    return []
-def _coordinates(surveyno: str):
-    return []
-
-
-# ── Proxy endpoints ───────────────────────────────────────────────────────────
 
 @router.get("/districts")
 async def get_districts():
-    """Returns districts from K-GIS /districtcode as [{code, name}]."""
+    """Return districts from codes.json as [{code, name}]."""
     try:
-        return await run_in_threadpool(_district_list_from_kgis)
+        return await run_in_threadpool(_district_list)
     except Exception as exc:
-        logger.warning("K-GIS districtcode failed, using static district fallback: %s", exc)
-        return _district_list()
+        logger.warning("codes.json district load failed, using static fallback: %s", exc)
+        return _district_list_fallback()
 
 
 @router.get("/taluks/{districtcode}")
 async def get_taluks(districtcode: str):
-    """Returns taluks for the given district from static data."""
-    return _taluk_list(districtcode)
+    """Return taluks from codes.json for district code or district name."""
+    try:
+        return await run_in_threadpool(_taluk_list, districtcode)
+    except Exception as exc:
+        logger.warning("codes.json taluk load failed for district '%s': %s", districtcode, exc)
+        return _taluk_list_fallback(districtcode)
 
 
 @router.get("/hoblis/{talukcode}")
 async def get_hoblis(talukcode: str):
-    """
-    Returns [] — hobli data requires K-GIS credentials.
-    Frontend switches hobli/village/survey to free-text inputs.
-    """
     return _hobli_list(talukcode)
 
 
