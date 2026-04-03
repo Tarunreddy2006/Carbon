@@ -102,7 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(estimate_router)
     app.include_router(location_router)
 
-    # ── Global exception handler ──────────────────────────────────────────
+    # ── Global exception handler ────────
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(
         request: Request, exc: Exception
