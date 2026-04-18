@@ -10,6 +10,9 @@ the scientific methodology is auditable.
 """
 
 from __future__ import annotations
+import pyproj
+from shapely import make_valid
+from shapely.ops import transform
 
 import math
 from typing import List, Tuple
@@ -253,3 +256,20 @@ def run_carbon_pipeline(
         "carbon_tons":                 carbon,
         "co2_equivalent_tons":         co2e,
     }
+def compute_parcel_area_hectares(geojson_geometry: dict) -> float:
+    """
+    Compute the geodetic area of a GeoJSON Polygon in hectares.
+    UPDATED: Now uses EPSG:6933 Equal-Area projection for high-precision
+    calculations on dynamic GPS polygons.
+    """
+    polygon: ShapelyPolygon = geojson_polygon_to_shapely(geojson_geometry)
+    valid_poly = make_valid(polygon)
+    
+    # WGS84 (GPS) to an Equal-Area projection (EPSG:6933)
+    project = pyproj.Transformer.from_crs("epsg:4326", "epsg:6933", always_xy=True).transform
+    projected_poly = transform(project, valid_poly)
+    
+    area_sq_meters = projected_poly.area
+    area_ha = area_sq_meters / 10_000.0
+
+    return round(area_ha, 4)

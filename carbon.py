@@ -6,13 +6,16 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
-
+from database.db import engine, Base
+from database import models
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from routes.estimate import router as estimate_router
 
 load_dotenv()
 
@@ -26,8 +29,6 @@ logging.basicConfig(
 logger = logging.getLogger("carbon_engine")
 
 from services.service import initialise_gee
-from routes.estimate  import router as estimate_router
-from routes.location  import router as location_router
 
 
 @asynccontextmanager
@@ -36,6 +37,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("  Carbon Biomass Intelligence Engine – starting up")
     logger.info("  ENV: %s", os.getenv("APP_ENV", "development"))
     logger.info("═══════════════════════════════════════════════════════")
+
+    try: 
+        logger.info("Initialising Geospatial Database...")
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:
+        logger.error("❌  Failed to initialise Geospatial Database (%s).", exc)
     try:
         initialise_gee()
         logger.info("✔  Google Earth Engine authenticated and ready")
@@ -67,7 +74,7 @@ def create_app() -> FastAPI:
     # If CORS is inner, preflight requests that hit an unregistered route get a
     # 400/404 with no Access-Control-Allow-Origin header → browser blocks them.
 
-    @app.middleware("http")
+    @app.middleware("https")
     async def add_process_time_header(request: Request, call_next):
         start    = time.perf_counter()
         response = await call_next(request)
@@ -100,8 +107,6 @@ def create_app() -> FastAPI:
     # routing, so any duplicate definition here would be dead code and would
     # cause confusion when tracing bugs.
     app.include_router(estimate_router)
-    app.include_router(location_router)
-
     # ── Global exception handler ──────────────────────────────────────────
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(
@@ -129,8 +134,8 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["Health"], operation_id="app_health_get")
     async def app_health() -> dict:
         return {"status": "ok"}
+    app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
     return app
-
 
 app = create_app()
