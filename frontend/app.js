@@ -5,7 +5,7 @@
 'use strict';
 
 const CONFIG = {
-  API_BASE:   'http://localhost:8000',
+  API_BASE:   window.location.origin,
   MAP_CENTER: [12.295, 76.639],   // Karnataka default
   MAP_ZOOM:   7,
   SAT_URL:    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -24,6 +24,7 @@ let resultLayer  = null;
 let locationMarker = null;
 let _satTile = null, _darkTile = null, _isSat = false;
 let _isDrawing = false;
+let trendChart = null; // Chart.js instance for trends
 
 /* ── Map initialisation ────────────────────────────────────────────────────── */
 
@@ -261,6 +262,8 @@ function drawResult(geojson, data) {
   if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
   drawnItems.clearLayers();
 
+  let confStr = data.confidence_score ? data.confidence_score.toFixed(1) + '%' : '-';
+
   resultLayer = L.geoJSON(
     { type: 'Feature', geometry: geojson, properties: {} },
     { style: CONFIG.DONE_STYLE }
@@ -268,6 +271,7 @@ function drawResult(geojson, data) {
 
   resultLayer.bindPopup(
     '<b>🌿 ' + data.parcel_id + '</b><br><br>' +
+    '<b>Confidence Score</b> <b style="color:#58a6ff">' + confStr + '</b><br>' +
     '<b>NDVI</b> ' + fmt(data.ndvi_mean, 3) + '&nbsp;&nbsp;' +
     '<b>Canopy</b> ' + fmt(data.canopy_area_hectares) + ' ha<br>' +
     '<b>Biomass</b> ' + fmt(data.biomass_tons, 1) + ' t&nbsp;&nbsp;' +
@@ -301,7 +305,10 @@ function renderResults(data) {
   document.getElementById('res-area').textContent       = fmt(data.parcel_area_hectares, 2);
   document.getElementById('res-pixels').textContent     = fmt(data.vegetation_pixel_count, 0);
 
+  let confStr = data.confidence_score ? `<b style="color:#58a6ff">${data.confidence_score.toFixed(1)}%</b>` : '-';
+
   var rows = [
+    ['Market Confidence', confStr],
     ['Dataset',         data.satellite_dataset],
     ['Scenes used',     data.image_count + ' images'],
     ['Date range',      data.date_range.start + ' → ' + data.date_range.end],
@@ -312,6 +319,88 @@ function renderResults(data) {
     return '<div class="prov-row"><span class="prov-row__key">' + r[0] +
            '</span><span class="prov-row__value">' + r[1] + '</span></div>';
   }).join('');
+  renderChart(data.historical_trends);
+}
+
+function renderChart(historyData) {
+  if (!historyData || !historyData.length) return;
+
+  var provPanel = document.getElementById('prov-panel');
+  var chartContainer = document.getElementById('history-chart-container');
+
+  // If the chart canvas doesn't exist in the DOM yet, build it dynamically
+  if (!chartContainer) {
+    chartContainer = document.createElement('div');
+    chartContainer.id = 'history-chart-container';
+    chartContainer.style.marginTop = '20px';
+    chartContainer.innerHTML = `
+      <h3 style="margin-bottom: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">Additionality Trends (5-Year)</h3>
+      <div style="position: relative; height: 180px; width: 100%; background: var(--bg-card); border-radius: 6px; padding: 10px; border: 1px solid var(--border);">
+        <canvas id="trendChart"></canvas>
+      </div>`;
+    provPanel.appendChild(chartContainer);
+
+    // Dynamically download Chart.js if it isn't in the HTML
+    if (typeof Chart === 'undefined') {
+      var script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+      script.onload = function() { _initChart(historyData); };
+      document.head.appendChild(script);
+      return; 
+    }
+  }
+
+  _initChart(historyData);
+}
+
+function _initChart(historyData) {
+  var ctx = document.getElementById('trendChart').getContext('2d');
+  if (trendChart) trendChart.destroy();
+
+  var labels = historyData.map(function(d) { return d.year; });
+  var carbonData = historyData.map(function(d) { return d.carbon_tons; });
+  var canopyData = historyData.map(function(d) { return d.canopy_area_hectares; });
+
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Carbon Stock (t)',
+          data: carbonData,
+          borderColor: '#3fb950',
+          backgroundColor: 'rgba(63, 185, 80, 0.1)',
+          borderWidth: 2,
+          tension: 0.4,
+          fill: true,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Canopy (ha)',
+          data: canopyData,
+          borderColor: '#58a6ff',
+          borderWidth: 2,
+          borderDash: [5, 5],
+          tension: 0.4,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#8b949e', font: { size: 10, family: 'JetBrains Mono' } } }
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: 'rgba(139, 148, 158, 0.1)' } },
+        y: { type: 'linear', display: true, position: 'left', ticks: { color: '#3fb950', font: { size: 10 } }, grid: { color: 'rgba(139, 148, 158, 0.1)' } },
+        y1: { type: 'linear', display: true, position: 'right', ticks: { color: '#58a6ff', font: { size: 10 } }, grid: { drawOnChartArea: false } }
+      }
+    }
+  });
 }
 
 /* ── UI helpers ────────────────────────────────────────────────────────────── */
@@ -369,7 +458,7 @@ async function runEstimate() {
   };
 
   try {
-    var resp = await fetch(CONFIG.API_BASE + '/estimate-carbon/draw', {
+    var resp = await fetch('/estimate-carbon/draw', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload), // Send the newly formatted payload
@@ -402,6 +491,12 @@ async function runDemo() {
   setLoading(true);
   setStatus('loading', '⚡  Running demo estimation…');
   clearResultsPanel();
+
+  var payload= {
+    farm_id: label,
+    source_type: "DEMO_DATA",
+    coordinates: polygon.coordinates[0]
+  };
 
   try {
     var resp = await fetch(CONFIG.API_BASE + '/estimate-carbon/demo', {

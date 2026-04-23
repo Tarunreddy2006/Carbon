@@ -74,7 +74,7 @@ def create_app() -> FastAPI:
     # If CORS is inner, preflight requests that hit an unregistered route get a
     # 400/404 with no Access-Control-Allow-Origin header → browser blocks them.
 
-    @app.middleware("https")
+    @app.middleware("http")
     async def add_process_time_header(request: Request, call_next):
         start    = time.perf_counter()
         response = await call_next(request)

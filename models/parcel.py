@@ -21,10 +21,20 @@ class DynamicParcelRequest(BaseModel):
 
 # ─── Response ─────────────────────────────────────────────────────────────────
 
+class HistoricalDataPoint(BaseModel):
+    """Represents a single year of historical additionality data."""
+    year: int
+    carbon_tons: float
+    canopy_area_hectares: float
+    confidence_score: float
+
 class CarbonEstimateResponse(BaseModel):
+    """Final output minted to the ledger and sent to the frontend."""
     parcel_id: str
     credit_certificate: str
     parcel_polygon: Dict[str, Any]
+    
+    # Core Metrics
     parcel_area_hectares: float
     ndvi_mean: float
     ndvi_min: float
@@ -36,6 +46,12 @@ class CarbonEstimateResponse(BaseModel):
     biomass_tons: float
     carbon_tons: float
     co2_equivalent_tons: float
+    
+    # 🟢 NEW: Market Confidence & History
+    confidence_score: float
+    historical_trends: List[HistoricalDataPoint]
+    
+    # Provenance
     satellite_dataset: str
     image_count: int
     date_range: Dict[str, str]

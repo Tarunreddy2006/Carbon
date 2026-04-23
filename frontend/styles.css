@@ -59,9 +59,17 @@ html, body { height: 100%; font-family: var(--font-sans); background: var(--bg-d
 .topbar-sub { margin-left:auto; font-size:12px; color:var(--text-muted); }
 .api-badge { font-family:var(--font-mono); font-size:11px; color:var(--blue); background:rgba(88,166,255,0.1); padding:3px 10px; border-radius:var(--radius-sm); border:1px solid rgba(88,166,255,0.25); }
 
-/* ── 5. Sidebar ───────────────────────────────────────────────────────────── */
-.sidebar { grid-row:2; background:var(--bg-panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; }
-.sidebar-section { padding:20px; border-bottom:1px solid var(--border); }
+/* ── 5. Sidebar (FIXED SCROLL LAYOUT) ─────────────────────────────────────── */
+.sidebar { 
+  grid-row: 2; 
+  background: var(--bg-panel); 
+  border-right: 1px solid var(--border); 
+  display: flex; 
+  flex-direction: column; 
+  height: calc(100vh - 56px); 
+  overflow-y: auto; 
+}
+.sidebar-section { padding:20px; border-bottom:1px solid var(--border); flex-shrink: 0; }
 .sidebar-section h3 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); margin-bottom:14px; }
 
 /* ── 6. Form ──────────────────────────────────────────────────────────────── */
@@ -190,7 +198,6 @@ html, body { height: 100%; font-family: var(--font-sans); background: var(--bg-d
 /* ── 20. Leaflet Draw toolbar dark theme ──────────────────────────────────── */
 .leaflet-draw-toolbar a { background-color:var(--bg-panel) !important; }
 .leaflet-draw-toolbar a:hover { background-color:var(--bg-card) !important; }
-
 
 /* ── GPS button ───────────────────────────────────────────────────────────── */
 .btn--gps {
