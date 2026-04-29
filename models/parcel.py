@@ -53,8 +53,11 @@ class CarbonEstimateResponse(BaseModel):
     
     # Provenance
     satellite_dataset: str
-    image_count: int
+    optical_images_used: int
+    radar_images_used: int
+    fusion_ratio: str
     date_range: Dict[str, str]
+    image_count: int
 
 class ErrorResponse(BaseModel):
     """Standard error envelope returned on 4xx / 5xx responses."""
