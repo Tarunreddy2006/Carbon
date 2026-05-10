@@ -34,11 +34,18 @@
         <label for="f-label">Parcel Label</label>
         <input id="f-label" type="text" placeholder="e.g. My Farm, Field A"/>
       </div>
-
+      <!-- 🟢 NEW: Institutional Coordinate Input -->
+      <div class="form-group form-group--full" style="margin-top:12px">
+        <label for="f-coords">Or Paste GeoJSON / Coordinates</label>
+        <textarea id="f-coords" rows="3" placeholder="[[lng, lat], [lng, lat]...] or lat,lng; lat,lng..."></textarea>
+        <button class="btn btn--demo" style="margin-top:6px" onclick="loadPastedCoordinates()">
+          📍 Jump to Coordinates & Draw
+        </button>
+      </div>
       <div class="draw-instructions">
         <div class="draw-step active" id="step-gps">
           <span class="step-num">1</span>
-          <span>Click <strong>Use My Location</strong> to fly to your farm</span>
+          <span>Click <strong>Use My Location or Paste Coordinates</strong> to fly to your farm</span>
         </div>
         <div class="draw-step" id="step-draw">
           <span class="step-num">2</span>

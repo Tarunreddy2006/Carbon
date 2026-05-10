@@ -219,7 +219,130 @@ function clearPolygon() {
   clearResultsPanel();
   _setStep(locationMarker ? 2 : 1);
 }
+// ==========================================
+// INSTITUTIONAL FEATURE: PASTE COORDINATES
+// ==========================================
+// ==========================================
+// INSTITUTIONAL FEATURE: PASTE COORDINATES
+// ==========================================
+// ==========================================
+// INSTITUTIONAL FEATURE: SMART COORDINATE PARSER
+// ==========================================
+function loadPastedCoordinates() {
+    const text = document.getElementById('f-coords').value.trim();
+    if (!text) {
+        alert("Please paste coordinates first.");
+        return;
+    }
 
+    let latlngs = [];
+    let geoJsonCoords = [];
+
+    try {
+        // ATTEMPT 1: Parse as JSON Array (GeoJSON format: [[lng, lat], ...])
+        if (text.startsWith('[')) {
+            const parsed = JSON.parse(text);
+            latlngs = parsed.map(coord => [coord[1], coord[0]]);
+            geoJsonCoords = [...parsed];
+        } 
+        else {
+            // ATTEMPT 2: Check for DMS (Degrees, Minutes, Seconds) like 18°19'53" N
+            // This regex captures the degrees, minutes, seconds, and direction letter
+            const dmsRegex = /(\d+)[°\s]+(\d+)['\s]+([\d.]+)(?:["\s]+)?([NSEW])/gi;
+            let match;
+            let dmsCoords = [];
+            
+            while ((match = dmsRegex.exec(text)) !== null) {
+                let deg = parseFloat(match[1]);
+                let min = parseFloat(match[2]);
+                let sec = parseFloat(match[3]);
+                let dir = match[4].toUpperCase();
+                
+                // Convert DMS to Decimal Degrees
+                let dd = deg + (min / 60) + (sec / 3600);
+                if (dir === 'S' || dir === 'W') dd = dd * -1;
+                
+                dmsCoords.push(dd);
+            }
+
+            // If we found DMS coordinates, pair them up
+            if (dmsCoords.length > 0) {
+                for (let i = 0; i < dmsCoords.length - 1; i += 2) {
+                    latlngs.push([dmsCoords[i], dmsCoords[i+1]]);
+                    geoJsonCoords.push([dmsCoords[i+1], dmsCoords[i]]);
+                }
+            } 
+            // ATTEMPT 3: Standard Decimal Extraction (Fallback)
+            else {
+                const numbers = text.match(/-?\d+(\.\d+)?/g);
+                if (!numbers || numbers.length < 2) throw new Error("No valid coordinates found.");
+                
+                for (let i = 0; i < numbers.length - 1; i += 2) {
+                    latlngs.push([parseFloat(numbers[i]), parseFloat(numbers[i+1])]);
+                    geoJsonCoords.push([parseFloat(numbers[i+1]), parseFloat(numbers[i])]);
+                }
+            }
+        }
+
+        // ==========================================
+        // SCENARIO A: SINGLE CENTER POINT PROVIDED
+        // ==========================================
+        if (latlngs.length === 1) {
+            const center = latlngs[0];
+            
+            // Fly to the location at a good zoom level for farms
+            map.flyTo(center, 15, { duration: 1.5 }); 
+            
+            // Drop a temporary marker to guide the user
+            L.marker(center).addTo(map)
+             .bindPopup("<b>Project Center Point</b><br>Please use the Draw tool to outline the boundaries.")
+             .openPopup();
+             
+            document.getElementById('f-coords').value = "";
+            alert("Center point located! We've flown you there. Please draw the exact polygon boundaries around this area to run the estimation.");
+            return; // Stop here, don't try to draw a polygon
+        }
+
+        // ==========================================
+        // SCENARIO B: FULL POLYGON PROVIDED
+        // ==========================================
+        if (latlngs.length < 3) throw new Error("A polygon requires at least 3 points.");
+
+        // Close the polygon for the backend
+        const first = geoJsonCoords[0];
+        const last = geoJsonCoords[geoJsonCoords.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) {
+            geoJsonCoords.push([...first]);
+        }
+
+        // Clear existing drawings
+        if (typeof clearPolygon === 'function') clearPolygon();
+        if (typeof drawnItems !== 'undefined') drawnItems.clearLayers();
+
+        // Draw new polygon
+        const poly = L.polygon(latlngs, {
+            color: '#3fb950', 
+            weight: 3,
+            fillColor: '#3fb950',
+            fillOpacity: 0.2
+        });
+        
+        drawnItems.addLayer(poly);
+        map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1.5 });
+
+        // Save state and unlock UI
+        window.currentPolygonCoords = geoJsonCoords; 
+        document.getElementById('btn-estimate').disabled = false;
+        document.getElementById('btn-clear').disabled = false;
+        document.getElementById('f-coords').value = "";
+        
+        if (typeof showStatus === 'function') showStatus("Coordinates loaded successfully.", "success");
+
+    } catch (e) {
+        console.error(e);
+        alert("Could not parse coordinates. Please try again.");
+    }
+}
 function _updateDrawBtn(drawing) {
   var btn = document.getElementById('btn-draw');
   btn.textContent = drawing ? '⏹ Cancel Drawing' : '✏️ Draw Polygon';

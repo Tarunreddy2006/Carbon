@@ -230,3 +230,26 @@ html, body { height: 100%; font-family: var(--font-sans); background: var(--bg-d
   #map { min-height:50vh; }
   html, body { overflow:auto; }
 }
+/* Dark theme styling for the Coordinates Textarea */
+#f-coords {
+    background-color: #1e222b; /* Matches your sidebar background */
+    color: #e5e7eb;            /* Light grey text */
+    border: 1px solid #374151; /* Subtle border */
+    border-radius: 6px;        /* Rounded corners */
+    padding: 10px;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: monospace;    /* Makes numbers line up neatly */
+    resize: vertical;          /* Allows dragging to make it taller */
+}
+
+/* Dims the placeholder text so it isn't too bright */
+#f-coords::placeholder {
+    color: #6b7280;
+}
+
+/* Adds a subtle glow when the user clicks it */
+#f-coords:focus {
+    outline: none;
+    border-color: #3fb950; /* Matches your green buttons */
+}
