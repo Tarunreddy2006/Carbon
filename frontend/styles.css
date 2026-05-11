@@ -41,7 +41,75 @@ html, body { height: 100%; font-family: var(--font-sans); background: var(--bg-d
   grid-template-rows: 56px 1fr;
   height: 100vh;
 }
+/* Login Screen Styling */
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #111827;
+}
 
+.login-box {
+    background-color: #1e222b;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    width: 350px;
+    text-align: center;
+    color: white;
+}
+
+.input-dark {
+    width: 100%;
+    padding: 12px;
+    margin-top: 10px;
+    background-color: #111827;
+    border: 1px solid #374151;
+    color: white;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+/* Navbar */
+.navbar {
+    position: absolute;
+    top: 0; right: 0; left: 350px; /* Offset by sidebar width */
+    height: 60px;
+    background-color: #1e222b;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    z-index: 1000;
+    color: white;
+    border-bottom: 1px solid #374151;
+}
+
+/* Tabs */
+.role-tabs {
+    display: flex;
+    margin-bottom: 20px;
+    background-color: #111827;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 12px;
+    background: transparent;
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    font-weight: bold;
+    transition: 0.3s;
+}
+
+.tab-btn.active {
+    background-color: #3fb950;
+    color: white;
+}
 /* ── 4. Top bar ───────────────────────────────────────────────────────────── */
 .topbar {
   grid-column: 1 / -1;

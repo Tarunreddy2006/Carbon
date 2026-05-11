@@ -10,6 +10,50 @@
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
+    <div id="login-screen" class="login-container">
+        <div class="login-box">
+            <h2>Digital MRV Login</h2>
+            <p>Enter your credentials to access the platform.</p>
+            <input type="text" id="login-user" class="input-dark" placeholder="Username (e.g., farmer_john or auditor_sarah)">
+            <input type="password" id="login-pass" class="input-dark" placeholder="Password">
+            <button class="btn btn--primary" style="width: 100%; margin-top: 15px;" onclick="performLogin()">Sign In</button>
+            <p id="login-error" style="color: #ef4444; display: none; margin-top: 10px;"></p>
+        </div>
+    </div>
+
+    <div id="main-app" style="display: none;">
+        <nav class="navbar">
+            <div class="logo">CarbonEngine™</div>
+            <button class="btn btn--demo" onclick="logout()">Logout</button>
+        </nav>
+
+        <div class="sidebar">
+            <div class="role-tabs">
+                <button id="tab-farmer" class="tab-btn" onclick="switchRole('farmer')">🌾 Field App</button>
+                <button id="tab-institution" class="tab-btn" onclick="switchRole('institution')">🏢 Pro Dashboard</button>
+            </div>
+
+            <div class="form-group">
+                <label>Farm ID</label>
+                <input type="text" id="f-id" class="input-dark" placeholder="e.g. FARM-001">
+            </div>
+
+            <div id="view-farmer" class="role-view">
+                <button class="btn btn--secondary" onclick="useMyLocation()">📍 Use My GPS Location</button>
+                <button class="btn btn--secondary" style="margin-top: 10px;">✏️ Draw Field Boundary</button>
+                <p style="color: #9ca3af; font-size: 12px; margin-top: 15px;">Note: Field limits must be verified by an auditor before credits are issued.</p>
+            </div>
+
+            <div id="view-institution" class="role-view" style="display: none;">
+                <label>Paste Coordinates (GeoJSON / DMS)</label>
+                <textarea id="f-coords" class="input-dark" rows="4" style="font-family: monospace;"></textarea>
+                <button class="btn btn--demo" style="margin-top: 10px;" onclick="loadPastedCoordinates()">Jump to Coordinates</button>
+                
+                <hr style="border-color: #374151; margin: 20px 0;">
+                
+                <button id="btn-estimate" class="btn btn--primary" style="width: 100%;" onclick="runEstimation()">Mint Carbon Credit</button>
+            </div>
+          </div>
 <div class="app-shell">
 
   <header class="topbar">

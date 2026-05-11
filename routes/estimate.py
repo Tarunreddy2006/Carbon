@@ -19,12 +19,15 @@ from starlette.concurrency import run_in_threadpool
 from database.db import get_db
 from database.models import ParcelRecord, CarbonCredit
 from models.parcel import CarbonEstimateResponse, DynamicParcelRequest
+from database.models import ParcelRecord, CarbonCredit, CreditStatus # <-- Make sure CreditStatus is imported
 
 # Services & Logic
 from services.service import analyse_parcel, get_historical_ndvi
+from services.ledger import generate_cryptographic_proof # <-- Add this import
 from services.validation import validate_and_clean_geometry
 from utils.logic import run_carbon_pipeline, calculate_confidence_score
 from services.ledger import generate_credit_certificate
+from services.auth import get_current_user
 
 logger = logging.getLogger("carbon_engine")
 router = APIRouter(tags=["Estimation Engine"])
@@ -34,7 +37,10 @@ async def health():
     return {"status": "ok", "service": "estimate-carbon"}
 
 @router.post("/estimate-carbon/draw", response_model=CarbonEstimateResponse)
-async def estimate_carbon_draw(payload: DynamicParcelRequest, db: Session = Depends(get_db)):
+async def estimate_carbon_draw(payload: DynamicParcelRequest, db: Session = Depends(get_db), user_token: dict = Depends(get_current_user)):
+    if user_token.get("role") != "institution":
+        logger.warning(f"SECURITY INCIDENT: User {user_token.get('sub')} attempted unauthorized minting.")
+        raise HTTPException(status_code=403, detail="Only Institutional Auditors can mint carbon credits.")
     logger.info("======================================================")
     logger.info("▶ PARCEL REGISTRATION & ANALYSIS INITIATED (%s)", payload.farm_id)
     logger.info("======================================================")
@@ -140,18 +146,28 @@ async def estimate_carbon_draw(payload: DynamicParcelRequest, db: Session = Depe
         )
 
         # 8. Mint the Carbon Credit Ledger Entry
-        cert_id = generate_credit_certificate(str(new_parcel.id), str(curr_year), results["co2_equivalent_tons"])
+        # 8. Mint the Cryptographic Ledger Entry
+        cert_id, data_hash, raw_payload_dict = generate_cryptographic_proof(
+            parcel_id=str(new_parcel.id),
+            vintage_year=str(curr_year),
+            co2e=results["co2_equivalent_tons"],
+            geojson_geom=geojson_geom,
+            ndvi_mean=gee_data["ndvi_mean"]
+        )
         
         new_credit = CarbonCredit(
             parcel_id=new_parcel.id,
             vintage_year=str(curr_year),
             unique_code=cert_id,
-            estimated_co2e=results["co2_equivalent_tons"]
+            estimated_co2e=results["co2_equivalent_tons"],
+            status=CreditStatus.VERIFIED, # 🟢 Assuming VERIFIED is an option in your Enum!
+            data_hash=data_hash,          # 🟢 Save the Fingerprint
+            raw_payload=raw_payload_dict       # 🟢 Save the exact data that was hashed
         )
         db.add(new_credit)
         db.commit()
 
-        logger.info("✅ Ledger Entry Created: %s", cert_id)
+        logger.info("✅ Ledger Entry Created: %s | Hash: %s...", cert_id, data_hash[:10])
 
         # 9. Compile Final Payload matching UI expectations
         return CarbonEstimateResponse(

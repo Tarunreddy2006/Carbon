@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from routes.estimate import router as estimate_router
+from routes import verify
 
 load_dotenv()
 
@@ -105,8 +106,17 @@ def create_app() -> FastAPI:
     #
     # Do NOT define these routes again inline — FastAPI uses first-match-wins
     # routing, so any duplicate definition here would be dead code and would
-    # cause confusion when tracing bugs.
-    app.include_router(estimate_router)
+    # cause confusion when tracing bugs
+    # Inside your main.py
+    from routes import estimate, verify, auth
+
+# ... your app initialization ...
+
+    app.include_router(auth.router)
+    app.include_router(estimate.router)
+    app.include_router(verify.router)
+    from database.db import engine, Base
+    Base.metadata.create_all(bind=engine)
     # ── Global exception handler ──────────────────────────────────────────
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(

@@ -1,8 +1,16 @@
+"""
+database/models.py
+─────────────────────────────────────────────────────────────────────────────
+Database schema defining the physical land parcels, cryptographic carbon 
+credits, and the split user architecture (Farmers vs Institutions).
+─────────────────────────────────────────────────────────────────────────────
+"""
 import uuid
 import enum
 from datetime import datetime
+
 from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Enum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geometry
 
@@ -13,6 +21,41 @@ class CreditStatus(enum.Enum):
     VERIFIED = "VERIFIED"
     ISSUED = "ISSUED"
     RETIRED = "RETIRED"
+
+# ==========================================
+# USER ARCHITECTURE (Concrete Table Inheritance)
+# ==========================================
+
+class Farmer(Base):
+    """Database table specifically for Field App users (Farmers)."""
+    __tablename__ = 'farmers'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+    
+    # Farmer-specific columns
+    mobile_number = Column(String)
+    region = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Institution(Base):
+    """Database table specifically for Pro Dashboard users (Auditors/Buyers)."""
+    __tablename__ = 'institutions'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+    
+    # Institution-specific columns
+    company_name = Column(String)
+    tax_id = Column(String)
+    registry_tier = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+# ==========================================
+# CARBON ASSET ARCHITECTURE
+# ==========================================
 
 class ParcelRecord(Base):
     """PostGIS table for storing the physical land boundaries."""
@@ -38,5 +81,9 @@ class CarbonCredit(Base):
     estimated_co2e = Column(Float, nullable=False)
     status = Column(Enum(CreditStatus), default=CreditStatus.PROJECTED)
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # 🟢 Cryptographic Anchoring
+    data_hash = Column(String, unique=True, index=True)
+    raw_payload = Column(JSONB) # Stores the exact JSON that was hashed
     
     parcel = relationship("ParcelRecord", back_populates="credits")

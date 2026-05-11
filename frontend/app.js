@@ -643,7 +643,122 @@ async function runDemo() {
     setLoading(false);
   }
 }
+// ==========================================
+// SPA AUTHENTICATION & ROUTING
+// ==========================================
 
+// Check if user is already logged in on page load
+window.onload = () => {
+    const token = localStorage.getItem("carbon_jwt_token");
+    if (token) {
+        processSuccessfulLogin(token);
+    }
+};
+
+async function performLogin() {
+    const user = document.getElementById('login-user').value;
+    const pass = document.getElementById('login-pass').value;
+    const errorText = document.getElementById('login-error');
+
+    try {
+        const response = await fetch("http://localhost:8000/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: user, password: pass })
+        });
+
+        if (!response.ok) throw new Error("Invalid Credentials");
+
+        const data = await response.json();
+        
+        // Save Token
+        localStorage.setItem("carbon_jwt_token", data.access_token);
+        
+        // Transition UI
+        processSuccessfulLogin(data.access_token);
+
+    } catch (error) {
+        errorText.innerText = "Invalid username or password.";
+        errorText.style.display = "block";
+    }
+}
+
+function processSuccessfulLogin(token) {
+    // 1. Decode JWT to get Role
+    const payloadBase64 = token.split('.')[1];
+    const decodedPayload = JSON.parse(atob(payloadBase64));
+    const userRole = decodedPayload.role; 
+
+    // 2. Hide Login, Show App
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
+
+    // 3. Setup UI based on Role
+    switchRole(userRole);
+
+    if (userRole === 'farmer') {
+        document.getElementById('tab-institution').style.display = 'none'; // Lock out Pro Dashboard
+    } else if (userRole === 'institution') {
+        document.getElementById('tab-farmer').style.display = 'none'; // Lock out Field App
+    }
+    
+    // Initialize Leaflet Map if it hasn't been already
+    if (typeof initMap === 'function') initMap();
+}
+
+function switchRole(role) {
+    document.getElementById('tab-farmer').classList.remove('active');
+    document.getElementById('tab-institution').classList.remove('active');
+    document.getElementById(`tab-${role}`).classList.add('active');
+
+    document.getElementById('view-farmer').style.display = role === 'farmer' ? 'block' : 'none';
+    document.getElementById('view-institution').style.display = role === 'institution' ? 'block' : 'none';
+}
+
+function logout() {
+    localStorage.removeItem("carbon_jwt_token");
+    location.reload(); // Refresh page to reset state
+}
+
+// ==========================================
+// API REQUEST WITH JWT (The Bouncer Check)
+// ==========================================
+async function runEstimation() {
+    const userToken = localStorage.getItem("carbon_jwt_token");
+    if (!userToken) return logout();
+
+    const payload = {
+        farm_id: document.getElementById('f-id').value,
+        coordinates: window.currentPolygonCoords
+    };
+
+    try {
+        const response = await fetch("http://localhost:8000/estimate-carbon/draw", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${userToken}` // 🔒 Attach the JWT
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.status === 401) {
+            alert("Session expired. Please log in again.");
+            logout();
+            return;
+        }
+        if (response.status === 403) {
+            alert("SECURITY: Your role does not have authorization to mint carbon credits.");
+            return;
+        }
+
+        const data = await response.json();
+        alert(`Success! Minted Certificate: ${data.credit_certificate}`);
+        
+    } catch (error) {
+        console.error("API Error:", error);
+    }
+}
 /* ── Exports & wiring ──────────────────────────────────────────────────────── */
 
 window.goToMyLocation = goToMyLocation;
