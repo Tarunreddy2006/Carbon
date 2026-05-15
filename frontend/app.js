@@ -4,6 +4,83 @@
  */
 'use strict';
 
+// ==========================================
+// 1. 3D REVOLVING EARTH BACKGROUND
+// ==========================================
+// Removed wireframe earth logic. Replaced by initStarryBackground() at the bottom.
+
+// ==========================================
+// 2. TABBED LOGIN LOGIC
+// ==========================================
+// ==========================================
+// LOGIN & AUTHENTICATION STATE
+// ==========================================
+let currentLoginRole = 'farmer'; // 🟢 Default memory state
+
+function switchLoginTab(role) {
+    // 1. Save the clicked role to memory
+    currentLoginRole = role;
+    
+    // 2. Update the visual tabs
+    const farmerTab = document.getElementById('login-tab-farmer');
+    const instTab = document.getElementById('login-tab-institution');
+    
+    if(farmerTab && instTab) {
+        farmerTab.classList.remove('active');
+        instTab.classList.remove('active');
+        document.getElementById(`login-tab-${role}`).classList.add('active');
+    }
+}
+
+async function performLogin() {
+    const user = document.getElementById('login-user').value;
+    const pass = document.getElementById('login-pass').value;
+    const errorText = document.getElementById('login-error');
+    const loginBtn = document.querySelector('.btn--primary');
+
+    // Validate inputs
+    if (!user || !pass) {
+        errorText.innerText = 'Please enter username and password.';
+        errorText.style.display = 'block';
+        return;
+    }
+
+    // Show loading state
+    const originalContent = loginBtn.innerHTML;
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<div class="spinner"></div> Authenticating...';
+    errorText.style.display = 'none';
+
+    try {
+        // 🟢 Inject the 'currentLoginRole' directly into the URL
+        const response = await fetch(`http://localhost:8000/login/${currentLoginRole}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: user, password: pass })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.detail || 'Invalid Credentials');
+        }
+
+        const data = await response.json();
+        
+        // Save the JWT token
+        localStorage.setItem('carbon_jwt_token', data.access_token);
+        localStorage.setItem('carbon_user_role', currentLoginRole);
+        
+        // Transition to main app
+        processSuccessfulLogin(data.access_token);
+
+    } catch (error) {
+        errorText.innerText = error.message || `Invalid ${currentLoginRole} credentials.`;
+        errorText.style.display = 'block';
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = originalContent;
+    }
+}
+
 const CONFIG = {
   API_BASE:   window.location.origin,
   MAP_CENTER: [12.295, 76.639],   // Karnataka default
@@ -29,6 +106,11 @@ let trendChart = null; // Chart.js instance for trends
 /* ── Map initialisation ────────────────────────────────────────────────────── */
 
 function initMap() {
+  if (map) {
+    window.setTimeout(function() { map.invalidateSize(); }, 0);
+    return;
+  }
+
   map = L.map('map', { center: CONFIG.MAP_CENTER, zoom: CONFIG.MAP_ZOOM });
 
   // Start on satellite so farm fields are visible
@@ -77,6 +159,7 @@ function goToMyLocation() {
 
   setStatus('loading', '📍  Acquiring GPS signal — move to an open area for best accuracy…');
   document.getElementById('btn-gps').disabled = true;
+  if (document.getElementById('btn-gps-inst')) document.getElementById('btn-gps-inst').disabled = true;
 
   var startTime = Date.now();
   var bestAccuracy = Infinity;
@@ -131,6 +214,7 @@ function goToMyLocation() {
         locationMarker.openPopup();
         clearStatus();
         document.getElementById('btn-gps').disabled = false;
+        if (document.getElementById('btn-gps-inst')) document.getElementById('btn-gps-inst').disabled = false;
         _setStep(2);
         var labelEl = document.getElementById('f-label');
         if (!labelEl.value.trim()) {
@@ -150,6 +234,7 @@ function goToMyLocation() {
         _watchId = null;
         locationMarker.openPopup();
         document.getElementById('btn-gps').disabled = false;
+        if (document.getElementById('btn-gps-inst')) document.getElementById('btn-gps-inst').disabled = false;
         _setStep(2);
         if (acc <= 100) {
           clearStatus();
@@ -176,6 +261,7 @@ function goToMyLocation() {
       }[err.code] || 'Could not get location: ' + err.message;
       setStatus('error', msg, '✖');
       document.getElementById('btn-gps').disabled = false;
+      if (document.getElementById('btn-gps-inst')) document.getElementById('btn-gps-inst').disabled = false;
     },
     { enableHighAccuracy: true, timeout: GPS_MAX_WAIT_MS, maximumAge: 0 }
   );
@@ -192,8 +278,17 @@ function startDrawing() {
   drawnItems.clearLayers();
   drawnPolygon = null;
   if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
-  document.getElementById('btn-estimate').disabled = true;
-  document.getElementById('btn-clear').disabled = true;
+  
+  const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
+  const btnEstimateInst = document.getElementById('btn-estimate-inst');
+  const btnClear = document.getElementById('btn-clear');
+  const btnClearInst = document.getElementById('btn-clear-inst');
+  
+  if (btnEstimateFarmer) btnEstimateFarmer.disabled = true;
+  if (btnEstimateInst) btnEstimateInst.disabled = true;
+  if (btnClear) btnClear.disabled = true;
+  if (btnClearInst) btnClearInst.disabled = true;
+  
   clearResultsPanel();
 
   _isDrawing = true;
@@ -206,18 +301,26 @@ function startDrawing() {
   }).enable();
 
   setStatus('loading', '✏️  Click points around your farm boundary. Double-click to finish.');
-  _setStep(2);
 }
 
 function clearPolygon() {
   drawnItems.clearLayers();
   drawnPolygon = null;
+  window.currentPolygonCoords = null;
   if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
-  document.getElementById('btn-estimate').disabled = true;
-  document.getElementById('btn-clear').disabled = true;
+  
+  const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
+  const btnEstimateInst = document.getElementById('btn-estimate-inst');
+  const btnClear = document.getElementById('btn-clear');
+  const btnClearInst = document.getElementById('btn-clear-inst');
+  
+  if (btnEstimateFarmer) btnEstimateFarmer.disabled = true;
+  if (btnEstimateInst) btnEstimateInst.disabled = true;
+  if (btnClear) btnClear.disabled = true;
+  if (btnClearInst) btnClearInst.disabled = true;
+  
   clearStatus();
   clearResultsPanel();
-  _setStep(locationMarker ? 2 : 1);
 }
 // ==========================================
 // INSTITUTIONAL FEATURE: PASTE COORDINATES
@@ -331,9 +434,18 @@ function loadPastedCoordinates() {
         map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1.5 });
 
         // Save state and unlock UI
-        window.currentPolygonCoords = geoJsonCoords; 
-        document.getElementById('btn-estimate').disabled = false;
-        document.getElementById('btn-clear').disabled = false;
+        window.currentPolygonCoords = geoJsonCoords;
+        
+        const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
+        const btnEstimateInst = document.getElementById('btn-estimate-inst');
+        const btnClear = document.getElementById('btn-clear');
+        const btnClearInst = document.getElementById('btn-clear-inst');
+        
+        if (btnEstimateFarmer) btnEstimateFarmer.disabled = false;
+        if (btnEstimateInst) btnEstimateInst.disabled = false;
+        if (btnClear) btnClear.disabled = false;
+        if (btnClearInst) btnClearInst.disabled = false;
+        
         document.getElementById('f-coords').value = "";
         
         if (typeof showStatus === 'function') showStatus("Coordinates loaded successfully.", "success");
@@ -345,15 +457,29 @@ function loadPastedCoordinates() {
 }
 function _updateDrawBtn(drawing) {
   var btn = document.getElementById('btn-draw');
-  btn.textContent = drawing ? '⏹ Cancel Drawing' : '✏️ Draw Polygon';
-  btn.classList.toggle('btn--drawing', drawing);
+  var btnInst = document.getElementById('btn-draw-inst');
+  if (btn) {
+    btn.textContent = drawing ? '⏹ Cancel Drawing' : '✏️ Draw Polygon';
+    btn.classList.toggle('btn--drawing', drawing);
+  }
+  if (btnInst) {
+    btnInst.textContent = drawing ? '⏹ Cancel Drawing' : '✏️ Draw Polygon';
+    btnInst.classList.toggle('btn--drawing', drawing);
+  }
 }
 
 function _onDrawn() {
-  document.getElementById('btn-estimate').disabled = false;
-  document.getElementById('btn-clear').disabled = false;
+  const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
+  const btnEstimateInst = document.getElementById('btn-estimate-inst');
+  const btnClear = document.getElementById('btn-clear');
+  const btnClearInst = document.getElementById('btn-clear-inst');
+  
+  if (btnEstimateFarmer) btnEstimateFarmer.disabled = false;
+  if (btnEstimateInst) btnEstimateInst.disabled = false;
+  if (btnClear) btnClear.disabled = false;
+  if (btnClearInst) btnClearInst.disabled = false;
+  
   setStatus('loading', '✅  Polygon drawn — click Run Estimation to analyse');
-  _setStep(3);
 }
 
 function _setStep(n) {
@@ -552,11 +678,23 @@ function clearResultsPanel() {
 }
 
 function setLoading(on) {
-  document.getElementById('btn-gps').disabled      = on;
-  document.getElementById('btn-draw').disabled     = on;
-  document.getElementById('btn-clear').disabled    = on;
-  document.getElementById('btn-demo').disabled     = on;
-  document.getElementById('btn-estimate').disabled = on || !drawnPolygon;
+  const btnGps = document.getElementById('btn-gps');
+  const btnDraw = document.getElementById('btn-draw');
+  const btnClear = document.getElementById('btn-clear');
+  const btnGpsInst = document.getElementById('btn-gps-inst');
+  const btnDrawInst = document.getElementById('btn-draw-inst');
+  const btnClearInst = document.getElementById('btn-clear-inst');
+  const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
+  const btnEstimateInst = document.getElementById('btn-estimate-inst');
+  
+  if (btnGps) btnGps.disabled = on;
+  if (btnDraw) btnDraw.disabled = on;
+  if (btnClear) btnClear.disabled = on;
+  if (btnGpsInst) btnGpsInst.disabled = on;
+  if (btnDrawInst) btnDrawInst.disabled = on;
+  if (btnClearInst) btnClearInst.disabled = on;
+  if (btnEstimateFarmer) btnEstimateFarmer.disabled = on || !drawnPolygon;
+  if (btnEstimateInst) btnEstimateInst.disabled = on || !drawnPolygon;
 }
 
 /* ── API ───────────────────────────────────────────────────────────────────── */
@@ -569,32 +707,75 @@ async function runEstimate() {
   var label = document.getElementById('f-label').value.trim() || 'GPS Farm';
 
   setLoading(true);
-  setStatus('loading', '🛰️  Connecting to GEE — analysing Sentinel-2 imagery…');
+  setStatus('loading', '🛰️  Dispatching task to background worker…');
   clearResultsPanel();
 
-  // 🟢 THE FIX: Format the data exactly as the backend's DynamicParcelRequest expects
-  // drawnPolygon.coordinates[0] extracts just the [[lng, lat], ...] array from the GeoJSON
   var payload = {
     farm_id: label,
     source_type: "MANUAL_DRAW",
     coordinates: drawnPolygon.coordinates[0]
   };
 
+  const token = localStorage.getItem('carbon_jwt_token');
+
   try {
+    // 1. Dispatch Task
     var resp = await fetch('/estimate-carbon/draw', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload), // Send the newly formatted payload
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': token ? 'Bearer ' + token : ''
+      },
+      body: JSON.stringify(payload),
     });
+    
     if (!resp.ok) {
       var err = await resp.json().catch(function() { return { detail: resp.statusText }; });
       throw new Error(err.detail || 'HTTP ' + resp.status);
     }
+    
     var data = await resp.json();
-    renderResults(data);
-    drawResult(data.parcel_polygon, data);
-    setStatus('success',
-      '✔ Analysis complete — ' + fmt(data.co2_equivalent_tons, 1) + ' t CO₂e estimated', '✔');
+    var taskId = data.task_id;
+    
+    if (!taskId) throw new Error("No task ID returned by backend");
+
+    setStatus('loading', '⏳ Task dispatched. Polling Earth Engine for results...');
+
+    // 2. Poll Status
+    let completed = false;
+    while (!completed) {
+      await new Promise(resolve => setTimeout(resolve, 3000)); // poll every 3 seconds
+      
+      var pollResp = await fetch(`/estimate-carbon/status/${taskId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': token ? 'Bearer ' + token : ''
+        }
+      });
+      
+      if (!pollResp.ok) {
+        var pollErr = await pollResp.json().catch(function() { return { detail: pollResp.statusText }; });
+        // Handle explicit failure returned by HTTP 409 etc.
+        let msg = pollErr.detail;
+        if (typeof msg === 'object' && msg.message) msg = msg.message;
+        throw new Error(msg || 'HTTP ' + pollResp.status);
+      }
+      
+      var pollData = await pollResp.json();
+      
+      if (pollData.status === 'completed') {
+        completed = true;
+        renderResults(pollData.result);
+        drawResult(pollData.result.parcel_polygon, pollData.result);
+        setStatus('success', '✔ Analysis complete — ' + fmt(pollData.result.co2_equivalent_tons, 1) + ' t CO₂e estimated', '✔');
+      } else if (pollData.status === 'failed') {
+        completed = true;
+        let msg = pollData.detail;
+        if (typeof msg === 'object' && msg.message) msg = msg.message;
+        throw new Error(msg || 'Task failed');
+      }
+    }
+
   } catch(err) {
     setStatus('error', 'Error: ' + err.message, '✖');
     console.error('[carbon-engine]', err);
@@ -655,34 +836,6 @@ window.onload = () => {
     }
 };
 
-async function performLogin() {
-    const user = document.getElementById('login-user').value;
-    const pass = document.getElementById('login-pass').value;
-    const errorText = document.getElementById('login-error');
-
-    try {
-        const response = await fetch("http://localhost:8000/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: user, password: pass })
-        });
-
-        if (!response.ok) throw new Error("Invalid Credentials");
-
-        const data = await response.json();
-        
-        // Save Token
-        localStorage.setItem("carbon_jwt_token", data.access_token);
-        
-        // Transition UI
-        processSuccessfulLogin(data.access_token);
-
-    } catch (error) {
-        errorText.innerText = "Invalid username or password.";
-        errorText.style.display = "block";
-    }
-}
-
 function processSuccessfulLogin(token) {
     // 1. Decode JWT to get Role
     const payloadBase64 = token.split('.')[1];
@@ -691,28 +844,63 @@ function processSuccessfulLogin(token) {
 
     // 2. Hide Login, Show App
     document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('bg-canvas').style.display = 'none';
     document.getElementById('main-app').style.display = 'block';
 
     // 3. Setup UI based on Role
     switchRole(userRole);
 
-    if (userRole === 'farmer') {
-        document.getElementById('tab-institution').style.display = 'none'; // Lock out Pro Dashboard
-    } else if (userRole === 'institution') {
-        document.getElementById('tab-farmer').style.display = 'none'; // Lock out Field App
+    // 4. Initialize map after UI is visible
+    if (!map) {
+        setTimeout(() => {
+            initMap();
+            // Ensure map renders correctly
+            setTimeout(() => {
+                if (map) map.invalidateSize();
+            }, 200);
+        }, 100);
+    } else {
+        // Map already exists, just resize it
+        map.invalidateSize();
     }
-    
-    // Initialize Leaflet Map if it hasn't been already
-    if (typeof initMap === 'function') initMap();
 }
 
 function switchRole(role) {
-    document.getElementById('tab-farmer').classList.remove('active');
-    document.getElementById('tab-institution').classList.remove('active');
-    document.getElementById(`tab-${role}`).classList.add('active');
+    // Update role memory
+    localStorage.setItem('carbon_user_role', role);
 
-    document.getElementById('view-farmer').style.display = role === 'farmer' ? 'block' : 'none';
-    document.getElementById('view-institution').style.display = role === 'institution' ? 'block' : 'none';
+    // Update tab styling
+    const tabFarmer = document.getElementById('tab-farmer');
+    const tabInst = document.getElementById('tab-institution');
+    
+    if (tabFarmer) {
+        tabFarmer.classList.toggle('active', role === 'farmer');
+    }
+    if (tabInst) {
+        tabInst.classList.toggle('active', role === 'institution');
+    }
+
+    // Update view visibility
+    const viewFarmer = document.getElementById('view-farmer');
+    const viewInst = document.getElementById('view-institution');
+    
+    if (viewFarmer) {
+        viewFarmer.style.display = role === 'farmer' ? 'block' : 'none';
+        viewFarmer.classList.toggle('active', role === 'farmer');
+    }
+    if (viewInst) {
+        viewInst.style.display = role === 'institution' ? 'block' : 'none';
+        viewInst.classList.toggle('active', role === 'institution');
+    }
+
+    // Hide role selector tab if using role-based view
+    if (tabFarmer && tabInst) {
+        if (role === 'farmer') {
+            tabInst.style.display = 'none';
+        } else {
+            tabFarmer.style.display = 'none';
+        }
+    }
 }
 
 function logout() {
@@ -725,49 +913,207 @@ function logout() {
 // ==========================================
 async function runEstimation() {
     const userToken = localStorage.getItem("carbon_jwt_token");
-    if (!userToken) return logout();
+    if (!userToken) {
+        setStatus('error', 'Session expired. Please log in again.', '✖');
+        setTimeout(() => logout(), 2000);
+        return;
+    }
+
+    // Get the appropriate button for the current role
+    const userRole = localStorage.getItem('carbon_user_role') || 'farmer';
+    const btnId = userRole === 'farmer' ? 'btn-estimate-farmer' : 'btn-estimate-inst';
+    const btn = document.getElementById(btnId);
+    const originalContent = btn.innerHTML;
+
+    // Validate polygon
+    if (!drawnPolygon && !window.currentPolygonCoords) {
+        setStatus('error', 'Please draw or paste coordinates first.', '✖');
+        return;
+    }
+
+    // Show loading state
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> Analyzing satellite imagery...';
+    setStatus('loading', '🛰️ Connecting to Google Earth Engine — analyzing Sentinel-2 imagery…');
+    clearResultsPanel();
+
+    // Extract coordinates
+    const coords = window.currentPolygonCoords || (drawnPolygon ? drawnPolygon.coordinates[0] : null);
+    if (!coords || coords.length < 3) {
+        setStatus('error', 'Invalid polygon - need at least 3 points.', '✖');
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+        return;
+    }
+
+    const farmId = document.getElementById('f-id').value.trim() || 'Farm-' + Date.now();
+    const species = document.getElementById('f-species').value;
 
     const payload = {
-        farm_id: document.getElementById('f-id').value,
-        coordinates: window.currentPolygonCoords
+        farm_id: farmId,
+        tree_species: species,
+        coordinates: coords
     };
 
     try {
-        const response = await fetch("http://localhost:8000/estimate-carbon/draw", {
-            method: "POST",
+        const response = await fetch('http://localhost:8000/estimate-carbon/draw', {
+            method: 'POST',
             headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${userToken}` // 🔒 Attach the JWT
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${userToken}`
             },
             body: JSON.stringify(payload)
         });
 
         if (response.status === 401) {
-            alert("Session expired. Please log in again.");
-            logout();
-            return;
-        }
-        if (response.status === 403) {
-            alert("SECURITY: Your role does not have authorization to mint carbon credits.");
+            setStatus('error', 'Session expired. Please log in again.', '✖');
+            setTimeout(() => logout(), 2000);
             return;
         }
 
+        if (response.status === 403) {
+            setStatus('error', '🔒 Your role does not have authorization to mint carbon credits.', '✖');
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+            return;
+        }
+
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.detail || `HTTP ${response.status}`);
+        }
+
         const data = await response.json();
-        alert(`Success! Minted Certificate: ${data.credit_certificate}`);
         
+        // Render results
+        renderResults(data);
+        drawResult(data.parcel_polygon, data);
+        setStatus('success', `✔ Analysis complete — ${fmt(data.co2_equivalent_tons, 1)} t CO₂e estimated`, '✔');
+
     } catch (error) {
-        console.error("API Error:", error);
+        console.error('[carbon-engine]', error);
+        setStatus('error', `Error: ${error.message}`, '✖');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
     }
 }
 /* ── Exports & wiring ──────────────────────────────────────────────────────── */
 
 window.goToMyLocation = goToMyLocation;
-window.startDrawing   = startDrawing;
-window.clearPolygon   = clearPolygon;
-window.runEstimate    = runEstimate;
-window.runDemo        = runDemo;
+window.startDrawing = startDrawing;
+window.clearPolygon = clearPolygon;
+window.loadPastedCoordinates = loadPastedCoordinates;
+window.switchLoginTab = switchLoginTab;
+window.performLogin = performLogin;
+window.runEstimation = runEstimation;
+window.logout = logout;
 
 document.addEventListener('DOMContentLoaded', function() {
-  initMap();
-  _setStep(1);
+    // Check if already logged in
+    const token = localStorage.getItem("carbon_jwt_token");
+    if (!token) {
+        // Show login screen
+        document.getElementById('login-screen').style.display = 'block';
+        document.getElementById('main-app').style.display = 'none';
+    } else {
+        // Already logged in, go straight to app
+        processSuccessfulLogin(token);
+    }
+});
+/**
+ * REFACTORED app.js — CarbonEngine Enterprise Visuals
+ */
+
+// --- UPGRADED 3D STARRY BACKGROUND ---
+function initStarryBackground() {
+    const canvas = document.getElementById('bg-canvas');
+    if (!canvas) return;
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x020617, 0.001);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 2000);
+    camera.position.z = 1000;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setClearColor(0x020617, 1);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    // Create stars
+    const starsGeometry = new THREE.BufferGeometry();
+    const starsMaterial = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 1.5,
+        transparent: true,
+        opacity: 0.8,
+        sizeAttenuation: true
+    });
+
+    const starsVertices = [];
+    for (let i = 0; i < 5000; i++) {
+        const x = THREE.MathUtils.randFloatSpread(2000);
+        const y = THREE.MathUtils.randFloatSpread(2000);
+        const z = THREE.MathUtils.randFloatSpread(2000);
+        starsVertices.push(x, y, z);
+    }
+    starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+    
+    const starField = new THREE.Points(starsGeometry, starsMaterial);
+    scene.add(starField);
+
+    function animate() {
+        requestAnimationFrame(animate);
+        starField.rotation.y += 0.0005;
+        starField.rotation.x += 0.0002;
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+}
+
+// --- LOADING STATE INJECTION ---
+async function performLogin() {
+    const btn = document.querySelector('.btn--primary');
+    const originalContent = btn.innerHTML;
+    
+    // Set loading state
+    btn.disabled = true;
+    btn.innerHTML = `<div class="loading-earth"></div> Authenticating...`;
+
+    const user = document.getElementById('login-user').value;
+    const pass = document.getElementById('login-pass').value;
+    const errorText = document.getElementById('login-error');
+
+    try {
+        const response = await fetch(`http://localhost:8000/login/${currentLoginRole}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: user, password: pass })
+        });
+
+        if (!response.ok) throw new Error("Invalid Credentials");
+
+        const data = await response.json();
+        localStorage.setItem("carbon_jwt_token", data.access_token);
+        
+        processSuccessfulLogin(data.access_token);
+
+    } catch (error) {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+        errorText.innerText = `Invalid ${currentLoginRole} credentials.`;
+        errorText.style.display = "block";
+    }
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', () => {
+    initStarryBackground();
 });

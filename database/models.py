@@ -21,6 +21,7 @@ class CreditStatus(enum.Enum):
     VERIFIED = "VERIFIED"
     ISSUED = "ISSUED"
     RETIRED = "RETIRED"
+    FLAGGED = "FLAGGED"
 
 # ==========================================
 # USER ARCHITECTURE (Concrete Table Inheritance)
@@ -32,7 +33,7 @@ class Farmer(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String, unique=True, index=True)
-    password_hash = Column(String)
+    password_hash = Column(String, nullable=False)
     
     # Farmer-specific columns
     mobile_number = Column(String)
@@ -45,7 +46,7 @@ class Institution(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String, unique=True, index=True)
-    password_hash = Column(String)
+    password_hash = Column(String, nullable=False)
     
     # Institution-specific columns
     company_name = Column(String)
