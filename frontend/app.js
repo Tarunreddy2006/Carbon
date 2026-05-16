@@ -998,6 +998,70 @@ async function runEstimation() {
         btn.innerHTML = originalContent;
     }
 }
+/* ── Stripe & Certificates ─────────────────────────────────────────────────── */
+
+async function initiateStripeCheckout(creditId) {
+    const token = localStorage.getItem('carbon_jwt_token');
+    if (!token) return alert("Please log in to continue.");
+    
+    try {
+        const response = await fetch(`${CONFIG.API_BASE}/billing/create-checkout-session/${creditId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Checkout failed: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        if (data.checkout_url) {
+            window.location.href = data.checkout_url;
+        } else {
+            throw new Error("No checkout URL returned.");
+        }
+    } catch (err) {
+        console.error("Stripe Checkout Error:", err);
+        alert("Failed to initiate checkout: " + err.message);
+    }
+}
+
+async function downloadCertificate(creditId) {
+    const token = localStorage.getItem('carbon_jwt_token');
+    if (!token) return alert("Please log in to continue.");
+    
+    try {
+        const response = await fetch(`${CONFIG.API_BASE}/certificate/${creditId}/download`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Download failed: ${response.statusText}`);
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `Verified_Carbon_Credit_${creditId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch (err) {
+        console.error("Certificate Download Error:", err);
+        alert("Failed to download certificate: " + err.message);
+    }
+}
+
 /* ── Exports & wiring ──────────────────────────────────────────────────────── */
 
 window.goToMyLocation = goToMyLocation;
@@ -1008,6 +1072,8 @@ window.switchLoginTab = switchLoginTab;
 window.performLogin = performLogin;
 window.runEstimation = runEstimation;
 window.logout = logout;
+window.initiateStripeCheckout = initiateStripeCheckout;
+window.downloadCertificate = downloadCertificate;
 
 document.addEventListener('DOMContentLoaded', function() {
     // Check if already logged in
@@ -1019,6 +1085,18 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         // Already logged in, go straight to app
         processSuccessfulLogin(token);
+    }
+    
+    // Check for successful Stripe checkout
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('checkout') === 'success') {
+        alert("Payment successful! You can now download your certificate.");
+        const downloadBtn = document.getElementById('btn-download-cert');
+        if (downloadBtn) {
+            downloadBtn.style.display = 'block';
+        }
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
     }
 });
 /**

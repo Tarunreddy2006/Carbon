@@ -42,8 +42,12 @@ async def health():
 
 @router.post("/estimate-carbon/draw")
 async def estimate_carbon_draw(payload: DynamicParcelRequest, user_token: dict = Depends(get_current_user)):
+    user_id = user_token.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User ID missing from token")
+
     if user_token.get("role") != "institution":
-        logger.warning(f"SECURITY INCIDENT: User {user_token.get('sub')} attempted unauthorized minting.")
+        logger.warning(f"SECURITY INCIDENT: User {user_id} attempted unauthorized minting.")
         raise HTTPException(status_code=403, detail="Only Institutional Auditors can mint carbon credits.")
     
     logger.info(f"▶ Offloading Parcel Registration to Celery ({payload.farm_id})")
@@ -52,7 +56,9 @@ async def estimate_carbon_draw(payload: DynamicParcelRequest, user_token: dict =
     payload_dict = {
         "farm_id": payload.farm_id,
         "source_type": payload.source_type,
-        "coordinates": payload.coordinates
+        "coordinates": payload.coordinates,
+        "user_id": user_id,
+        "tree_species": getattr(payload, "tree_species", None)
     }
     
     task = async_estimate_carbon_draw.delay(payload_dict, user_token.get("role"))

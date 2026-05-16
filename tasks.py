@@ -92,6 +92,9 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
     logger.info("======================================================")
     db: Session = SessionLocal()
     
+    user_id = payload_dict.get("user_id")
+    tree_species = payload_dict.get("tree_species", "mixed_tropical")
+    
     try:
         # 1. High-Precision Geometry Validation
         geojson_geom = {"type": "Polygon", "coordinates": [payload_dict['coordinates']]}
@@ -129,6 +132,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         # 3. Persist Spatial Data
         new_parcel = ParcelRecord(
             farm_id=payload_dict.get('farm_id'),
+            owner_id=user_id,
             boundary=wkt_string, 
             source_type=payload_dict.get('source_type'),
             calculated_area_ha=parcel_area_ha
@@ -145,6 +149,8 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         # 5. Scientific Metrics Calculation
         from utils.logic import calculate_confidence_score
         results = run_carbon_pipeline(
+            geojson_geom,
+            species=tree_species,
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
             ndvi_mean=gee_data["ndvi_mean"],
             sar_vh=gee_data.get("sar_vh_backscatter", -20.0), 
