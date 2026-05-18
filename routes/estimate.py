@@ -82,6 +82,7 @@ async def get_estimate_status(task_id: str, user_token: dict = Depends(get_curre
         return {"status": "completed", "result": task_result.result}
     elif task_result.state == 'FAILURE':
         error_msg = str(task_result.info)
+        logger.error(f"Task {task_id} failed: {error_msg}\nTraceback: {task_result.traceback}")
         try:
             import json
             error_json = json.loads(error_msg)
@@ -92,7 +93,7 @@ async def get_estimate_status(task_id: str, user_token: dict = Depends(get_curre
         except Exception:
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"status": "failed", "detail": error_msg}
+                content={"status": "failed", "detail": "An internal server error occurred during processing."}
             )
     else:
         return {"status": task_result.state}

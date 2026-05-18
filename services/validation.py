@@ -24,6 +24,9 @@ def validate_and_clean_geometry(geojson_geom: dict):
         if geom.is_empty or not isinstance(geom, Polygon):
             return None, 0.0
             
+        if geom.area > 0.05:
+            raise ValueError(f"Polygon exceeds maximum allowed size. Current area: {geom.area:.4f}")
+            
         # Calculate area using EPSG:6933 (Equal Area Projection) for high precision
         project = pyproj.Transformer.from_crs("epsg:4326", "epsg:6933", always_xy=True).transform
         projected_poly = transform(project, geom)

@@ -13,9 +13,6 @@ router = APIRouter(prefix="/billing", tags=["Billing & Monetization"])
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
-# Base URL for redirects
-FRONTEND_URL = "http://localhost:8000"
-
 @router.post("/create-checkout-session/{credit_id}")
 async def create_checkout_session(credit_id: str, db: Session = Depends(get_db), user: dict = Depends(get_current_user)):
     """Creates a Stripe Checkout Session to pay for minting the verified carbon credit."""
@@ -52,8 +49,8 @@ async def create_checkout_session(credit_id: str, db: Session = Depends(get_db),
                 'quantity': quantity,
             }],
             mode='payment',
-            success_url=f"{FRONTEND_URL}/?checkout=success&credit_id={credit_id}",
-            cancel_url=f"{FRONTEND_URL}/?checkout=canceled",
+            success_url=f"{settings.FRONTEND_URL}/?checkout=success&credit_id={credit_id}",
+            cancel_url=f"{settings.FRONTEND_URL}/?checkout=canceled",
             metadata={
                 "credit_id": str(credit.id)
             }

@@ -138,8 +138,6 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             calculated_area_ha=parcel_area_ha
         )
         db.add(new_parcel)
-        db.commit()
-        db.refresh(new_parcel)
 
         # 4. Multi-Sensor Analysis (GEE)
         logger.info("⏳ Sending geometry to Google Earth Engine...")
@@ -157,6 +155,9 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             opt_imgs=gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
             rad_imgs=gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0))
         )
+        
+        db.commit()
+        db.refresh(new_parcel)
 
         # 6. Historical Trend Analysis
         logger.info("⏳ Fetching 5-Year Historical Baseline...")

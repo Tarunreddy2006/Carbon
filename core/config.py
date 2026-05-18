@@ -5,13 +5,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 120
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     APP_ENV: str = "development"
     LOG_LEVEL: str = "INFO"
-    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500"
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "https://carbonengine.tech"]
+    FRONTEND_URL: str
     
     # Stripe integration
-    STRIPE_SECRET_KEY: str = "sk_test_123"
+    STRIPE_SECRET_KEY: str
     STRIPE_WEBHOOK_SECRET: str = "whsec_123"
 
 settings = Settings()

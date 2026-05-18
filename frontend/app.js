@@ -53,7 +53,7 @@ async function performLogin() {
 
     try {
         // 🟢 Inject the 'currentLoginRole' directly into the URL
-        const response = await fetch(`http://localhost:8000/login/${currentLoginRole}`, {
+        const response = await fetch(`${CONFIG.API_BASE}/login/${currentLoginRole}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: user, password: pass })
@@ -956,7 +956,7 @@ async function runEstimation() {
     };
 
     try {
-        const response = await fetch('http://localhost:8000/estimate-carbon/draw', {
+        const response = await fetch(`${CONFIG.API_BASE}/estimate-carbon/draw`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1062,6 +1062,52 @@ async function downloadCertificate(creditId) {
     }
 }
 
+function showRegisterScreen() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('register-screen').style.display = 'block';
+}
+
+function showLoginScreen() {
+    document.getElementById('register-screen').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'block';
+}
+
+async function performRegister() {
+    const btn = document.querySelector('#register-screen .btn--primary');
+    const originalContent = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = `<div class="spinner"></div> Registering...`;
+
+    const user = document.getElementById('reg-user').value;
+    const pass = document.getElementById('reg-pass').value;
+    const errorText = document.getElementById('reg-error');
+    errorText.style.display = 'none';
+
+    try {
+        const response = await fetch(`${CONFIG.API_BASE}/register/institution`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: user, password: pass })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || "Registration failed");
+        }
+
+        alert("Registration successful! Please log in.");
+        showLoginScreen();
+
+    } catch (error) {
+        errorText.innerText = error.message;
+        errorText.style.display = "block";
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+    }
+}
+
 /* ── Exports & wiring ──────────────────────────────────────────────────────── */
 
 window.goToMyLocation = goToMyLocation;
@@ -1074,6 +1120,9 @@ window.runEstimation = runEstimation;
 window.logout = logout;
 window.initiateStripeCheckout = initiateStripeCheckout;
 window.downloadCertificate = downloadCertificate;
+window.showRegisterScreen = showRegisterScreen;
+window.showLoginScreen = showLoginScreen;
+window.performRegister = performRegister;
 
 document.addEventListener('DOMContentLoaded', function() {
     // Check if already logged in
@@ -1170,7 +1219,7 @@ async function performLogin() {
     const errorText = document.getElementById('login-error');
 
     try {
-        const response = await fetch(`http://localhost:8000/login/${currentLoginRole}`, {
+        const response = await fetch(`${CONFIG.API_BASE}/login/${currentLoginRole}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username: user, password: pass })

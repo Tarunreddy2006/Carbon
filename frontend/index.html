@@ -39,6 +39,30 @@
                 SECURE SIGN IN
             </button>
             <p id="login-error" style="color: #ef4444; display: none; margin-top: 10px;"></p>
+            <p style="margin-top: 15px; text-align: center;">
+                <a href="#" onclick="showRegisterScreen()" style="color: #58a6ff; text-decoration: none;">Register Institution</a>
+            </p>
+        </div>
+    </div>
+
+    <div id="register-screen" class="login-container" style="display: none;">
+        <div class="login-box glass-premium">
+            <div class="logo-wrapper">
+                <div class="earth-logo"></div>
+            </div>
+            <h2>REGISTER INSTITUTION</h2>
+            <p>Join the Intelligence-Grade Digital MRV Platform</p>
+
+            <input type="text" id="reg-user" class="input-dark" placeholder="Username" style="margin-bottom: 10px;">
+            <input type="password" id="reg-pass" class="input-dark" placeholder="Password">
+            
+            <button class="btn btn--primary" style="width: 100%; margin-top: 15px;" onclick="performRegister()">
+                REGISTER
+            </button>
+            <p id="reg-error" style="color: #ef4444; display: none; margin-top: 10px;"></p>
+            <p style="margin-top: 15px; text-align: center;">
+                <a href="#" onclick="showLoginScreen()" style="color: #58a6ff; text-decoration: none;">Back to Login</a>
+            </p>
         </div>
     </div>
 
