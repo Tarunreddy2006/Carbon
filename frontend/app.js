@@ -97,6 +97,7 @@ const CONFIG = {
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let map, drawnItems;
 let drawnPolygon = null;
+let currentResultLayer = null;
 let resultLayer  = null;
 let locationMarker = null;
 let _satTile = null, _darkTile = null, _isSat = false;
@@ -123,9 +124,17 @@ function initMap() {
   // Polygon completed
   map.on(L.Draw.Event.CREATED, function(e) {
     drawnItems.clearLayers();
+    if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
     if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
     drawnItems.addLayer(e.layer);
-    drawnPolygon = e.layer.toGeoJSON().geometry;
+    
+    // Explicitly ensure [Longitude, Latitude] mapping for GEE compatibility
+    const latLngs = e.layer.getLatLngs()[0];
+    drawnPolygon = {
+      type: 'Polygon',
+      coordinates: [latLngs.map(ll => [ll.lng, ll.lat])]
+    };
+    
     _isDrawing = false;
     _updateDrawBtn(false);
     _onDrawn();
@@ -277,6 +286,7 @@ function startDrawing() {
 
   drawnItems.clearLayers();
   drawnPolygon = null;
+  if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
   if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
   
   const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
@@ -307,6 +317,7 @@ function clearPolygon() {
   drawnItems.clearLayers();
   drawnPolygon = null;
   window.currentPolygonCoords = null;
+  if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
   if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
   
   const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
@@ -508,17 +519,18 @@ function _swapToDark() {
 /* ── Result rendering ──────────────────────────────────────────────────────── */
 
 function drawResult(geojson, data) {
+  if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
   if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
   drawnItems.clearLayers();
 
   let confStr = data.confidence_score ? data.confidence_score.toFixed(1) + '%' : '-';
 
-  resultLayer = L.geoJSON(
+  currentResultLayer = L.geoJSON(
     { type: 'Feature', geometry: geojson, properties: {} },
     { style: CONFIG.DONE_STYLE }
   ).addTo(map);
 
-  resultLayer.bindPopup(
+  currentResultLayer.bindPopup(
     '<b>🌿 ' + data.parcel_id + '</b><br><br>' +
     '<b>Confidence Score</b> <b style="color:#58a6ff">' + confStr + '</b><br>' +
     '<b>NDVI</b> ' + fmt(data.ndvi_mean, 3) + '&nbsp;&nbsp;' +
@@ -699,91 +711,6 @@ function setLoading(on) {
 
 /* ── API ───────────────────────────────────────────────────────────────────── */
 
-async function runEstimate() {
-  if (!drawnPolygon) {
-    setStatus('error', 'Draw a polygon on the map first', '✖');
-    return;
-  }
-  var label = document.getElementById('f-label').value.trim() || 'GPS Farm';
-
-  setLoading(true);
-  setStatus('loading', '🛰️  Dispatching task to background worker…');
-  clearResultsPanel();
-
-  var payload = {
-    farm_id: label,
-    source_type: "MANUAL_DRAW",
-    coordinates: drawnPolygon.coordinates[0]
-  };
-
-  const token = localStorage.getItem('carbon_jwt_token');
-
-  try {
-    // 1. Dispatch Task
-    var resp = await fetch('/estimate-carbon/draw', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': token ? 'Bearer ' + token : ''
-      },
-      body: JSON.stringify(payload),
-    });
-    
-    if (!resp.ok) {
-      var err = await resp.json().catch(function() { return { detail: resp.statusText }; });
-      throw new Error(err.detail || 'HTTP ' + resp.status);
-    }
-    
-    var data = await resp.json();
-    var taskId = data.task_id;
-    
-    if (!taskId) throw new Error("No task ID returned by backend");
-
-    setStatus('loading', '⏳ Task dispatched. Polling Earth Engine for results...');
-
-    // 2. Poll Status
-    let completed = false;
-    while (!completed) {
-      await new Promise(resolve => setTimeout(resolve, 3000)); // poll every 3 seconds
-      
-      var pollResp = await fetch(`/estimate-carbon/status/${taskId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': token ? 'Bearer ' + token : ''
-        }
-      });
-      
-      if (!pollResp.ok) {
-        var pollErr = await pollResp.json().catch(function() { return { detail: pollResp.statusText }; });
-        // Handle explicit failure returned by HTTP 409 etc.
-        let msg = pollErr.detail;
-        if (typeof msg === 'object' && msg.message) msg = msg.message;
-        throw new Error(msg || 'HTTP ' + pollResp.status);
-      }
-      
-      var pollData = await pollResp.json();
-      
-      if (pollData.status === 'completed') {
-        completed = true;
-        renderResults(pollData.result);
-        drawResult(pollData.result.parcel_polygon, pollData.result);
-        setStatus('success', '✔ Analysis complete — ' + fmt(pollData.result.co2_equivalent_tons, 1) + ' t CO₂e estimated', '✔');
-      } else if (pollData.status === 'failed') {
-        completed = true;
-        let msg = pollData.detail;
-        if (typeof msg === 'object' && msg.message) msg = msg.message;
-        throw new Error(msg || 'Task failed');
-      }
-    }
-
-  } catch(err) {
-    setStatus('error', 'Error: ' + err.message, '✖');
-    console.error('[carbon-engine]', err);
-  } finally {
-    setLoading(false);
-  }
-}
-
 async function runDemo() {
   var label   = document.getElementById('f-label').value.trim() || 'Demo Farm';
   var polygon = drawnPolygon || {
@@ -919,39 +846,40 @@ async function runEstimation() {
         return;
     }
 
-    // Get the appropriate button for the current role
     const userRole = localStorage.getItem('carbon_user_role') || 'farmer';
     const btnId = userRole === 'farmer' ? 'btn-estimate-farmer' : 'btn-estimate-inst';
     const btn = document.getElementById(btnId);
-    const originalContent = btn.innerHTML;
+    const originalContent = btn ? btn.innerHTML : '';
 
-    // Validate polygon
     if (!drawnPolygon && !window.currentPolygonCoords) {
         setStatus('error', 'Please draw or paste coordinates first.', '✖');
         return;
     }
 
-    // Show loading state
-    btn.disabled = true;
-    btn.innerHTML = '<div class="spinner"></div> Analyzing satellite imagery...';
-    setStatus('loading', '🛰️ Connecting to Google Earth Engine — analyzing Sentinel-2 imagery…');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<div class="spinner"></div> Analyzing satellite imagery...';
+    }
+    
+    setStatus('loading', '🛰️  Dispatching task to background worker…');
     clearResultsPanel();
 
-    // Extract coordinates
     const coords = window.currentPolygonCoords || (drawnPolygon ? drawnPolygon.coordinates[0] : null);
     if (!coords || coords.length < 3) {
         setStatus('error', 'Invalid polygon - need at least 3 points.', '✖');
-        btn.disabled = false;
-        btn.innerHTML = originalContent;
+        if (btn) { btn.disabled = false; btn.innerHTML = originalContent; }
         return;
     }
 
-    const farmId = document.getElementById('f-id').value.trim() || 'Farm-' + Date.now();
-    const species = document.getElementById('f-species').value;
+    const labelEl = document.getElementById('f-label') || document.getElementById('f-id');
+    const farmId = labelEl ? labelEl.value.trim() : 'Farm-' + Date.now();
+    const speciesEl = document.getElementById('f-species');
+    const species = speciesEl ? speciesEl.value : '';
 
     const payload = {
         farm_id: farmId,
         tree_species: species,
+        source_type: "MANUAL_DRAW",
         coordinates: coords
     };
 
@@ -973,29 +901,62 @@ async function runEstimation() {
 
         if (response.status === 403) {
             setStatus('error', '🔒 Your role does not have authorization to mint carbon credits.', '✖');
-            btn.disabled = false;
-            btn.innerHTML = originalContent;
+            if (btn) { btn.disabled = false; btn.innerHTML = originalContent; }
             return;
         }
 
         if (!response.ok) {
-            const errData = await response.json();
+            const errData = await response.json().catch(() => ({}));
             throw new Error(errData.detail || `HTTP ${response.status}`);
         }
 
         const data = await response.json();
+        const taskId = data.task_id;
         
-        // Render results
-        renderResults(data);
-        drawResult(data.parcel_polygon, data);
-        setStatus('success', `✔ Analysis complete — ${fmt(data.co2_equivalent_tons, 1)} t CO₂e estimated`, '✔');
+        if (!taskId) throw new Error("No task ID returned by backend");
 
+        setStatus('loading', '⏳ Task dispatched. Polling Earth Engine for results...');
+
+        let completed = false;
+        while (!completed) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const pollResp = await fetch(`${CONFIG.API_BASE}/estimate-carbon/status/${taskId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${userToken}`
+                }
+            });
+            
+            if (!pollResp.ok) {
+                const pollErr = await pollResp.json().catch(() => ({}));
+                let msg = pollErr.detail;
+                if (typeof msg === 'object' && msg.message) msg = msg.message;
+                throw new Error(msg || `HTTP ${pollResp.status}`);
+            }
+            
+            const pollData = await pollResp.json();
+            
+            if (pollData.status === 'completed') {
+                completed = true;
+                renderResults(pollData.result);
+                drawResult(pollData.result.parcel_polygon, pollData.result);
+                setStatus('success', `✔ Analysis complete — ${fmt(pollData.result.co2_equivalent_tons, 1)} t CO₂e estimated`, '✔');
+            } else if (pollData.status === 'failed') {
+                completed = true;
+                let msg = pollData.detail;
+                if (typeof msg === 'object' && msg.message) msg = msg.message;
+                throw new Error(msg || 'Task failed');
+            }
+        }
     } catch (error) {
         console.error('[carbon-engine]', error);
         setStatus('error', `Error: ${error.message}`, '✖');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalContent;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+        }
     }
 }
 /* ── Stripe & Certificates ─────────────────────────────────────────────────── */
@@ -1081,6 +1042,7 @@ async function performRegister() {
 
     const user = document.getElementById('reg-user').value;
     const pass = document.getElementById('reg-pass').value;
+    const company = document.getElementById('reg-company') ? document.getElementById('reg-company').value : user + ' Org';
     const errorText = document.getElementById('reg-error');
     errorText.style.display = 'none';
 
@@ -1088,7 +1050,7 @@ async function performRegister() {
         const response = await fetch(`${CONFIG.API_BASE}/register/institution`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: user, password: pass })
+            body: JSON.stringify({ username: user, password: pass, company_name: company })
         });
 
         if (!response.ok) {
@@ -1096,7 +1058,7 @@ async function performRegister() {
             throw new Error(errData.detail || "Registration failed");
         }
 
-        alert("Registration successful! Please log in.");
+        alert("Registration successful! Switching to login tab...");
         showLoginScreen();
 
     } catch (error) {

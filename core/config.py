@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     APP_ENV: str = "development"
     LOG_LEVEL: str = "INFO"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "https://carbonengine.tech"]
-    FRONTEND_URL: str
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "https://anthra.tech", "https://www.anthra.tech"]
+    FRONTEND_URL: str = "https://anthra.tech"
     
     # Stripe integration
     STRIPE_SECRET_KEY: str
