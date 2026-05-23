@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def initialise_gee():
     if not ee.data._initialized:
-        project_id = os.getenv("GEE_PROJECT_ID")
+        project_id = "/etc/secrets/detrixai.json"
         ee.Initialize(project=project_id)
 
 def mask_clouds(image):
