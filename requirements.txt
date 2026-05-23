@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+gunicorn
+pydantic
+pydantic-settings
+sqlalchemy
+geoalchemy2
+psycopg2-binary
+celery
+redis
+stripe
+PyJWT
+passlib[bcrypt]
+earthengine-api
+shapely
+pyproj
+reportlab
