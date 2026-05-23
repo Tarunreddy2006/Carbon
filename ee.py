@@ -4,7 +4,7 @@ import os
 from google.oauth2 import service_account
 
 service_account_info = json.loads(
-    os.getenv("GEE_SERVICE_ACCOUNT_JSON")
+    "/etc/secrets/detrixai.json"
 )
 
 credentials = service_account.Credentials.from_service_account_info(
