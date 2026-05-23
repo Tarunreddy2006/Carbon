@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
         response.headers["X-Process-Time"] = f"{(time.perf_counter() - start) * 1_000:.1f}ms"
         return response
 
-    origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+    origins = settings.CORS_ORIGINS
     app.add_middleware(
         CORSMiddleware,
         allow_origins     = origins,
