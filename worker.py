@@ -9,7 +9,7 @@ from celery import Celery
 from celery.schedules import crontab
 
 # Connect to local Redis broker
-REDIS_URL = os.getenv("REDIS_URL","rediss://default:gQAAAAAAAZUrAAIgcDEzNDVmZjgwOTc2YzE0MjFhYjUyN2M3OGI5MjFkMDFlOQ@eager-javelin-103723.upstash.io:6379")
+REDIS_URL = os.getenv("REDIS_URL")
 
 celery_app = Celery(
     "carbon_mrv_worker",
