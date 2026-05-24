@@ -6,7 +6,7 @@ The automated AI background tasks.
 """
 import logging
 import asyncio
-from celery import celery_app
+from celery import @shared_task
 from sqlalchemy.orm import Session
 import shapely.wkt
 import shapely.geometry
@@ -18,7 +18,7 @@ from utils.logic import run_carbon_pipeline
 
 logger = logging.getLogger("celery_tasks")
 
-@celery_app
+@shared_task
 def run_continuous_mrv_audit():
     """
     Periodic cron job that re-scans all active carbon projects.
@@ -85,7 +85,7 @@ from sqlalchemy import func
 from datetime import datetime, timezone
 import json
 
-@celery_app.task(bind=True)
+@shared_task.task(bind=True)
 def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
     logger.info("======================================================")
     logger.info(f"▶ ASYNC PARCEL REGISTRATION INITIATED ({payload_dict.get('farm_id')})")
