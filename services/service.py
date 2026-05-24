@@ -21,7 +21,7 @@ def initialise_gee():
         ee.Number(1).getInfo()
     except Exception:
         # If not initialized, load the raw JSON string from DigitalOcean Environment Variables
-        creds_json_str = os.getenv("GEE_SERVICE_ACCOUNT_JSON")
+        creds_json_str = os.getenv("GEE_KEY_FILE")
         project_id = os.getenv("GEE_PROJECT_ID")
         
         if not creds_json_str or not project_id:
