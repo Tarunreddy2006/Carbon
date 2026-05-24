@@ -6,7 +6,7 @@ The automated AI background tasks.
 """
 import logging
 import asyncio
-from celery import @shared_task
+from celery import shared_task
 from sqlalchemy.orm import Session
 import shapely.wkt
 import shapely.geometry
