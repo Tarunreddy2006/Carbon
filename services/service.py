@@ -8,24 +8,40 @@ Performs cloud-masking and multi-temporal median compositing.
 
 import ee
 import os
+import json
 import logging
 from datetime import datetime, timedelta, timezone
+from google.oauth2 import service_account
 
 logger = logging.getLogger(__name__)
 
 def initialise_gee():
     try:
-        credentials = ee.ServiceAccountCredentials(
-            os.getenv("GEE_SERVICE_ACCOUNT"),
-            os.getenv("GEE_KEY_FILE")
-        )
+        # Check if already initialized by running a tiny dummy operation
+        ee.Number(1).getInfo()
+    except Exception:
+        # If not initialized, load the raw JSON string from DigitalOcean Environment Variables
+        creds_json_str = os.getenv("GEE_SERVICE_ACCOUNT_JSON")
+        project_id = os.getenv("GEE_PROJECT_ID")
+        
+        if not creds_json_str or not project_id:
+            logger.warning("Missing GEE_CREDENTIALS_JSON or GEE_PROJECT_ID environment variables.")
+            return
 
-        ee.Initialize(credentials)
-
-        logger.info("✅ GEE initialized successfully")
-
-    except Exception as e:
-        logger.warning(f"⚠ GEE initialization failed: {e}")
+        try:
+            creds_dict = json.loads(creds_json_str)
+            credentials = service_account.Credentials.from_service_account_info(
+                creds_dict,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            
+            ee.Initialize(
+                credentials,
+                project=project_id
+            )
+            logger.info("✅ GEE initialized successfully via JSON string")
+        except Exception as e:
+            logger.error(f"⚠ GEE initialization failed: {e}")
 
 def mask_clouds(image):
     qa = image.select('QA60')
