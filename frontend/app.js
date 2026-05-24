@@ -82,7 +82,7 @@ async function performLogin() {
 }
 
 const CONFIG = {
-  API_BASE:   window.location.origin,
+  API_BASE:   "https://stomata.tech",
   MAP_CENTER: [12.295, 76.639],   // Karnataka default
   MAP_ZOOM:   7,
   SAT_URL:    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
