@@ -14,9 +14,18 @@ from datetime import datetime, timedelta, timezone
 logger = logging.getLogger(__name__)
 
 def initialise_gee():
-    if not ee.data._initialized:
-        project_id = os.getenv("GEE_PROJECT_ID")
-        ee.Initialize(project=project_id)
+    try:
+        credentials = ee.ServiceAccountCredentials(
+            os.getenv("GEE_SERVICE_ACCOUNT"),
+            os.getenv("GEE_KEY_FILE")
+        )
+
+        ee.Initialize(credentials)
+
+        logger.info("✅ GEE initialized successfully")
+
+    except Exception as e:
+        logger.warning(f"⚠ GEE initialization failed: {e}")
 
 def mask_clouds(image):
     qa = image.select('QA60')
