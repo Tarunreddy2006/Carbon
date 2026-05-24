@@ -21,7 +21,7 @@ def initialise_gee():
         ee.Number(1).getInfo()
     except Exception:
         # Get the filename from the environment (defaults to detrixai.json)
-        key_file_path = os.getenv("GEE_KEY_FILE", "detrixai.json")
+        key_file_path = "/app/detrixai.json"
         project_id = os.getenv("GEE_PROJECT_ID")
         
         # Ensure the file actually exists inside the Docker container
