@@ -85,7 +85,7 @@ from sqlalchemy import func
 from datetime import datetime, timezone
 import json
 
-@shared_task.task(bind=True)
+@shared_task(bind=True)
 def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
     logger.info("======================================================")
     logger.info(f"▶ ASYNC PARCEL REGISTRATION INITIATED ({payload_dict.get('farm_id')})")
