@@ -20,18 +20,19 @@ def initialise_gee():
         # Check if already initialized by running a tiny dummy operation
         ee.Number(1).getInfo()
     except Exception:
-        # If not initialized, load the raw JSON string from DigitalOcean Environment Variables
-        creds_json_str = os.getenv("GEE_KEY_FILE")
+        # Get the filename from the environment (defaults to detrixai.json)
+        key_file_path = os.getenv("GEE_KEY_FILE", "detrixai.json")
         project_id = os.getenv("GEE_PROJECT_ID")
         
-        if not creds_json_str or not project_id:
-            logger.warning("Missing GEE_CREDENTIALS_JSON or GEE_PROJECT_ID environment variables.")
+        # Ensure the file actually exists inside the Docker container
+        if not os.path.exists(key_file_path):
+            logger.warning(f"Missing GEE key file at: {key_file_path}")
             return
 
         try:
-            creds_dict = json.loads(creds_json_str)
-            credentials = service_account.Credentials.from_service_account_info(
-                creds_dict,
+            # CORRECT METHOD: Tell Google to read the physical file
+            credentials = service_account.Credentials.from_service_account_file(
+                key_file_path,
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             
@@ -39,7 +40,7 @@ def initialise_gee():
                 credentials,
                 project=project_id
             )
-            logger.info("✅ GEE initialized successfully via JSON string")
+            logger.info("✅ GEE initialized successfully via physical JSON file")
         except Exception as e:
             logger.error(f"⚠ GEE initialization failed: {e}")
 
