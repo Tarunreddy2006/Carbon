@@ -28,6 +28,8 @@ def run_carbon_pipeline(veg_pixels: int, ndvi_mean: float, sar_vh: float, opt_im
     Sensor Fusion Model with Saturation Damper.
     Adjusts weights dynamically based on canopy density to avoid carbon underestimation.
     """
+    if not species:
+        species = "mixed_tropical"
     area_ha = veg_pixels * 0.01 
     max_density = SPECIES_FACTORS.get(species.lower(), 120.0)
 
