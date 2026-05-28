@@ -16,33 +16,20 @@ from google.oauth2 import service_account
 logger = logging.getLogger(__name__)
 
 def initialise_gee():
+    if ee.data._credentials:
+        return
     try:
-        # Check if already initialized by running a tiny dummy operation
-        ee.Number(1).getInfo()
-    except Exception:
-        # Get the filename from the environment (defaults to detrixai.json)
         key_file_path = "/app/detrixai.json"
-        project_id = os.getenv("GEE_PROJECT_ID")
-        
-        # Ensure the file actually exists inside the Docker container
-        if not os.path.exists(key_file_path):
-            logger.warning(f"Missing GEE key file at: {key_file_path}")
-            return
+        credentials = service_account.Credentials.from_service_account_file(
+            key_path,
+            scopes=['https://www.googleapis.com/auth/earthengine'] 
+        )
 
-        try:
-            # CORRECT METHOD: Tell Google to read the physical file
-            credentials = service_account.Credentials.from_service_account_file(
-                key_file_path,
-                scopes=["https://www.googleapis.com/auth/cloud-platform"]
-            )
-            
-            ee.Initialize(
-                credentials,
-                project=project_id
-            )
-            logger.info("✅ GEE initialized successfully via physical JSON file")
-        except Exception as e:
-            logger.error(f"⚠ GEE initialization failed: {e}")
+        ee.Initialize(credentials)
+        logger.info("✅ GEE Authentication Successful!")
+    except Exception as e:
+        logger.error(f"⚠ GEE initialization failed: {e}")
+        raise
 
 def mask_clouds(image):
     qa = image.select('QA60')
