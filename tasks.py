@@ -132,7 +132,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         # 3. Persist Spatial Data
         new_parcel = ParcelRecord(
             farm_id=payload_dict.get('farm_id'),
-            owner_id=user_id,
+            user_id=user_id,
             boundary=wkt_string, 
             source_type=payload_dict.get('source_type'),
             calculated_area_ha=parcel_area_ha
