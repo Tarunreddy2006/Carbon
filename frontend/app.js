@@ -52,24 +52,12 @@ async function performLogin() {
     errorText.style.display = 'none';
 
     try {
-        // 🟢 Inject the 'currentLoginRole' directly into the URL
-        const response = await fetch(`${CONFIG.API_BASE}/login/${currentLoginRole}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: user, password: pass })
-        });
+        const data = await api.login(currentLoginRole, { username: user, password: pass });
 
-        if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.detail || 'Invalid Credentials');
-        }
-
-        const data = await response.json();
-        
         // Save the JWT token
-        localStorage.setItem('carbon_jwt_token', data.access_token);
-        localStorage.setItem('carbon_user_role', currentLoginRole);
-        
+        localStorage.setItem(CONFIG.TOKEN_KEY, data.access_token);
+        localStorage.setItem(CONFIG.ROLE_KEY, currentLoginRole);
+
         // Transition to main app
         processSuccessfulLogin(data.access_token);
 
@@ -81,18 +69,7 @@ async function performLogin() {
     }
 }
 
-const CONFIG = {
-  API_BASE:   "https://stomata.tech",
-  MAP_CENTER: [12.295, 76.639],   // Karnataka default
-  MAP_ZOOM:   7,
-  SAT_URL:    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-  SAT_ATTR:   'Tiles &copy; Esri &mdash; Esri, Maxar, Earthstar Geographics',
-  DARK_URL:   'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  DARK_ATTR:  '© <a href="https://carto.com/">CARTO</a> © <a href="https://www.openstreetmap.org/">OSM</a>',
-  DARK_SUBS:  'abcd',
-  DRAW_STYLE: { color:'#3fb950', weight:2, opacity:1, fillColor:'#3fb950', fillOpacity:0.12 },
-  DONE_STYLE: { color:'#ff6b6b', weight:2.5, opacity:0.9, fillColor:'#3fb950', fillOpacity:0.18, dashArray:'5 4' },
-};
+// CONFIG is now loaded from config.js (included via <script> tag before app.js)
 
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let map, drawnItems;
@@ -723,30 +700,15 @@ async function runDemo() {
   setStatus('loading', '⚡  Running demo estimation…');
   clearResultsPanel();
 
-  var payload= {
-    farm_id: label,
-    source_type: "DEMO_DATA",
-    coordinates: polygon.coordinates[0]
-  };
-
   try {
-    var resp = await fetch(CONFIG.API_BASE + '/estimate-carbon/demo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label: label, polygon: polygon }),
-    });
-    if (!resp.ok) {
-      var err = await resp.json().catch(function() { return { detail: resp.statusText }; });
-      throw new Error(err.detail || 'HTTP ' + resp.status);
-    }
-    var data = await resp.json();
+    var data = await api.estimateCarbonDemo({ label: label, polygon: polygon });
     renderResults(data);
     drawResult(data.parcel_polygon, data);
     setStatus('success',
       '⚡ Demo complete — ' + fmt(data.co2_equivalent_tons, 1) + ' t CO₂e estimated', '⚡');
   } catch(err) {
     setStatus('error',
-      'Error: ' + err.message + ' — Is the API running at ' + CONFIG.API_BASE + '?', '✖');
+      'Error: ' + err.message + ' — Is the API running at ' + CONFIG.API_BASE_URL + '?', '✖');
   } finally {
     setLoading(false);
   }
@@ -757,7 +719,7 @@ async function runDemo() {
 
 // Check if user is already logged in on page load
 window.onload = () => {
-    const token = localStorage.getItem("carbon_jwt_token");
+    const token = localStorage.getItem(CONFIG.TOKEN_KEY);
     if (token) {
         processSuccessfulLogin(token);
     }
@@ -794,7 +756,7 @@ function processSuccessfulLogin(token) {
 
 function switchRole(role) {
     // Update role memory
-    localStorage.setItem('carbon_user_role', role);
+    localStorage.setItem(CONFIG.ROLE_KEY, role);
 
     // Update tab styling
     const tabFarmer = document.getElementById('tab-farmer');
@@ -831,7 +793,7 @@ function switchRole(role) {
 }
 
 function logout() {
-    localStorage.removeItem("carbon_jwt_token");
+    localStorage.removeItem(CONFIG.TOKEN_KEY);
     location.reload(); // Refresh page to reset state
 }
 
@@ -839,14 +801,14 @@ function logout() {
 // API REQUEST WITH JWT (The Bouncer Check)
 // ==========================================
 async function runEstimation() {
-    const userToken = localStorage.getItem("carbon_jwt_token");
+    const userToken = localStorage.getItem(CONFIG.TOKEN_KEY);
     if (!userToken) {
         setStatus('error', 'Session expired. Please log in again.', '✖');
         setTimeout(() => logout(), 2000);
         return;
     }
 
-    const userRole = localStorage.getItem('carbon_user_role') || 'farmer';
+    const userRole = localStorage.getItem(CONFIG.ROLE_KEY) || 'farmer';
     const btnId = userRole === 'farmer' ? 'btn-estimate-farmer' : 'btn-estimate-inst';
     const btn = document.getElementById(btnId);
     const originalContent = btn ? btn.innerHTML : '';
@@ -884,35 +846,9 @@ async function runEstimation() {
     };
 
     try {
-        const response = await fetch(`${CONFIG.API_BASE}/estimate-carbon/draw`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${userToken}`
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.status === 401) {
-            setStatus('error', 'Session expired. Please log in again.', '✖');
-            setTimeout(() => logout(), 2000);
-            return;
-        }
-
-        if (response.status === 403) {
-            setStatus('error', '🔒 Your role does not have authorization to mint carbon credits.', '✖');
-            if (btn) { btn.disabled = false; btn.innerHTML = originalContent; }
-            return;
-        }
-
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.detail || `HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
+        const data = await api.estimateCarbonDraw(payload);
         const taskId = data.task_id;
-        
+
         if (!taskId) throw new Error("No task ID returned by backend");
 
         setStatus('loading', '⏳ Task dispatched. Polling Earth Engine for results...');
@@ -920,23 +856,9 @@ async function runEstimation() {
         let completed = false;
         while (!completed) {
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            const pollResp = await fetch(`${CONFIG.API_BASE}/estimate-carbon/status/${taskId}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${userToken}`
-                }
-            });
-            
-            if (!pollResp.ok) {
-                const pollErr = await pollResp.json().catch(() => ({}));
-                let msg = pollErr.detail;
-                if (typeof msg === 'object' && msg.message) msg = msg.message;
-                throw new Error(msg || `HTTP ${pollResp.status}`);
-            }
-            
-            const pollData = await pollResp.json();
-            
+
+            const pollData = await api.checkTaskStatus(taskId);
+
             if (pollData.status === 'completed') {
                 completed = true;
                 renderResults(pollData.result);
@@ -951,6 +873,15 @@ async function runEstimation() {
         }
     } catch (error) {
         console.error('[carbon-engine]', error);
+        if (error.status === 401) {
+            setStatus('error', 'Session expired. Please log in again.', '✖');
+            setTimeout(() => logout(), 2000);
+            return;
+        }
+        if (error.status === 403) {
+            setStatus('error', '🔒 Your role does not have authorization to mint carbon credits.', '✖');
+            return;
+        }
         setStatus('error', `Error: ${error.message}`, '✖');
     } finally {
         if (btn) {
@@ -962,23 +893,10 @@ async function runEstimation() {
 /* ── Stripe & Certificates ─────────────────────────────────────────────────── */
 
 async function initiateStripeCheckout(creditId) {
-    const token = localStorage.getItem('carbon_jwt_token');
-    if (!token) return alert("Please log in to continue.");
-    
+    if (!localStorage.getItem(CONFIG.TOKEN_KEY)) return alert("Please log in to continue.");
+
     try {
-        const response = await fetch(`${CONFIG.API_BASE}/billing/create-checkout-session/${creditId}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Checkout failed: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
+        const data = await api.createCheckoutSession(creditId);
         if (data.checkout_url) {
             window.location.href = data.checkout_url;
         } else {
@@ -991,22 +909,10 @@ async function initiateStripeCheckout(creditId) {
 }
 
 async function downloadCertificate(creditId) {
-    const token = localStorage.getItem('carbon_jwt_token');
-    if (!token) return alert("Please log in to continue.");
-    
+    if (!localStorage.getItem(CONFIG.TOKEN_KEY)) return alert("Please log in to continue.");
+
     try {
-        const response = await fetch(`${CONFIG.API_BASE}/certificate/${creditId}/download`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Download failed: ${response.statusText}`);
-        }
-        
-        const blob = await response.blob();
+        const blob = await api.downloadCertificate(creditId);
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
@@ -1014,7 +920,7 @@ async function downloadCertificate(creditId) {
         a.download = `Verified_Carbon_Credit_${creditId}.pdf`;
         document.body.appendChild(a);
         a.click();
-        
+
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
     } catch (err) {
@@ -1036,7 +942,7 @@ function showLoginScreen() {
 async function performRegister() {
     const btn = document.querySelector('#register-screen .btn--primary');
     const originalContent = btn.innerHTML;
-    
+
     btn.disabled = true;
     btn.innerHTML = `<div class="spinner"></div> Registering...`;
 
@@ -1047,16 +953,7 @@ async function performRegister() {
     errorText.style.display = 'none';
 
     try {
-        const response = await fetch(`${CONFIG.API_BASE}/register/institution`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: user, password: pass, company_name: company })
-        });
-
-        if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.detail || "Registration failed");
-        }
+        await api.registerInstitution({ username: user, password: pass, company_name: company });
 
         alert("Registration successful! Switching to login tab...");
         showLoginScreen();
@@ -1088,7 +985,7 @@ window.performRegister = performRegister;
 
 document.addEventListener('DOMContentLoaded', function() {
     // Check if already logged in
-    const token = localStorage.getItem("carbon_jwt_token");
+    const token = localStorage.getItem(CONFIG.TOKEN_KEY);
     if (!token) {
         // Show login screen
         document.getElementById('login-screen').style.display = 'block';
@@ -1109,11 +1006,10 @@ document.addEventListener('DOMContentLoaded', function() {
         // Clean URL
         window.history.replaceState({}, document.title, window.location.pathname);
     }
-});
-/**
- * REFACTORED app.js — CarbonEngine Enterprise Visuals
- */
 
+    // Initialize starry background for login screen
+    initStarryBackground();
+});
 // --- UPGRADED 3D STARRY BACKGROUND ---
 function initStarryBackground() {
     const canvas = document.getElementById('bg-canvas');
@@ -1148,7 +1044,7 @@ function initStarryBackground() {
         starsVertices.push(x, y, z);
     }
     starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
-    
+
     const starField = new THREE.Points(starsGeometry, starsMaterial);
     scene.add(starField);
 
@@ -1166,43 +1062,3 @@ function initStarryBackground() {
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
 }
-
-// --- LOADING STATE INJECTION ---
-async function performLogin() {
-    const btn = document.querySelector('.btn--primary');
-    const originalContent = btn.innerHTML;
-    
-    // Set loading state
-    btn.disabled = true;
-    btn.innerHTML = `<div class="loading-earth"></div> Authenticating...`;
-
-    const user = document.getElementById('login-user').value;
-    const pass = document.getElementById('login-pass').value;
-    const errorText = document.getElementById('login-error');
-
-    try {
-        const response = await fetch(`${CONFIG.API_BASE}/login/${currentLoginRole}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: user, password: pass })
-        });
-
-        if (!response.ok) throw new Error("Invalid Credentials");
-
-        const data = await response.json();
-        localStorage.setItem("carbon_jwt_token", data.access_token);
-        
-        processSuccessfulLogin(data.access_token);
-
-    } catch (error) {
-        btn.disabled = false;
-        btn.innerHTML = originalContent;
-        errorText.innerText = `Invalid ${currentLoginRole} credentials.`;
-        errorText.style.display = "block";
-    }
-}
-
-// Initialize on load
-document.addEventListener('DOMContentLoaded', () => {
-    initStarryBackground();
-});
