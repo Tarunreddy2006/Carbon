@@ -15,20 +15,34 @@ from google.oauth2 import service_account
 
 logger = logging.getLogger(__name__)
 
+_IS_GEE_INITIALIZED = False
+
 def initialise_gee():
-    if ee.data._credentials:
+    global _IS_GEE_INITIALIZED
+    
+    # Skip if already logged in
+    if _IS_GEE_INITIALIZED:
         return
+
     try:
-        key_file_path = "/app/detrixai.json"
+        # 🟢 THE FIX 2: Matching variable names
+        key_path = "/app/detrixai.json"
+        
+        if not os.path.exists(key_path):
+            raise FileNotFoundError(f"CRITICAL: Cannot find {key_path} inside the container!")
+
         credentials = service_account.Credentials.from_service_account_file(
-            key_path,
+            key_path, # Matches the variable above perfectly
             scopes=['https://www.googleapis.com/auth/earthengine'] 
         )
 
         ee.Initialize(credentials)
+        
+        _IS_GEE_INITIALIZED = True # Mark as successful
         logger.info("✅ GEE Authentication Successful!")
+        
     except Exception as e:
-        logger.error(f"⚠ GEE initialization failed: {e}")
+        logger.error(f"❌ CRITICAL: GEE Authentication Failed: {e}")
         raise
 
 def mask_clouds(image):
