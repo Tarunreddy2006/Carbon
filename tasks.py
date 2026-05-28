@@ -146,7 +146,6 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         # 5. Scientific Metrics Calculation
         from utils.logic import calculate_confidence_score
         results = run_carbon_pipeline(
-            geojson_geom,
             species=tree_species,
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
             ndvi_mean=gee_data["ndvi_mean"],
