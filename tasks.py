@@ -39,11 +39,11 @@ def run_continuous_mrv_audit():
             logger.info(f"🛰️ Re-scanning Parcel {parcel.id}...")
 
             # 2. Convert database Geometry back to GeoJSON for Google Earth Engine
-            geom_obj = shapely.wkt.loads(str(parcel.boundary))
+            geom_obj = shapely.wkb.loads(bytes(parcel.boundary.data))
             geojson_geom = {"type": "Polygon", "coordinates": [list(shapely.geometry.mapping(geom_obj)['coordinates'][0])]}
             
             # 3. Re-run Satellite Analysis (Run the async GEE function synchronously)
-            gee_data = asyncio.run(analyse_parcel(geojson_geom))
+            gee_data = analyse_parcel(geojson_geom)
 
             # 4. Calculate Current Carbon using our Sensor Fusion logic
             current_results = run_carbon_pipeline(
@@ -233,7 +233,8 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             "radar_images_used": gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0)),
             "fusion_ratio": results.get("fusion_ratio", "Optical 50% / Radar 50%"),
             "image_count": results["image_count"],
-            "date_range": {"start": str(curr_year - 4), "end": str(curr_year)}
+            "date_range": {"start": str(curr_year - 4), "end": str(curr_year)},
+            "user_id": user_id
         }
 
     except Exception as e:
