@@ -565,3 +565,9 @@ hr {
     max-width: 400px;
   }
 }
+
+/* Cookie Banner */
+#cookie-banner {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}

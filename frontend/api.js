@@ -32,7 +32,7 @@ async function apiClient(endpoint, options = {}) {
   }
 
   // Auto-attach JWT auth token if available
-  const token = localStorage.getItem(CONFIG.TOKEN_KEY);
+  const token = sessionStorage.getItem(CONFIG.TOKEN_KEY);
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }

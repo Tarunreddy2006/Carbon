@@ -57,8 +57,9 @@ def get_historical_ndvi(geometry, year):
     start = f"{year}-01-01"
     end = f"{year}-12-31"
     
+    ee_geom = ee.Geometry.Polygon(geometry["coordinates"])
     col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-           .filterBounds(geometry)
+           .filterBounds(ee_geom)
            .filterDate(start, end)
            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
            .map(mask_clouds))

@@ -14,6 +14,7 @@ class DynamicParcelRequest(BaseModel):
     """Payload for GPS-walked or manually drawn polygons."""
     farm_id: str = Field(default="UNKNOWN_FARM")
     source_type: str = Field(default="GPS_WALK")
+    tree_species: Optional[str] = Field(default="mixed_tropical")
     coordinates: List[List[float]] = Field(
         ..., 
         description="Array of [longitude, latitude] coordinates forming the boundary"

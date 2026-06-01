@@ -79,6 +79,8 @@ async def get_estimate_status(task_id: str, user_token: dict = Depends(get_curre
     if task_result.state == 'PENDING' or task_result.state == 'STARTED':
         return {"status": "processing"}
     elif task_result.state == 'SUCCESS':
+        if task_result.result.get("user_id") != user_token.get("sub"):
+            raise HTTPException(status_code=403, detail="Unauthorized access to task result")
         return {"status": "completed", "result": task_result.result}
     elif task_result.state == 'FAILURE':
         error_msg = str(task_result.info)
@@ -91,9 +93,6 @@ async def get_estimate_status(task_id: str, user_token: dict = Depends(get_curre
                 content={"status": "failed", "detail": error_json}
             )
         except Exception:
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"status": "failed", "detail": error_msg}
-            )
+            raise HTTPException(status_code=500, detail="Internal processing error")
     else:
         return {"status": task_result.state}
