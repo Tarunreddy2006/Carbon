@@ -71,9 +71,10 @@ def create_app() -> FastAPI:
         allow_headers     = ["*"],
     )
 
-    from routes import estimate, verify, auth, billing, certificate
+    from routes import estimate, verify, auth, billing, certificate, user
 
     app.include_router(auth.router)
+    app.include_router(user.router)
     app.include_router(estimate.router)
     app.include_router(verify.router)
     app.include_router(billing.router)

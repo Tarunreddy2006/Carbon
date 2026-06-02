@@ -64,6 +64,7 @@ class ParcelRecord(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     farm_id = Column(String, index=True, nullable=True) # Optional link to a user/farm
+    user_id = Column(String, index=True, nullable=True) # The actual owner (from JWT sub)
     boundary = Column(Geometry(geometry_type='POLYGON', srid=4326), nullable=False)
     source_type = Column(String) # E.g., 'GPS_WALK', 'MANUAL_DRAW', 'K-GIS'
     calculated_area_ha = Column(Float)

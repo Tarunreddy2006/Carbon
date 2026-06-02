@@ -132,6 +132,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         # 3. Persist Spatial Data
         new_parcel = ParcelRecord(
             farm_id=payload_dict.get('farm_id'),
+            user_id=payload_dict.get('user_id'),
             boundary=wkt_string, 
             source_type=payload_dict.get('source_type'),
             calculated_area_ha=parcel_area_ha
@@ -240,6 +241,103 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
     except Exception as e:
         logger.error(f"Task Failed: {e}", exc_info=True)
         # If ValueError containing JSON, re-raise it so the polling endpoint can extract it
+        raise
+    finally:
+        db.close()
+
+@shared_task(bind=True)
+def async_rerun_mrv(self, parcel_id: str, user_id: str):
+    logger.info("======================================================")
+    logger.info(f"▶ ASYNC PARCEL RERUN INITIATED ({parcel_id})")
+    logger.info("======================================================")
+    db: Session = SessionLocal()
+    
+    try:
+        parcel = db.query(ParcelRecord).filter(ParcelRecord.id == parcel_id).first()
+        if not parcel:
+            raise ValueError(f"Parcel {parcel_id} not found.")
+
+        # 1. Convert database Geometry back to GeoJSON for Google Earth Engine
+        geom_obj = shapely.wkb.loads(bytes(parcel.boundary.data))
+        geojson_geom = {"type": "Polygon", "coordinates": [list(shapely.geometry.mapping(geom_obj)['coordinates'][0])]}
+        
+        # 2. Multi-Sensor Analysis (GEE)
+        logger.info("⏳ Sending geometry to Google Earth Engine for Rerun...")
+        gee_data = analyse_parcel(geojson_geom)
+        
+        # 3. Scientific Metrics Calculation (Assume mixed_tropical if unknown)
+        from utils.logic import run_carbon_pipeline, calculate_confidence_score
+        results = run_carbon_pipeline(
+            species="mixed_tropical",
+            veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
+            ndvi_mean=gee_data["ndvi_mean"],
+            sar_vh=gee_data.get("sar_vh_backscatter", -20.0), 
+            opt_imgs=gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
+            rad_imgs=gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0))
+        )
+
+        curr_year = int(datetime.now(timezone.utc).year)
+        
+        # 4. Mint Cryptographic Proof for new vintage
+        cert_id, data_hash, raw_payload_dict = generate_cryptographic_proof(
+            parcel_id=str(parcel.id),
+            vintage_year=str(curr_year),
+            co2e=results["co2_equivalent_tons"],
+            geojson_geom=geojson_geom,
+            ndvi_mean=gee_data["ndvi_mean"]
+        )
+        
+        new_credit = CarbonCredit(
+            parcel_id=parcel.id,
+            vintage_year=str(curr_year),
+            unique_code=cert_id,
+            estimated_co2e=results["co2_equivalent_tons"],
+            status=CreditStatus.VERIFIED,
+            data_hash=data_hash,
+            raw_payload=raw_payload_dict
+        )
+        db.add(new_credit)
+        db.commit()
+
+        logger.info(f"✅ Rerun Ledger Entry Created: {cert_id}")
+
+        final_conf = calculate_confidence_score(
+            gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
+            gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)), 
+            gee_data.get("ndvi_std", 0.1)
+        )
+
+        return {
+            "parcel_id": str(parcel.id),
+            "credit_certificate": cert_id,
+            "parcel_polygon": geojson_geom,
+            
+            "parcel_area_hectares": parcel.calculated_area_ha,
+            "ndvi_mean": round(gee_data["ndvi_mean"], 3),
+            "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
+            "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
+            "vegetation_pixel_count": gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)),
+            "canopy_area_m2": results.get("canopy_area_m2", results["canopy_area_hectares"] * 10000),
+            "canopy_area_hectares": results["canopy_area_hectares"],
+            "biomass_density_tons_per_ha": results["biomass_density_tons_per_ha"],
+            "biomass_tons": results["biomass_tons"],
+            "carbon_tons": results["carbon_tons"],
+            "co2_equivalent_tons": results["co2_equivalent_tons"],
+            
+            "confidence_score": final_conf,
+            "historical_trends": [],
+            
+            "satellite_dataset": "Sentinel-2 L2A + Sentinel-1 SAR",
+            "optical_images_used": gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
+            "radar_images_used": gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0)),
+            "fusion_ratio": results.get("fusion_ratio", "Optical 50% / Radar 50%"),
+            "image_count": results["image_count"],
+            "date_range": {"start": str(curr_year), "end": str(curr_year)},
+            "user_id": user_id
+        }
+
+    except Exception as e:
+        logger.error(f"Rerun Task Failed: {e}", exc_info=True)
         raise
     finally:
         db.close()

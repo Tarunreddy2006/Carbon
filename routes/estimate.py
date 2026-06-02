@@ -29,7 +29,7 @@ from utils.logic import run_carbon_pipeline, calculate_confidence_score
 from services.ledger import generate_credit_certificate
 from services.auth import get_current_user
 
-from tasks import async_estimate_carbon_draw
+from tasks import async_estimate_carbon_draw, async_rerun_mrv
 from celery.result import AsyncResult
 from fastapi.responses import JSONResponse
 
@@ -63,7 +63,28 @@ async def estimate_carbon_draw(payload: DynamicParcelRequest, user_token: dict =
     
     task = async_estimate_carbon_draw.delay(payload_dict, user_token.get("role"))
     
-    # 2. Immediately return a 202 Accepted with the task_id
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={"task_id": task.id, "status": "processing"}
+    )
+
+@router.post("/estimate-carbon/rerun/{parcel_id}")
+async def rerun_mrv(parcel_id: str, user_token: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    user_id = user_token.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User ID missing from token")
+        
+    if user_token.get("role") != "institution":
+        raise HTTPException(status_code=403, detail="Only Institutional Auditors can rerun audits.")
+
+    parcel = db.query(ParcelRecord).filter(ParcelRecord.id == parcel_id, ParcelRecord.user_id == user_id).first()
+    if not parcel:
+        raise HTTPException(status_code=404, detail="Parcel not found or you don't have access to it.")
+        
+    logger.info(f"▶ Offloading Parcel MRV Rerun to Celery ({parcel_id})")
+    
+    task = async_rerun_mrv.delay(parcel_id, user_id)
+    
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content={"task_id": task.id, "status": "processing"}

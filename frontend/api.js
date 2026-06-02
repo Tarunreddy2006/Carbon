@@ -151,6 +151,14 @@ const api = Object.freeze({
     }).then(r => r.json());
   },
 
+  fetchUserParcels() {
+    return apiClient('/user/parcels', { method: 'GET' }).then(r => r.json());
+  },
+  
+  estimateCarbonRerun(parcelId) {
+    return apiClient(`/estimate-carbon/rerun/${parcelId}`, { method: 'POST' }).then(r => r.json());
+  },
+
   // ── Billing & Certificates ────────────────────────────────────────────
 
   /**

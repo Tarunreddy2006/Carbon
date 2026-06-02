@@ -92,12 +92,17 @@
                     CarbonEngine™
                     <span class="topbar-badge">MVP</span>
                 </div>
-                <div>
+                <div style="display: flex; align-items: center;">
                     <span class="api-badge">Sentinel-2 SR · GEE</span>
-                    <button class="btn btn--demo" style="margin-left: 15px; padding: 5px 10px;"
-                        onclick="logout()">Logout</button>
+                    <div id="user-avatar" onclick="toggleSidebar()" style="width: 32px; height: 32px; border-radius: 50%; background: #3fb950; color: white; text-align: center; line-height: 32px; margin-left: 15px; cursor: pointer; font-weight: bold; user-select: none;">U</div>
+                    <button class="btn btn--demo" style="margin-left: 15px; padding: 5px 10px;" onclick="logout()">Logout</button>
                 </div>
             </header>
+
+            <div id="history-sidebar" class="history-sidebar">
+                <h3>Asset History</h3>
+                <ul id="asset-history-list"></ul>
+            </div>
 
             <aside class="sidebar">
                 <div class="sidebar-section">
@@ -183,6 +188,7 @@
                             style="width: 100%; margin-top: 15px; display: none;"
                             onclick="downloadCertificate(new URLSearchParams(window.location.search).get('credit_id'))">Download
                             Certificate</button>
+                        <button id="btn-rerun-estimation" class="btn btn--primary" style="width: 100%; margin-top: 15px; display: none; background: #f59e0b; color: #fff;">🔄 Rerun MRV for Current Year</button>
                     </div>
 
                     <div id="status-banner" class="status-banner" style="margin-top: 15px;"></div>
