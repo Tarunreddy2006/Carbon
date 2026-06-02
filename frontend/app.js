@@ -816,7 +816,24 @@ async function loadAssetHistory() {
     const list = document.getElementById('asset-history-list');
     list.innerHTML = '<div class="spinner"></div> Loading...';
     try {
-        const data = await api.fetchUserParcels();
+        const token = sessionStorage.getItem(CONFIG.TOKEN_KEY);
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const response = await fetch(`${CONFIG.API_BASE_URL}/user/parcels`, { headers });
+        
+        if (!response.ok) {
+            console.error("Server returned status:", response.status);
+            document.getElementById('asset-history-list').innerHTML = "Error: Could not load history.";
+            return;
+        }
+        
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("text/html")) {
+            console.error("Server returned HTML, expected JSON");
+            document.getElementById('asset-history-list').innerHTML = "Error: Could not load history.";
+            return;
+        }
+
+        const data = await response.json();
         list.innerHTML = '';
         if (!data.parcels || data.parcels.length === 0) {
             list.innerHTML = '<p style="color:var(--text-muted);font-size:12px;">No past assets found.</p>';
