@@ -803,157 +803,157 @@ function logout() {
 let activeParcelId = null;
 
 function toggleSidebar() {
-    const sidebar = document.getElementById('history-sidebar');
-    if (sidebar.classList.contains('open')) {
-        sidebar.classList.remove('open');
-    } else {
-        sidebar.classList.add('open');
-        loadAssetHistory();
-    }
+  const sidebar = document.getElementById('history-sidebar');
+  if (sidebar.classList.contains('open')) {
+    sidebar.classList.remove('open');
+  } else {
+    sidebar.classList.add('open');
+    loadAssetHistory();
+  }
 }
 
 async function loadAssetHistory() {
-    const list = document.getElementById('asset-history-list');
-    list.innerHTML = '<div class="spinner"></div> Loading...';
-    try {
-        const token = sessionStorage.getItem(CONFIG.TOKEN_KEY);
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-        const response = await fetch(`${CONFIG.API_BASE_URL}/user/parcels`, { headers });
-        
-        if (!response.ok) {
-            console.error("Server returned status:", response.status);
-            document.getElementById('asset-history-list').innerHTML = "Error: Could not load history.";
-            return;
-        }
-        
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("text/html")) {
-            console.error("Server returned HTML, expected JSON");
-            document.getElementById('asset-history-list').innerHTML = "Error: Could not load history.";
-            return;
-        }
+  const list = document.getElementById('asset-history-list');
+  list.innerHTML = '<div class="spinner"></div> Loading...';
+  try {
+    const token = sessionStorage.getItem(CONFIG.TOKEN_KEY);
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const response = await fetch(`${CONFIG.API_BASE_URL}/estimate-carbon/history`, { headers });
 
-        const data = await response.json();
-        list.innerHTML = '';
-        if (!data.parcels || data.parcels.length === 0) {
-            list.innerHTML = '<p style="color:var(--text-muted);font-size:12px;">No past assets found.</p>';
-            return;
-        }
-        data.parcels.forEach(p => {
-            const li = document.createElement('li');
-            li.className = 'history-item';
-            li.innerHTML = `
+    if (!response.ok) {
+      console.error("Server returned status:", response.status);
+      document.getElementById('asset-history-list').innerHTML = "Error: Could not load history.";
+      return;
+    }
+
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+      console.error("Server returned HTML, expected JSON");
+      document.getElementById('asset-history-list').innerHTML = "Error: Could not load history.";
+      return;
+    }
+
+    const data = await response.json();
+    list.innerHTML = '';
+    if (!data.parcels || data.parcels.length === 0) {
+      list.innerHTML = '<p style="color:var(--text-muted);font-size:12px;">No past assets found.</p>';
+      return;
+    }
+    data.parcels.forEach(p => {
+      const li = document.createElement('li');
+      li.className = 'history-item';
+      li.innerHTML = `
                 <div class="history-item__id">${p.farm_id || p.id.split('-')[0]}</div>
                 <div class="history-item__date">${p.created_at ? p.created_at.split('T')[0] : 'N/A'} - ${p.calculated_area_ha ? p.calculated_area_ha.toFixed(2) + 'ha' : '0ha'}</div>
             `;
-            li.onclick = () => loadHistoricalParcel(p);
-            list.appendChild(li);
-        });
-    } catch (e) {
-        list.innerHTML = `<p style="color:#ef4444;font-size:12px;">Error loading history: ${e.message}</p>`;
-    }
+      li.onclick = () => loadHistoricalParcel(p);
+      list.appendChild(li);
+    });
+  } catch (e) {
+    list.innerHTML = `<p style="color:#ef4444;font-size:12px;">Error loading history: ${e.message}</p>`;
+  }
 }
 
 function loadHistoricalParcel(p) {
-    if (!p.polygon) {
-        alert("Parcel has no polygon geometry available.");
-        return;
-    }
-    activeParcelId = p.id;
-    drawnPolygon = p.polygon;
-    
-    // Convert GeoJSON to Leaflet LatLng format
-    const coords = p.polygon.coordinates[0].map(c => [c[1], c[0]]); // [lat, lng]
-    
-    drawnItems.clearLayers();
-    if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
-    if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
-    
-    const poly = L.polygon(coords, {
-        color: '#3fb950', 
-        weight: 3,
-        fillColor: '#3fb950',
-        fillOpacity: 0.2
-    });
-    drawnItems.addLayer(poly);
-    map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1.5 });
-    
-    window.currentPolygonCoords = p.polygon.coordinates[0];
-    
-    const btnEstimateInst = document.getElementById('btn-estimate-inst');
-    if (btnEstimateInst) btnEstimateInst.disabled = false;
-    
-    const btnRerun = document.getElementById('btn-rerun-estimation');
-    if (btnRerun) btnRerun.style.display = 'block';
-    
-    document.getElementById('history-sidebar').classList.remove('open');
+  if (!p.polygon) {
+    alert("Parcel has no polygon geometry available.");
+    return;
+  }
+  activeParcelId = p.id;
+  drawnPolygon = p.polygon;
+
+  // Convert GeoJSON to Leaflet LatLng format
+  const coords = p.polygon.coordinates[0].map(c => [c[1], c[0]]); // [lat, lng]
+
+  drawnItems.clearLayers();
+  if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
+  if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
+
+  const poly = L.polygon(coords, {
+    color: '#3fb950',
+    weight: 3,
+    fillColor: '#3fb950',
+    fillOpacity: 0.2
+  });
+  drawnItems.addLayer(poly);
+  map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1.5 });
+
+  window.currentPolygonCoords = p.polygon.coordinates[0];
+
+  const btnEstimateInst = document.getElementById('btn-estimate-inst');
+  if (btnEstimateInst) btnEstimateInst.disabled = false;
+
+  const btnRerun = document.getElementById('btn-rerun-estimation');
+  if (btnRerun) btnRerun.style.display = 'block';
+
+  document.getElementById('history-sidebar').classList.remove('open');
 }
 
 async function runRerunEstimation() {
-    const userToken = sessionStorage.getItem(CONFIG.TOKEN_KEY);
-    if (!userToken) {
-        setStatus('error', 'Session expired. Please log in again.', '✖');
-        setTimeout(() => logout(), 2000);
-        return;
+  const userToken = sessionStorage.getItem(CONFIG.TOKEN_KEY);
+  if (!userToken) {
+    setStatus('error', 'Session expired. Please log in again.', '✖');
+    setTimeout(() => logout(), 2000);
+    return;
+  }
+
+  if (!activeParcelId) return;
+
+  const btn = document.getElementById('btn-rerun-estimation');
+  const originalContent = btn ? btn.innerHTML : '';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> Rerunning MRV...';
+  }
+
+  setStatus('loading', '🛰️  Dispatching rerun task to background worker…');
+  clearResultsPanel();
+
+  try {
+    const data = await api.estimateCarbonRerun(activeParcelId);
+    const taskId = data.task_id;
+
+    if (!taskId) throw new Error("No task ID returned by backend");
+
+    setStatus('loading', '⏳ Task dispatched. Polling Earth Engine for results...');
+
+    let completed = false;
+    while (!completed) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const pollData = await api.checkTaskStatus(taskId);
+
+      if (pollData.status === 'completed') {
+        completed = true;
+        renderResults(pollData.result);
+        drawResult(pollData.result.parcel_polygon, pollData.result);
+        setStatus('success', `✔ Analysis complete — ${fmt(pollData.result.co2_equivalent_tons, 1)} t CO₂e estimated`, '✔');
+      } else if (pollData.status === 'failed') {
+        completed = true;
+        let msg = pollData.detail;
+        if (typeof msg === 'object' && msg.message) msg = msg.message;
+        throw new Error(msg || 'Task failed');
+      }
     }
-
-    if (!activeParcelId) return;
-
-    const btn = document.getElementById('btn-rerun-estimation');
-    const originalContent = btn ? btn.innerHTML : '';
-
+  } catch (error) {
+    console.error('[carbon-engine]', error);
+    if (error.status === 401) {
+      setStatus('error', 'Session expired. Please log in again.', '✖');
+      setTimeout(() => logout(), 2000);
+      return;
+    }
+    if (error.status === 403) {
+      setStatus('error', '🔒 Your role does not have authorization to mint carbon credits.', '✖');
+      return;
+    }
+    setStatus('error', `Error: ${error.message}`, '✖');
+  } finally {
     if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<div class="spinner"></div> Rerunning MRV...';
+      btn.disabled = false;
+      btn.innerHTML = originalContent;
     }
-    
-    setStatus('loading', '🛰️  Dispatching rerun task to background worker…');
-    clearResultsPanel();
-
-    try {
-        const data = await api.estimateCarbonRerun(activeParcelId);
-        const taskId = data.task_id;
-
-        if (!taskId) throw new Error("No task ID returned by backend");
-
-        setStatus('loading', '⏳ Task dispatched. Polling Earth Engine for results...');
-
-        let completed = false;
-        while (!completed) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            const pollData = await api.checkTaskStatus(taskId);
-
-            if (pollData.status === 'completed') {
-                completed = true;
-                renderResults(pollData.result);
-                drawResult(pollData.result.parcel_polygon, pollData.result);
-                setStatus('success', `✔ Analysis complete — ${fmt(pollData.result.co2_equivalent_tons, 1)} t CO₂e estimated`, '✔');
-            } else if (pollData.status === 'failed') {
-                completed = true;
-                let msg = pollData.detail;
-                if (typeof msg === 'object' && msg.message) msg = msg.message;
-                throw new Error(msg || 'Task failed');
-            }
-        }
-    } catch (error) {
-        console.error('[carbon-engine]', error);
-        if (error.status === 401) {
-            setStatus('error', 'Session expired. Please log in again.', '✖');
-            setTimeout(() => logout(), 2000);
-            return;
-        }
-        if (error.status === 403) {
-            setStatus('error', '🔒 Your role does not have authorization to mint carbon credits.', '✖');
-            return;
-        }
-        setStatus('error', `Error: ${error.message}`, '✖');
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = originalContent;
-        }
-    }
+  }
 }
 
 // ==========================================
@@ -1169,7 +1169,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const rerunBtn = document.getElementById('btn-rerun-estimation');
   if (rerunBtn) {
-      rerunBtn.addEventListener('click', runRerunEstimation);
+    rerunBtn.addEventListener('click', runRerunEstimation);
   }
 
   // Initialize starry background for login screen

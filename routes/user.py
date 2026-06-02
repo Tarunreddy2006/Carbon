@@ -10,7 +10,7 @@ from services.auth import get_current_user
 
 router = APIRouter(tags=["User Profile"])
 
-@router.get("/user/parcels")
+@router.get("/estimate-carbon/history")
 async def get_user_parcels(user_token: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     user_id = user_token.get("sub")
     if not user_id:
