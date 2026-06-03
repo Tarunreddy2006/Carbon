@@ -71,6 +71,35 @@ def get_historical_ndvi(geometry, year):
     stats = ndvi.reduceRegion(reducer=ee.Reducer.median(), geometry=geometry, scale=10)
     return stats.getInfo().get('nd', 0.0)
 
+def get_canopy_height(ee_geom):
+    """
+    Pulls NASA GEDI rh100 (relative height 100%) or falls back to ETH fused canopy height.
+    """
+    try:
+        # Attempt direct GEDI monthly query
+        gedi = ee.ImageCollection("LARSE/GEDI/GEDI02_A_002_MONTHLY") \
+                 .filterBounds(ee_geom) \
+                 .select('rh100')
+        
+        # If GEDI tracks hit the polygon, take the mean
+        height_image = gedi.mean()
+        
+        # Fallback to ETH Global Canopy Height (fused Sentinel/GEDI) for gap-filling
+        fallback = ee.Image('users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1')
+        
+        final_height = ee.ImageCollection([fallback, height_image]).mosaic()
+        
+        stats = final_height.reduceRegion(
+            reducer=ee.Reducer.mean(),
+            geometry=ee_geom,
+            scale=10,
+            maxPixels=1e9
+        )
+        return stats.getInfo().get('b1', 15.0) # Default 15m if completely bare
+    except Exception as e:
+        logger.error(f"GEDI extraction failed: {e}")
+        return 15.0 
+
 def analyse_parcel(geojson_geometry):
     initialise_gee()
     geom = ee.Geometry.Polygon(geojson_geometry["coordinates"])
@@ -91,18 +120,23 @@ def analyse_parcel(geojson_geometry):
     # Sentinel-1 Radar (SAR)
     s1_col = (ee.ImageCollection("COPERNICUS/S1_GRD")
               .filterBounds(geom)
+              .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
               .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VH')))
-    s1_median = s1_col.select('VH').median()
+    s1_median = s1_col.select(['VV', 'VH']).median()
 
     stats = s2_median.select('NDVI').addBands(s1_median).reduceRegion(
         reducer=ee.Reducer.mean().combine(ee.Reducer.stdDev(), sharedInputs=True).combine(ee.Reducer.count(), sharedInputs=True),
         geometry=geom, scale=10
     ).getInfo()
 
+    canopy_height = get_canopy_height(geom)
+
     return {
         "ndvi_mean": stats.get('NDVI_mean', 0.0),
         "ndvi_std": stats.get('NDVI_stdDev', 0.0),
+        "sar_vv_backscatter": stats.get('VV_mean', -25.0),
         "sar_vh_backscatter": stats.get('VH_mean', -25.0),
+        "canopy_height": canopy_height,
         "veg_pixels": int(stats.get('NDVI_count', 0) or 0),
         "opt_imgs": s2_col.size().getInfo(),
         "rad_imgs": s1_col.size().getInfo(),
