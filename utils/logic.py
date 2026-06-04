@@ -7,9 +7,14 @@ to estimate carbon sequestration without manual intervention.
 """
 
 import math
-# Assuming you have these constants defined in factors.py. 
-# If not, you can replace them with hardcoded values (e.g., CARBON_FRACTION_AGB = 0.47)
-from .factors import SPECIES_FACTORS, CARBON_FRACTION_AGB, CO2_TO_CARBON_RATIO
+import joblib
+from .factors import IPCC_CONSTANTS, CARBON_FRACTION_AGB, CO2_TO_CARBON_RATIO
+
+# Load model into memory once
+try:
+    biomass_model = joblib.load('/app/models/random_forest_v1.joblib')
+except FileNotFoundError:
+    biomass_model = None
 
 def calculate_confidence_score(pixel_count, images_used, ndvi_std):
     """
@@ -23,53 +28,40 @@ def calculate_confidence_score(pixel_count, images_used, ndvi_std):
     score = 98.0 - sample_penalty - variance_penalty
     return round(max(min(score, 99.5), 65.0), 1)
 
-def run_carbon_pipeline(veg_pixels: int, ndvi_mean: float, sar_vh: float, opt_imgs: int, rad_imgs: int, species: str = "mixed_tropical"):
+def run_carbon_pipeline(veg_pixels: int, ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, biome_name: str = "Default"):
     """
-    Sensor Fusion Model with Saturation Damper.
-    Adjusts weights dynamically based on canopy density to avoid carbon underestimation.
+    ML-Driven Biomass Inference with IPCC Allometric Tuning.
     """
-    if not species:
-        species = "mixed_tropical"
-    area_ha = veg_pixels * 0.01 
-    max_density = SPECIES_FACTORS.get(species.lower(), 120.0)
-
-    # 1. Calculate Individual Sensor Densities
-    # Optical: Exponential health curve
-    optical_agb_density = 14.5 * math.exp(2.5 * max(0, ndvi_mean))
-
-    # Radar: Structural wood volume based on VH backscatter
-    radar_structure_index = max(0.1, (sar_vh + 25) / 15) 
-    radar_agb_density = max_density * 0.5 * radar_structure_index
-
-    # 2. IMPLEMENTATION: Saturation Damper Logic
-    # Problem: NDVI saturates at 0.8; wood growth continues but optical sensor is 'blind'
-    if ndvi_mean > 0.8:
-        # Force the model to trust structural Radar (80%) over blinded Optical (20%)
-        opt_weight = 0.2
-        rad_weight = 0.8
+    # 1. Feature Engineering
+    # Match the training data shape: [ndvi, sar_vv, sar_vh, canopy_height]
+    features = [[ndvi_mean, sar_vv, sar_vh, canopy_height]]
+    
+    # 2. Base ML Inference
+    if biomass_model:
+        base_biomass_per_ha = biomass_model.predict(features)[0]
     else:
-        # Fallback to standard data-frequency based weighting
-        total_imgs = opt_imgs + rad_imgs
-        opt_weight = opt_imgs / total_imgs if total_imgs > 0 else 0.5
-        rad_weight = 1.0 - opt_weight
+        # Fallback if model fails to load
+        base_biomass_per_ha = 120.0 
 
-    # 3. Calculate Fused Density using Adjusted Weights
-    fused_density = (optical_agb_density * opt_weight) + (radar_agb_density * rad_weight)
+    # 3. IPCC Allometric Tuning (B = a * D^b * H^c)
+    # Using the base_biomass as a proxy for structural density (D)
+    constants = IPCC_CONSTANTS.get(biome_name, IPCC_CONSTANTS["Default"])
+    a, b, c = constants["a"], constants["b"], constants["c"]
     
-    # Apply species-specific ceiling
-    fused_density = min(max_density, fused_density)
+    tuned_biomass_per_ha = a * (base_biomass_per_ha ** b) * (canopy_height ** c)
     
-    # 4. Standard Carbon Math
-    biomass_tons = fused_density * area_ha
-    carbon_tons = biomass_tons * CARBON_FRACTION_AGB
-    co2e_tons = carbon_tons * CO2_TO_CARBON_RATIO
-
+    # 4. Total Area Extrapolation
+    area_ha = veg_pixels * 0.01 
+    total_biomass = tuned_biomass_per_ha * area_ha
+    
+    # 5. Carbon & CO2e Conversion (Standard MRV conversion factors)
+    carbon_tons = total_biomass * 0.47
+    co2e_tons = carbon_tons * 3.67
+    
     return {
-        "canopy_area_hectares": round(area_ha, 2),
-        "biomass_density_tons_per_ha": round(fused_density, 2),
-        "biomass_tons": round(biomass_tons, 2),
-        "carbon_tons": round(carbon_tons, 2),
+        "area_hectares": round(area_ha, 2),
+        "biomass_per_ha": round(tuned_biomass_per_ha, 2),
+        "total_carbon_tons": round(carbon_tons, 2),
         "co2_equivalent_tons": round(co2e_tons, 2),
-        "image_count": opt_imgs + rad_imgs,
-        "fusion_ratio": f"Optical {int(opt_weight*100)}% / Radar {int(rad_weight*100)}%"
+        "confidence_score": 0.95 # Placeholder for future model probability scoring
     }

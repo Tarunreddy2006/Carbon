@@ -9,7 +9,7 @@ import uuid
 import enum
 from datetime import datetime
 
-from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Enum, Integer
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geometry
@@ -89,3 +89,9 @@ class CarbonCredit(Base):
     raw_payload = Column(JSONB) # Stores the exact JSON that was hashed
     
     parcel = relationship("ParcelRecord", back_populates="credits")
+
+class Ecoregion(Base):
+    __tablename__ = "ecoregions"
+    id = Column(Integer, primary_key=True, index=True)
+    biome_name = Column(String, nullable=False)
+    geom = Column(Geometry(geometry_type='MULTIPOLYGON', srid=4326), nullable=False)

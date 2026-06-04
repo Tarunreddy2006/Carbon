@@ -6,15 +6,14 @@ for Indian agroforestry species. Based on FSI and IPCC Tier 1/2 data.
 ─────────────────────────────────────────────────────────────────────────────
 """
 
-# Biomass Density (Tons of Above Ground Biomass per Hectare)
-# These represent the 'saturation' or 'max' capacity for various Indian species.
-SPECIES_FACTORS = {
-    "teak": 150.0,         # Tectona grandis
-    "eucalyptus": 110.0,   # Fast growing, lower density per ha
-    "neem": 95.0,          # Azadirachta indica
-    "poplar": 85.0,        # Common in Northern Indian agroforestry
-    "mango": 130.0,        # Mature orchards
-    "mixed_tropical": 120.0 # Regional default fallback
+# Biomass Density Equations - IPCC Tier 2/3 Constants (a, b, c)
+# For the equation: Biomass = a * D^b * H^c
+IPCC_CONSTANTS = {
+    "Tropical Moist Forest": {"a": 0.0559, "b": 2.5, "c": 0.8},
+    "Tropical Dry Forest": {"a": 0.112, "b": 2.5, "c": 0.6},
+    "Boreal Taiga": {"a": 0.082, "b": 2.4, "c": 0.7},
+    "Temperate Broadleaf": {"a": 0.065, "b": 2.45, "c": 0.75},
+    "Default": {"a": 0.06, "b": 2.4, "c": 0.7}
 }
 
 # Scientific Conversion Constants

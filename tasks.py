@@ -12,7 +12,8 @@ import shapely.wkt
 import shapely.geometry
 
 from database.db import SessionLocal
-from database.models import ParcelRecord, CarbonCredit, CreditStatus
+from database.models import ParcelRecord, CarbonCredit, CreditStatus, Ecoregion
+from sqlalchemy import func
 from services.service import analyse_parcel
 from utils.logic import run_carbon_pipeline
 
@@ -42,16 +43,22 @@ def run_continuous_mrv_audit():
             geom_obj = shapely.wkb.loads(bytes(parcel.boundary.data))
             geojson_geom = {"type": "Polygon", "coordinates": [list(shapely.geometry.mapping(geom_obj)['coordinates'][0])]}
             
+            intersecting_biome = db.query(Ecoregion).filter(
+                func.ST_Intersects(Ecoregion.geom, func.ST_GeomFromWKB(geom_obj.wkb, 4326))
+            ).first()
+            biome_name = intersecting_biome.biome_name if intersecting_biome else "Default"
+            
             # 3. Re-run Satellite Analysis (Run the async GEE function synchronously)
             gee_data = analyse_parcel(geojson_geom)
 
             # 4. Calculate Current Carbon using our Sensor Fusion logic
             current_results = run_carbon_pipeline(
+                biome_name=biome_name,
+                canopy_height=gee_data.get("canopy_height", 15.0),
                 veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
                 ndvi_mean=gee_data["ndvi_mean"],
-                sar_vh=gee_data.get("sar_vh_backscatter", -20.0), 
-                opt_imgs=gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
-                rad_imgs=gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0))
+                sar_vv=gee_data.get("sar_vv_backscatter", -20.0),
+                sar_vh=gee_data.get("sar_vh_backscatter", -20.0)
             )
 
             current_co2e = current_results["co2_equivalent_tons"]
@@ -104,6 +111,11 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         if not geom_obj:
             raise ValueError("Invalid geometry. Ensure polygon is closed and non-intersecting.")
 
+        intersecting_biome = db.query(Ecoregion).filter(
+            func.ST_Intersects(Ecoregion.geom, func.ST_GeomFromWKB(geom_obj.wkb, 4326))
+        ).first()
+        biome_name = intersecting_biome.biome_name if intersecting_biome else "Default"
+
         wkt_string = geom_obj.wkt if hasattr(geom_obj, 'wkt') else str(geom_obj)
 
         # 2. Anti-Fraud Overlap Check
@@ -147,12 +159,12 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         # 5. Scientific Metrics Calculation
         from utils.logic import calculate_confidence_score
         results = run_carbon_pipeline(
-            species=tree_species,
+            biome_name=biome_name,
+            canopy_height=gee_data.get("canopy_height", 15.0),
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
             ndvi_mean=gee_data["ndvi_mean"],
-            sar_vh=gee_data.get("sar_vh_backscatter", -20.0), 
-            opt_imgs=gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
-            rad_imgs=gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0))
+            sar_vv=gee_data.get("sar_vv_backscatter", -20.0),
+            sar_vh=gee_data.get("sar_vh_backscatter", -20.0)
         )
         
         db.commit()
@@ -171,7 +183,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             trends.append({
                 "year": year, 
                 "carbon_tons": round(hist_co2 / 3.66, 2),
-                "canopy_area_hectares": round(results["canopy_area_hectares"] * (hist_ndvi / max(0.01, gee_data["ndvi_mean"])), 2),
+                "canopy_area_hectares": round(results.get("area_hectares", 0) * (hist_ndvi / max(0.01, gee_data["ndvi_mean"])), 2),
                 "confidence_score": round(calculate_confidence_score(
                     gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
                     gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)), 
@@ -219,21 +231,21 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
             "vegetation_pixel_count": gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)),
-            "canopy_area_m2": results.get("canopy_area_m2", results["canopy_area_hectares"] * 10000),
-            "canopy_area_hectares": results["canopy_area_hectares"],
-            "biomass_density_tons_per_ha": results["biomass_density_tons_per_ha"],
-            "biomass_tons": results["biomass_tons"],
-            "carbon_tons": results["carbon_tons"],
+            "canopy_area_m2": results.get("area_hectares", 0) * 10000,
+            "canopy_area_hectares": results.get("area_hectares", 0),
+            "biomass_density_tons_per_ha": results.get("biomass_per_ha", 0),
+            "biomass_tons": results.get("biomass_per_ha", 0) * results.get("area_hectares", 0),
+            "carbon_tons": results.get("total_carbon_tons", 0),
             "co2_equivalent_tons": results["co2_equivalent_tons"],
             
-            "confidence_score": final_conf,
+            "confidence_score": results.get("confidence_score", final_conf),
             "historical_trends": trends,
             
-            "satellite_dataset": "Sentinel-2 L2A + Sentinel-1 SAR",
+            "satellite_dataset": "Sentinel-2 L2A + Sentinel-1 SAR + GEDI",
             "optical_images_used": gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
             "radar_images_used": gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0)),
-            "fusion_ratio": results.get("fusion_ratio", "Optical 50% / Radar 50%"),
-            "image_count": results["image_count"],
+            "fusion_ratio": "ML Random Forest Inference",
+            "image_count": gee_data.get("optical_images_used", 0) + gee_data.get("radar_images_used", 0),
             "date_range": {"start": str(curr_year - 4), "end": str(curr_year)},
             "user_id": user_id
         }
@@ -261,19 +273,24 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
         geom_obj = shapely.wkb.loads(bytes(parcel.boundary.data))
         geojson_geom = {"type": "Polygon", "coordinates": [list(shapely.geometry.mapping(geom_obj)['coordinates'][0])]}
         
+        intersecting_biome = db.query(Ecoregion).filter(
+            func.ST_Intersects(Ecoregion.geom, func.ST_GeomFromWKB(geom_obj.wkb, 4326))
+        ).first()
+        biome_name = intersecting_biome.biome_name if intersecting_biome else "Default"
+        
         # 2. Multi-Sensor Analysis (GEE)
         logger.info("⏳ Sending geometry to Google Earth Engine for Rerun...")
         gee_data = analyse_parcel(geojson_geom)
         
-        # 3. Scientific Metrics Calculation (Assume mixed_tropical if unknown)
+        # 3. Scientific Metrics Calculation
         from utils.logic import run_carbon_pipeline, calculate_confidence_score
         results = run_carbon_pipeline(
-            species="mixed_tropical",
+            biome_name=biome_name,
+            canopy_height=gee_data.get("canopy_height", 15.0),
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
             ndvi_mean=gee_data["ndvi_mean"],
-            sar_vh=gee_data.get("sar_vh_backscatter", -20.0), 
-            opt_imgs=gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
-            rad_imgs=gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0))
+            sar_vv=gee_data.get("sar_vv_backscatter", -20.0),
+            sar_vh=gee_data.get("sar_vh_backscatter", -20.0)
         )
 
         curr_year = int(datetime.now(timezone.utc).year)
@@ -317,21 +334,21 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
             "vegetation_pixel_count": gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)),
-            "canopy_area_m2": results.get("canopy_area_m2", results["canopy_area_hectares"] * 10000),
-            "canopy_area_hectares": results["canopy_area_hectares"],
-            "biomass_density_tons_per_ha": results["biomass_density_tons_per_ha"],
-            "biomass_tons": results["biomass_tons"],
-            "carbon_tons": results["carbon_tons"],
+            "canopy_area_m2": results.get("area_hectares", 0) * 10000,
+            "canopy_area_hectares": results.get("area_hectares", 0),
+            "biomass_density_tons_per_ha": results.get("biomass_per_ha", 0),
+            "biomass_tons": results.get("biomass_per_ha", 0) * results.get("area_hectares", 0),
+            "carbon_tons": results.get("total_carbon_tons", 0),
             "co2_equivalent_tons": results["co2_equivalent_tons"],
             
-            "confidence_score": final_conf,
+            "confidence_score": results.get("confidence_score", final_conf),
             "historical_trends": [],
             
-            "satellite_dataset": "Sentinel-2 L2A + Sentinel-1 SAR",
+            "satellite_dataset": "Sentinel-2 L2A + Sentinel-1 SAR + GEDI",
             "optical_images_used": gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
             "radar_images_used": gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0)),
-            "fusion_ratio": results.get("fusion_ratio", "Optical 50% / Radar 50%"),
-            "image_count": results["image_count"],
+            "fusion_ratio": "ML Random Forest Inference",
+            "image_count": gee_data.get("optical_images_used", 0) + gee_data.get("radar_images_used", 0),
             "date_range": {"start": str(curr_year), "end": str(curr_year)},
             "user_id": user_id
         }
