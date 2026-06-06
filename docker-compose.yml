@@ -13,6 +13,11 @@ services:
     volumes:
       - ./detrixai.json:/app/detrixai.json:ro
       - ./detrixai.json:/detrixai.json:ro
+      - ./utils:/app/utils
+      - ./tasks.py:/app/tasks.py
+      - ./services:/app/services
+      - ./routes:/app/routes
+      - ./database:/app/database
     depends_on:
       - redis
     restart: always
@@ -29,6 +34,11 @@ services:
     volumes:
       - ./detrixai.json:/app/detrixai.json:ro
       - ./detrixai.json:/detrixai.json:ro
+      - ./utils:/app/utils
+      - ./tasks.py:/app/tasks.py
+      - ./services:/app/services
+      - ./routes:/app/routes
+      - ./database:/app/database
     depends_on:
       - redis
     restart: always
@@ -44,6 +54,10 @@ services:
     volumes:
       - ./detrixai.json:/app/detrixai.json:ro
       - ./detrixai.json:/detrixai.json:ro
+      - ./utils:/app/utils
+      - ./tasks.py:/app/tasks.py
+      - ./services:/app/services
     depends_on:
       - redis
     restart: always
+
