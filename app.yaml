@@ -34,7 +34,7 @@ services:
       # Application Configuration
       - key: FRONTEND_URL
         scope: RUN_TIME
-        value: "https://anthra.tech"
+        value: "https://stomata.tech"
       - key: APP_ENV
         scope: RUN_TIME
         value: "production"

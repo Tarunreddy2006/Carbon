@@ -50,10 +50,10 @@ def run_continuous_mrv_audit():
             
             # 3. Re-run Satellite Analysis (Run the async GEE function synchronously)
             gee_data = analyse_parcel(geojson_geom)
-
             # 4. Calculate Current Carbon using our Sensor Fusion logic
             current_results = run_carbon_pipeline(
                 biome_name=biome_name,
+                parcel_area_ha=parcel.calculated_area_ha,
                 canopy_height=gee_data.get("canopy_height", 15.0),
                 veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
                 ndvi_mean=gee_data["ndvi_mean"],
@@ -155,10 +155,10 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         logger.info("⏳ Sending geometry to Google Earth Engine...")
         # Called synchronously
         gee_data = analyse_parcel(geojson_geom)
-        
         # 5. Scientific Metrics Calculation
-        from utils.logic import calculate_confidence_score
+        from utils.logic import calculate_asset_confidence
         results = run_carbon_pipeline(
+            parcel_area_ha=parcel_area_ha,
             biome_name=biome_name,
             canopy_height=gee_data.get("canopy_height", 15.0),
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
@@ -183,19 +183,10 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             trends.append({
                 "year": year, 
                 "carbon_tons": round(hist_co2 / 3.66, 2),
-                "canopy_area_hectares": round(results.get("area_hectares", 0) * (hist_ndvi / max(0.01, gee_data["ndvi_mean"])), 2),
-                "confidence_score": round(calculate_confidence_score(
-                    gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-                    gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)), 
-                    gee_data.get("ndvi_std", 0.1)
-                ) - (curr_year - year), 1)
-            })
+                "canopy_area_hectares": round(results.get("claimable_vegetation_ha", 0) * (hist_ndvi / max(0.01, gee_data["ndvi_mean"])), 2),
+                "confidence_score": round(max(5.0, results.get("confidence_score", 95.0) - (curr_year - year)), 1)})
 
-        final_conf = calculate_confidence_score(
-            gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-            gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)), 
-            gee_data.get("ndvi_std", 0.1)
-        )
+        final_conf = results.get("confidence_score", 95.0)
 
         # 7. Mint Cryptographic Proof
         cert_id, data_hash, raw_payload_dict = generate_cryptographic_proof(
@@ -231,10 +222,10 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
             "vegetation_pixel_count": gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)),
-            "canopy_area_m2": results.get("area_hectares", 0) * 10000,
-            "canopy_area_hectares": results.get("area_hectares", 0),
+            "canopy_area_m2": results.get("claimable_vegetation_ha", 0) * 10000,
+            "canopy_area_hectares": results.get("claimable_vegetation_ha", 0),
             "biomass_density_tons_per_ha": results.get("biomass_per_ha", 0),
-            "biomass_tons": results.get("biomass_per_ha", 0) * results.get("area_hectares", 0),
+            "biomass_tons": results.get("biomass_per_ha", 0) * results.get("claimable_vegetation_ha", 0),
             "carbon_tons": results.get("total_carbon_tons", 0),
             "co2_equivalent_tons": results["co2_equivalent_tons"],
             
@@ -281,10 +272,10 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
         # 2. Multi-Sensor Analysis (GEE)
         logger.info("⏳ Sending geometry to Google Earth Engine for Rerun...")
         gee_data = analyse_parcel(geojson_geom)
-        
         # 3. Scientific Metrics Calculation
-        from utils.logic import run_carbon_pipeline, calculate_confidence_score
+        from utils.logic import run_carbon_pipeline, calculate_asset_confidence
         results = run_carbon_pipeline(
+            parcel_area_ha=parcel.calculated_area_ha,
             biome_name=biome_name,
             canopy_height=gee_data.get("canopy_height", 15.0),
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
@@ -318,11 +309,7 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
 
         logger.info(f"✅ Rerun Ledger Entry Created: {cert_id}")
 
-        final_conf = calculate_confidence_score(
-            gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-            gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)), 
-            gee_data.get("ndvi_std", 0.1)
-        )
+        final_conf = results.get("confidence_score", 95.0)
 
         return {
             "parcel_id": str(parcel.id),
@@ -334,10 +321,10 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
             "vegetation_pixel_count": gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)),
-            "canopy_area_m2": results.get("area_hectares", 0) * 10000,
-            "canopy_area_hectares": results.get("area_hectares", 0),
+            "canopy_area_m2": results.get("claimable_vegetation_ha", 0) * 10000,
+            "canopy_area_hectares": results.get("claimable_vegetation_ha", 0),
             "biomass_density_tons_per_ha": results.get("biomass_per_ha", 0),
-            "biomass_tons": results.get("biomass_per_ha", 0) * results.get("area_hectares", 0),
+            "biomass_tons": results.get("biomass_per_ha", 0) * results.get("claimable_vegetation_ha", 0),
             "carbon_tons": results.get("total_carbon_tons", 0),
             "co2_equivalent_tons": results["co2_equivalent_tons"],
             
@@ -348,7 +335,7 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             "optical_images_used": gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
             "radar_images_used": gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0)),
             "fusion_ratio": "ML Random Forest Inference",
-            "image_count": gee_data.get("optical_images_used", 0) + gee_data.get("radar_images_used", 0),
+            "image_count": gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0),
             "date_range": {"start": str(curr_year), "end": str(curr_year)},
             "user_id": user_id
         }

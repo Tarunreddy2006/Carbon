@@ -25,7 +25,7 @@ from database.models import ParcelRecord, CarbonCredit, CreditStatus
 from services.service import analyse_parcel, get_historical_ndvi
 from services.ledger import generate_cryptographic_proof
 from services.validation import validate_and_clean_geometry
-from utils.logic import run_carbon_pipeline, calculate_confidence_score
+from utils.logic import run_carbon_pipeline, calculate_asset_confidence
 from services.ledger import generate_credit_certificate
 from services.auth import get_current_user
 

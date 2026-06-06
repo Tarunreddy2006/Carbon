@@ -125,7 +125,11 @@ def analyse_parcel(geojson_geometry):
     s1_median = s1_col.select(['VV', 'VH']).median()
 
     stats = s2_median.select('NDVI').addBands(s1_median).reduceRegion(
-        reducer=ee.Reducer.mean().combine(ee.Reducer.stdDev(), sharedInputs=True).combine(ee.Reducer.count(), sharedInputs=True),
+        reducer=ee.Reducer.mean()\
+            .combine(ee.Reducer.stdDev(), sharedInputs=True)\
+            .combine(ee.Reducer.min(), sharedInputs=True)\
+            .combine(ee.Reducer.max(), sharedInputs=True)\
+            .combine(ee.Reducer.count(), sharedInputs=True),
         geometry=geom, scale=10
     ).getInfo()
 
@@ -133,6 +137,8 @@ def analyse_parcel(geojson_geometry):
 
     return {
         "ndvi_mean": stats.get('NDVI_mean', 0.0),
+        "ndvi_min": stats.get('NDVI_min', 0.0),
+        "ndvi_max": stats.get('NDVI_max', 0.0),
         "ndvi_std": stats.get('NDVI_stdDev', 0.0),
         "sar_vv_backscatter": stats.get('VV_mean', -25.0),
         "sar_vh_backscatter": stats.get('VH_mean', -25.0),

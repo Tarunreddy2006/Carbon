@@ -490,12 +490,13 @@ textarea {
 .prov-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding: 10px;
   background: rgba(30, 41, 59, 0.5);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   font-size: 12px;
+  gap: 16px;
 }
 
 .prov-row__key {
@@ -507,6 +508,7 @@ textarea {
   color: var(--text-primary);
   font-family: var(--font-mono);
   font-weight: 500;
+  text-align: right;
 }
 
 /* Draw Actions */
