@@ -23,11 +23,22 @@ except FileNotFoundError as e:
     biomass_model = None
     feature_scaler = None
 
-def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float) -> float:
+def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, scenes_used: int = 0) -> float:
     """
     Calculates an asset-specific confidence score based on remote sensing data quality,
     statistical training drift, and biophysical sanity checks.
+
+    KILL-SWITCH: If GEE returned zero cloud-free scenes, the data is entirely
+    fallback/default values. Granting high confidence on fabricated data is fraud.
+    Immediately return the minimum floor score of 5.0%.
     """
+    # ══════════════════════════════════════════════════════════════════════
+    # THE KILL-SWITCH: Zero scenes = zero trust
+    # ══════════════════════════════════════════════════════════════════════
+    if scenes_used == 0:
+        logger.warning("🚨 KILL-SWITCH ACTIVATED: 0 satellite scenes used. Confidence forced to 5.0%.")
+        return 5.0
+
     # Baseline statistical profiles calculated directly from training datasets
     baselines = {
         'ndvi': {'mean': 0.58, 'std': 0.15, 'min': 0.05, 'max': 0.95},
@@ -68,15 +79,24 @@ def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, c
     if sar_vh > -10.0 and canopy_height < 4.0:
         total_penalty += 20.0
 
+    # 4. Low scene count degrades trust even when data looks normal
+    if scenes_used < 5:
+        total_penalty += (5 - scenes_used) * 3.0
+
     # Base assessment integrity begins at 99.0% for pristine, central-profile data
     calculated_score = 99.0 - total_penalty
     
     # Return bounded score between a floor of 5% and ceiling of 99.5%
     return round(max(5.0, min(calculated_score, 99.5)), 1)
 
-def run_carbon_pipeline(veg_pixels: int, ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, parcel_area_ha: float, biome_name: str = "Default"):
+def run_carbon_pipeline(veg_pixels: int, ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, parcel_area_ha: float, biome_name: str = "Default", scenes_used: int = 0):
     """
     ML-Driven Biomass Inference Engine with Asset Integrity Guardrails.
+    
+    Returns a dictionary with the CANONICAL API CONTRACT keys that the
+    frontend and tasks.py both depend on:
+        area_hectares, parcel_area_ha, biomass_per_ha, total_biomass_tons,
+        total_carbon_tons, co2_equivalent_tons, confidence_score
     """
     if biomass_model and feature_scaler:
         # 1. Recreate exact advanced structural features used in training
@@ -129,12 +149,18 @@ def run_carbon_pipeline(veg_pixels: int, ndvi_mean: float, sar_vv: float, sar_vh
     co2e_tons = carbon_tons * 3.67
     
     # Compute the non-random asset data integrity metrics
-    confidence = calculate_asset_confidence(ndvi_mean, sar_vv, sar_vh, canopy_height)
+    # Pass scenes_used so the kill-switch can fire on zero-scene fallback data
+    confidence = calculate_asset_confidence(ndvi_mean, sar_vv, sar_vh, canopy_height, scenes_used=scenes_used)
     
     return {
+        # ══════════════════════════════════════════════════════════════
+        # THE API CONTRACT — these keys are read by tasks.py AND the
+        # frontend JS.  Renaming any key here WILL cause the 0t bug.
+        # ══════════════════════════════════════════════════════════════
+        "area_hectares": round(effective_claimable_area, 2),
         "parcel_area_ha": round(parcel_area_ha, 2),
-        "claimable_vegetation_ha": round(effective_claimable_area, 2),
         "biomass_per_ha": round(float(tuned_biomass_per_ha), 2),
+        "total_biomass_tons": round(float(total_biomass), 2),
         "total_carbon_tons": round(float(carbon_tons), 2),
         "co2_equivalent_tons": round(float(co2e_tons), 2),
         "confidence_score": round(confidence, 1)
