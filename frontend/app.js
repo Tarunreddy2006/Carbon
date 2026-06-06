@@ -107,10 +107,20 @@ function initMap() {
 
     // Explicitly ensure [Longitude, Latitude] mapping for GEE compatibility
     const latLngs = e.layer.getLatLngs()[0];
+    const coords = latLngs.map(ll => [ll.lng, ll.lat]);
+
+    // 🔒 FIX: Close the linear ring (A→B→C→D→A) — PostGIS/GEE require it
+    if (coords.length > 0) {
+      coords.push([...coords[0]]);
+    }
+
     drawnPolygon = {
       type: 'Polygon',
-      coordinates: [latLngs.map(ll => [ll.lng, ll.lat])]
+      coordinates: [coords]
     };
+
+    // Clear any stale pasted coordinates so runEstimation uses the drawn polygon
+    window.currentPolygonCoords = null;
 
     _isDrawing = false;
     _updateDrawBtn(false);
@@ -263,6 +273,8 @@ function startDrawing() {
 
   drawnItems.clearLayers();
   drawnPolygon = null;
+  // 🔒 FIX: Clear pasted coordinates to prevent ghost geometry overriding the new drawing
+  window.currentPolygonCoords = null;
   if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
   if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
 
