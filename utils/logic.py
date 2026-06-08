@@ -89,7 +89,7 @@ def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, c
     # Return bounded score between a floor of 5% and ceiling of 99.5%
     return round(max(5.0, min(calculated_score, 99.5)), 1)
 
-def run_carbon_pipeline(veg_pixels: int, ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, parcel_area_ha: float, biome_name: str = "Default", scenes_used: int = 0):
+def run_carbon_pipeline(parcel_area_ha: float, ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, veg_pixels: int = 0, biome_name: str = "Default", scenes_used: int = 0):
     """
     ML-Driven Biomass Inference Engine with Asset Integrity Guardrails.
     
