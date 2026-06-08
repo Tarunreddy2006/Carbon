@@ -18,6 +18,7 @@ services:
       - ./services:/app/services
       - ./routes:/app/routes
       - ./database:/app/database
+      - cog-store:/app/cog_exports
     depends_on:
       - redis
     restart: always
@@ -39,6 +40,7 @@ services:
       - ./services:/app/services
       - ./routes:/app/routes
       - ./database:/app/database
+      - cog-store:/app/cog_exports
     depends_on:
       - redis
     restart: always
@@ -61,3 +63,28 @@ services:
       - redis
     restart: always
 
+  # ── TiTiler Dynamic Tile Server ───────────────────────────────────────────
+  # Serves Cloud Optimized GeoTIFFs (COGs) as on-the-fly XYZ raster tiles
+  # for hardware-accelerated MapLibre GL JS overlays.
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    container_name: carbon-titiler
+    ports:
+      - "127.0.0.1:8002:8000"
+    environment:
+      # ── GDAL / VSI performance tuning for COG streaming ──────────────────
+      - CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.tiff
+      - GDAL_CACHEMAX=512
+      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      # ── TiTiler listens on 8000 internally ───────────────────────────────
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      - cog-store:/data/cogs:ro
+    restart: always
+
+volumes:
+  cog-store:
+    driver: local

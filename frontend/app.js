@@ -596,7 +596,7 @@ function clearPolygon() {
 }
 
 /**
- * Helper to clear result-source data and any open popups.
+ * Helper to clear result-source data, COG tile overlays, and any open popups.
  */
 function _clearResultLayers() {
   if (map && map.getSource('result-source')) {
@@ -609,6 +609,83 @@ function _clearResultLayers() {
     currentResultPopup.remove();
     currentResultPopup = null;
   }
+  // Remove existing COG tile overlay if present
+  _removeCogOverlay();
+}
+
+/* ── COG Tile Overlay (TiTiler Dynamic Streaming) ──────────────────────── */
+
+var _activeCogLayerId = null;
+var _activeCogSourceId = null;
+
+/**
+ * Adds a dynamic raster tile overlay from TiTiler onto the MapLibre GL map.
+ *
+ * @param {string} tilesUrl — The TiTiler XYZ tile URL template with {z}/{x}/{y}
+ * @param {object} [bounds] — Optional [sw, ne] bounding box to constrain tiles
+ */
+function addCogTileOverlay(tilesUrl, bounds) {
+  if (!map || !tilesUrl) return;
+
+  // Remove any existing COG overlay first
+  _removeCogOverlay();
+
+  // Generate unique IDs to prevent collisions
+  var uid = 'cog-' + Date.now();
+  _activeCogSourceId = uid + '-source';
+  _activeCogLayerId = uid + '-layer';
+
+  // The TiTiler URL uses {z}/{x}/{y} but MapLibre expects the same notation
+  // Ensure the URL template is in the correct format
+  var tileUrlForMapLibre = tilesUrl
+    .replace('{z}', '{z}')
+    .replace('{x}', '{x}')
+    .replace('{y}', '{y}');
+
+  // Add the raster tile source
+  map.addSource(_activeCogSourceId, {
+    type: 'raster',
+    tiles: [tileUrlForMapLibre],
+    tileSize: 256,
+    bounds: bounds || undefined,
+    attribution: 'NDVI © Sentinel-2 via TiTiler'
+  });
+
+  // Insert the raster layer BELOW the result-layer-fill so the vector
+  // parcel boundary always renders on top of the heatmap
+  var beforeLayerId = 'result-layer-fill';
+  if (!map.getLayer(beforeLayerId)) {
+    beforeLayerId = undefined;
+  }
+
+  map.addLayer({
+    id: _activeCogLayerId,
+    type: 'raster',
+    source: _activeCogSourceId,
+    paint: {
+      'raster-opacity': 0.75,
+      'raster-fade-duration': 300
+    }
+  }, beforeLayerId);
+
+  console.log('[COG] Dynamic tile overlay added:', _activeCogLayerId);
+}
+
+/**
+ * Remove the active COG raster overlay from the map.
+ */
+function _removeCogOverlay() {
+  if (!map) return;
+
+  if (_activeCogLayerId && map.getLayer(_activeCogLayerId)) {
+    map.removeLayer(_activeCogLayerId);
+  }
+  if (_activeCogSourceId && map.getSource(_activeCogSourceId)) {
+    map.removeSource(_activeCogSourceId);
+  }
+
+  _activeCogLayerId = null;
+  _activeCogSourceId = null;
 }
 
 // ==========================================
@@ -861,6 +938,15 @@ function drawResult(geojson, data) {
     _swapToSatellite();
     map.fitBounds([sw, ne], { padding: 80, duration: 1500 });
   }, 200);
+
+  // ── Stream COG NDVI heatmap via TiTiler if available ─────────────────
+  if (data.ndvi_tiles_url) {
+    // Wait for the camera transition to complete before adding the raster layer
+    // so MapLibre requests tiles at the correct zoom level
+    setTimeout(function () {
+      addCogTileOverlay(data.ndvi_tiles_url, [sw, ne]);
+    }, 2000);
+  }
 }
 
 function renderResults(data) {
@@ -889,6 +975,16 @@ function renderResults(data) {
     return '<div class="prov-row"><span class="prov-row__key">' + r[0] +
       '</span><span class="prov-row__value">' + r[1] + '</span></div>';
   }).join('');
+
+  // Show raster streaming indicator if COG tile URL is available
+  if (data.ndvi_tiles_url) {
+    var rasterRow = document.createElement('div');
+    rasterRow.className = 'prov-row';
+    rasterRow.innerHTML = '<span class="prov-row__key">Raster Layer</span>' +
+      '<span class="prov-row__value" style="color: var(--accent-green);">🛰️ NDVI COG Streaming</span>';
+    document.getElementById('prov-rows').appendChild(rasterRow);
+  }
+
   renderChart(data.historical_trends);
 }
 

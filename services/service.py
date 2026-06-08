@@ -3,6 +3,7 @@ services/service.py
 ─────────────────────────────────────────────────────────────────────────────
 Handles Google Earth Engine (GEE) integration. 
 Performs cloud-masking and multi-temporal median compositing.
+Exports Cloud Optimized GeoTIFFs (COGs) for TiTiler dynamic tile streaming.
 ─────────────────────────────────────────────────────────────────────────────
 """
 
@@ -10,12 +11,26 @@ import ee
 import os
 import json
 import logging
+import uuid
+import requests
+import numpy as np
 from datetime import datetime, timedelta, timezone
 from google.oauth2 import service_account
 
 logger = logging.getLogger(__name__)
 
 _IS_GEE_INITIALIZED = False
+
+# ── COG Storage Configuration ──────────────────────────────────────────────
+# Local volume path (shared Docker volume mounted at /app/cog_exports in api/worker
+# and /data/cogs in the TiTiler container)
+COG_EXPORT_DIR = os.environ.get("COG_EXPORT_DIR", "/app/cog_exports")
+
+# TiTiler base URL — internal Docker service name or external host
+TITILER_BASE_URL = os.environ.get("TITILER_BASE_URL", "http://titiler:8000")
+
+# Public-facing TiTiler URL (what the browser hits)
+TITILER_PUBLIC_URL = os.environ.get("TITILER_PUBLIC_URL", "http://localhost:8002")
 
 def initialise_gee():
     global _IS_GEE_INITIALIZED
@@ -135,6 +150,9 @@ def analyse_parcel(geojson_geometry):
 
     canopy_height = get_canopy_height(geom)
 
+    # Extract NDVI composite for COG export
+    ndvi_image = s2_median.select('NDVI')
+
     return {
         "ndvi_mean": stats.get('NDVI_mean', 0.0),
         "ndvi_min": stats.get('NDVI_min', 0.0),
@@ -146,5 +164,151 @@ def analyse_parcel(geojson_geometry):
         "veg_pixels": int(stats.get('NDVI_count', 0) or 0),
         "opt_imgs": s2_col.size().getInfo(),
         "rad_imgs": s1_col.size().getInfo(),
-        "ee_geom": geom
+        "ee_geom": geom,
+        "ee_ndvi_image": ndvi_image
     }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COG EXPORT PIPELINE
+# ═══════════════════════════════════════════════════════════════════════════
+
+def export_ndvi_cog(gee_data: dict, geojson_geometry: dict, parcel_id: str) -> dict:
+    """
+    Exports the NDVI median composite from GEE as a Cloud Optimized GeoTIFF.
+
+    Steps:
+        1. Download the NDVI raster from GEE via getDownloadURL (GeoTIFF format)
+        2. Convert to a COG with internal tiling (256×256) and DEFLATE compression
+        3. Write to the shared cog-store volume
+        4. Return the file path and TiTiler tile endpoint URL
+
+    Args:
+        gee_data: The dict returned by analyse_parcel() — must contain 'ee_ndvi_image' and 'ee_geom'
+        geojson_geometry: The original GeoJSON geometry dict
+        parcel_id: Unique parcel identifier for filename construction
+
+    Returns:
+        dict with 'cog_path', 'cog_filename', 'titiler_tiles_url'
+    """
+    try:
+        import rasterio
+        from rasterio.transform import from_bounds
+        from rasterio.io import MemoryFile
+
+        ndvi_image = gee_data.get("ee_ndvi_image")
+        ee_geom = gee_data.get("ee_geom")
+
+        if ndvi_image is None or ee_geom is None:
+            logger.warning("⚠ COG export skipped — no NDVI image or geometry available")
+            return {}
+
+        # ── Step 1: Download NDVI raster from GEE ────────────────────────────
+        logger.info(f"📡 Downloading NDVI raster from GEE for parcel {parcel_id}...")
+
+        download_url = ndvi_image.getDownloadURL({
+            'name': 'ndvi_export',
+            'bands': ['NDVI'],
+            'region': ee_geom,
+            'scale': 10,
+            'format': 'GEO_TIFF',
+            'crs': 'EPSG:4326'
+        })
+
+        response = requests.get(download_url, timeout=120)
+        response.raise_for_status()
+        raw_tiff_bytes = response.content
+
+        logger.info(f"✅ Downloaded {len(raw_tiff_bytes)} bytes of NDVI raster data")
+
+        # ── Step 2: Read the raw GeoTIFF and rewrite as COG ──────────────────
+        os.makedirs(COG_EXPORT_DIR, exist_ok=True)
+
+        cog_filename = f"ndvi_{parcel_id}_{uuid.uuid4().hex[:8]}.tif"
+        cog_path = os.path.join(COG_EXPORT_DIR, cog_filename)
+
+        # Read the downloaded GeoTIFF into memory
+        with MemoryFile(raw_tiff_bytes) as memfile:
+            with memfile.open() as src:
+                data = src.read()
+                profile = src.profile.copy()
+
+                # Replace NaN / nodata with a sentinel value for clean rendering
+                nodata_val = src.nodata if src.nodata is not None else -9999.0
+                if np.issubdtype(data.dtype, np.floating):
+                    data = np.where(np.isnan(data), nodata_val, data)
+
+                # Update profile for COG compliance
+                profile.update(
+                    driver='GTiff',
+                    dtype=data.dtype,
+                    compress='deflate',
+                    tiled=True,
+                    blockxsize=256,
+                    blockysize=256,
+                    nodata=nodata_val,
+                    interleave='band'
+                )
+
+                # Write the COG with overviews for multi-scale tile serving
+                with rasterio.open(cog_path, 'w', **profile) as dst:
+                    dst.write(data)
+
+                    # Build internal overviews (pyramid levels) for fast tile access
+                    overview_levels = [2, 4, 8, 16]
+                    dst.build_overviews(overview_levels, rasterio.enums.Resampling.nearest)
+                    dst.update_tags(ns='rio_overview', resampling='nearest')
+
+        logger.info(f"✅ COG exported: {cog_path}")
+
+        # ── Step 3: Construct TiTiler tile URL ───────────────────────────────
+        # In the Docker network:
+        #   - Worker writes to:     /app/cog_exports/{filename}
+        #   - TiTiler reads from:   /data/cogs/{filename}   (same volume, different mount)
+        #   - Browser requests:     http://localhost:8002/cog/tiles/{z}/{x}/{y}?url=...
+        #
+        # For the TiTiler tile URL, we construct using the container-internal path
+        # that TiTiler can resolve (file:///data/cogs/{filename})
+        titiler_cog_url = f"file:///data/cogs/{cog_filename}"
+
+        titiler_tiles_url = (
+            f"{TITILER_PUBLIC_URL}/cog/tiles/{{z}}/{{x}}/{{y}}"
+            f"?url={titiler_cog_url}"
+            f"&rescale=-1,1"
+            f"&colormap_name=rdylgn"
+        )
+
+        return {
+            "cog_path": cog_path,
+            "cog_filename": cog_filename,
+            "titiler_tiles_url": titiler_tiles_url,
+            "titiler_cog_url": titiler_cog_url
+        }
+
+    except ImportError:
+        logger.warning("⚠ rasterio not installed — COG export disabled. pip install rasterio")
+        return {}
+    except Exception as e:
+        logger.error(f"❌ COG export failed for parcel {parcel_id}: {e}", exc_info=True)
+        return {}
+
+
+def build_titiler_tile_url(cog_filename: str, rescale: str = "-1,1",
+                           colormap: str = "rdylgn") -> str:
+    """
+    Utility to construct a TiTiler XYZ tile URL template from a COG filename.
+
+    Args:
+        cog_filename: The .tif filename stored in the cog-store volume
+        rescale: Min,max rescale range (e.g. "-1,1" for NDVI)
+        colormap: Named colormap (rdylgn, viridis, ndvi, etc.)
+
+    Returns:
+        XYZ tile URL template string with {z}/{x}/{y} placeholders
+    """
+    titiler_cog_url = f"file:///data/cogs/{cog_filename}"
+    return (
+        f"{TITILER_PUBLIC_URL}/cog/tiles/{{z}}/{{x}}/{{y}}"
+        f"?url={titiler_cog_url}"
+        f"&rescale={rescale}"
+        f"&colormap_name={colormap}"
+    )

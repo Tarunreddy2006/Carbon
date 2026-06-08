@@ -14,7 +14,7 @@ import shapely.geometry
 from database.db import SessionLocal
 from database.models import ParcelRecord, CarbonCredit, CreditStatus, Ecoregion
 from sqlalchemy import func
-from services.service import analyse_parcel
+from services.service import analyse_parcel, export_ndvi_cog
 from utils.logic import run_carbon_pipeline
 
 logger = logging.getLogger("celery_tasks")
@@ -160,6 +160,10 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         # Called synchronously
         gee_data = analyse_parcel(geojson_geom)
 
+        # 4b. Export NDVI raster as Cloud Optimized GeoTIFF for TiTiler streaming
+        logger.info("📡 Exporting NDVI raster as COG for dynamic tile streaming...")
+        cog_result = export_ndvi_cog(gee_data, geojson_geom, str(payload_dict.get('farm_id', 'unknown')))
+
         # Calculate total scenes for the kill-switch
         total_scenes = gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0)
 
@@ -247,7 +251,11 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             "fusion_ratio": "ML Random Forest Inference",
             "image_count": gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0),
             "date_range": {"start": str(curr_year - 4), "end": str(curr_year)},
-            "user_id": user_id
+            "user_id": user_id,
+
+            # ── TiTiler COG streaming layer ────────────────────────────────
+            "ndvi_tiles_url": cog_result.get("titiler_tiles_url", None),
+            "cog_filename": cog_result.get("cog_filename", None)
         }
 
     except Exception as e:
@@ -280,6 +288,10 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
         # 2. Multi-Sensor Analysis (GEE)
         logger.info("⏳ Sending geometry to Google Earth Engine for Rerun...")
         gee_data = analyse_parcel(geojson_geom)
+
+        # 2b. Export NDVI raster as Cloud Optimized GeoTIFF for TiTiler streaming
+        logger.info("📡 Exporting NDVI raster as COG for rerun tile streaming...")
+        cog_result = export_ndvi_cog(gee_data, geojson_geom, parcel_id)
 
         # Calculate total scenes for the kill-switch
         total_scenes = gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0)
@@ -350,7 +362,11 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             "fusion_ratio": "ML Random Forest Inference",
             "image_count": gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0),
             "date_range": {"start": str(curr_year), "end": str(curr_year)},
-            "user_id": user_id
+            "user_id": user_id,
+
+            # ── TiTiler COG streaming layer ────────────────────────────────
+            "ndvi_tiles_url": cog_result.get("titiler_tiles_url", None),
+            "cog_filename": cog_result.get("cog_filename", None)
         }
 
     except Exception as e:

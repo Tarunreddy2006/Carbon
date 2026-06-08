@@ -19,6 +19,11 @@ const CONFIG = (() => {
     // ── API ────────────────────────────────────────────────────────────────
     API_BASE_URL,
 
+    // ── TiTiler Dynamic Tile Server ─────────────────────────────────────
+    TITILER_URL: (hostname === 'stomata.tech')
+      ? 'https://stomata.tech:8002'
+      : 'http://localhost:8002',
+
     // ── Auth ───────────────────────────────────────────────────────────────
     TOKEN_KEY: 'carbon_jwt_token',
     ROLE_KEY:  'carbon_user_role',
