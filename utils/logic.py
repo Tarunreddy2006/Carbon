@@ -3,13 +3,13 @@ utils/logic.py
 ─────────────────────────────────────────────────────────────────────────────
 The core mathematical engine.
 Now features a data-driven Asset Verification Index for true confidence scores,
-mathematically clamped claimable areas, and safe numpy/pandas scaling.
+mathematically clamped claimable areas, and safe numpy/polars scaling.
 ─────────────────────────────────────────────────────────────────────────────
 """
 import joblib
 import logging
 import numpy as np
-import pandas as pd
+import polars as pl
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, c
     # Return bounded score between a floor of 5% and ceiling of 99.5%
     return round(max(5.0, min(calculated_score, 99.5)), 1)
 
-def run_carbon_pipeline(parcel_area_ha: float, ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, veg_pixels: int = 0, biome_name: str = "Default", scenes_used: int = 0):
+def run_carbon_pipeline(parcel_area_ha: float, ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, veg_pixels: int = 0, biome_name: str = "Default", scenes_used: int = 0) -> dict:
     """
     ML-Driven Biomass Inference Engine with Asset Integrity Guardrails.
     
@@ -99,28 +99,39 @@ def run_carbon_pipeline(parcel_area_ha: float, ndvi_mean: float, sar_vv: float, 
         total_carbon_tons, co2_equivalent_tons, confidence_score
     """
     if biomass_model and feature_scaler:
-        # 1. Recreate exact advanced structural features used in training
-        # Pure Python prevents Numpy array dimension crashes for the StandardScaler
-        safe_sar_vv = sar_vv if sar_vv != 0.0 else 1e-5
-        radar_ratio = sar_vh / safe_sar_vv
+        # Define strict feature column template
+        feature_cols = [
+            'canopy_height', 
+            'ndvi_mean', 
+            'sar_vv', 
+            'sar_vh', 
+            'radar_ratio', 
+            'canopy_volume_index', 
+            'optical_height_proxy'
+        ]
         
-        canopy_volume_index = (sar_vh - sar_vv) * canopy_height
-        optical_height_proxy = ndvi_mean * canopy_height
+        # 1. Create expression-optimized Polars DataFrame with initial inputs
+        raw_features_df = pl.DataFrame({
+            "canopy_height": [canopy_height],
+            "ndvi_mean": [ndvi_mean],
+            "sar_vv": [sar_vv],
+            "sar_vh": [sar_vh]
+        })
         
-        feature_cols = ['canopy_height', 'ndvi_mean', 'sar_vv', 'sar_vh', 'radar_ratio', 'canopy_volume_index', 'optical_height_proxy']
-        
-        raw_features_df = pd.DataFrame([[
-            canopy_height, 
-            ndvi_mean, 
-            sar_vv, 
-            sar_vh, 
-            radar_ratio, 
-            canopy_volume_index, 
-            optical_height_proxy
-        ]], columns=feature_cols)
+        # Compute derived structural features using Polars expressions
+        raw_features_df = raw_features_df.with_columns(
+            pl.when(pl.col("sar_vv") == 0.0)
+            .then(1e-5)
+            .otherwise(pl.col("sar_vv"))
+            .alias("safe_sar_vv")
+        ).with_columns([
+            (pl.col("sar_vh") / pl.col("safe_sar_vv")).alias("radar_ratio"),
+            ((pl.col("sar_vh") - pl.col("sar_vv")) * pl.col("canopy_height")).alias("canopy_volume_index"),
+            (pl.col("ndvi_mean") * pl.col("canopy_height")).alias("optical_height_proxy")
+        ]).select(feature_cols)
 
-        # Apply scaling transformation matrix
-        scaled_features = feature_scaler.transform(raw_features_df)
+        # Convert Polars DataFrame smoothly to NumPy directly at the boundary of the transformation statement
+        scaled_features = feature_scaler.transform(raw_features_df.to_numpy())
         tuned_biomass_per_ha = biomass_model.predict(scaled_features)[0]
     else:
         tuned_biomass_per_ha = 120.0
