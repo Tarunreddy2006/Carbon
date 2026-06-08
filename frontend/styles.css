@@ -204,8 +204,80 @@ body, html {
   height: 100%;
 }
 
-/* Leaflet Customization */
-.leaflet-container { background: #020617 !important; }
+/* MapLibre GL Customization */
+.maplibregl-canvas { outline: none; }
+.maplibregl-map { font-family: var(--font-sans); }
+
+/* MapLibre popup dark theme */
+.maplibregl-popup-content {
+  background: rgba(15, 23, 42, 0.95) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 12px 16px !important;
+  font-size: 13px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(12px);
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: rgba(15, 23, 42, 0.95) !important;
+}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: rgba(15, 23, 42, 0.95) !important;
+}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: rgba(15, 23, 42, 0.95) !important;
+}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: rgba(15, 23, 42, 0.95) !important;
+}
+
+.maplibregl-popup-close-button {
+  color: var(--text-muted) !important;
+  font-size: 18px !important;
+  padding: 4px 8px !important;
+}
+.maplibregl-popup-close-button:hover {
+  color: var(--text-primary) !important;
+  background: transparent !important;
+}
+
+/* MapLibre navigation controls dark theme */
+.maplibregl-ctrl-group {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  backdrop-filter: blur(8px);
+}
+.maplibregl-ctrl-group button {
+  background-color: transparent !important;
+  border-bottom-color: var(--border) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--border) !important;
+}
+.maplibregl-ctrl-group button:hover {
+  background-color: rgba(30, 41, 59, 0.8) !important;
+}
+.maplibregl-ctrl-group button span {
+  filter: invert(1);
+}
+
+/* MapboxDraw controls — hide default toolbar since we use sidebar buttons */
+.mapboxgl-ctrl-group.mapboxgl-ctrl {
+  display: none !important;
+}
+
+/* MapLibre attribution styling */
+.maplibregl-ctrl-attrib {
+  background: rgba(15, 23, 42, 0.7) !important;
+  color: var(--text-muted) !important;
+  font-size: 10px !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: #58a6ff !important;
+}
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* EXTENDED STYLES — TABS, FORMS, BUTTONS, PANELS */

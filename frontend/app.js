@@ -1,6 +1,9 @@
 /**
  * app.js — Carbon Biomass Intelligence Engine
  * GPS-based location → draw polygon → GEE carbon estimation
+ *
+ * Mapping layer: MapLibre GL JS + @mapbox/mapbox-gl-draw
+ * (Migrated from Leaflet + Leaflet.Draw)
  */
 'use strict';
 
@@ -72,12 +75,12 @@ async function performLogin() {
 // CONFIG is now loaded from config.js (included via <script> tag before app.js)
 
 /* ── State ─────────────────────────────────────────────────────────────────── */
-let map, drawnItems;
+let map, draw;
 let drawnPolygon = null;
-let currentResultLayer = null;
-let resultLayer = null;
+let currentResultPopup = null;
 let locationMarker = null;
-let _satTile = null, _darkTile = null, _isSat = false;
+let locationAccuracySource = null;
+let _isSat = false;
 let _isDrawing = false;
 let trendChart = null; // Chart.js instance for trends
 
@@ -85,33 +88,162 @@ let trendChart = null; // Chart.js instance for trends
 
 function initMap() {
   if (map) {
-    window.setTimeout(function () { map.invalidateSize(); }, 0);
+    window.setTimeout(function () { map.resize(); }, 0);
     return;
   }
 
-  map = L.map('map', { center: CONFIG.MAP_CENTER, zoom: CONFIG.MAP_ZOOM });
+  // MapLibre GL map — build a raster style object on the fly from CONFIG tile URLs
+  map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      name: 'CarbonEngine Satellite',
+      sources: {
+        'satellite-tiles': {
+          type: 'raster',
+          tiles: [CONFIG.SAT_URL],
+          tileSize: 256,
+          attribution: CONFIG.SAT_ATTR,
+          maxzoom: 20
+        },
+        'dark-tiles': {
+          type: 'raster',
+          tiles: [
+            CONFIG.DARK_URL
+              .replace('{s}', 'a')
+              .replace('{r}', '')
+          ],
+          tileSize: 256,
+          attribution: CONFIG.DARK_ATTR,
+          maxzoom: 19
+        }
+      },
+      layers: [
+        {
+          id: 'satellite-layer',
+          type: 'raster',
+          source: 'satellite-tiles',
+          layout: { visibility: 'visible' }
+        },
+        {
+          id: 'dark-layer',
+          type: 'raster',
+          source: 'dark-tiles',
+          layout: { visibility: 'none' }
+        }
+      ]
+    },
+    center: [CONFIG.MAP_CENTER[1], CONFIG.MAP_CENTER[0]], // [lng, lat] — CONFIG stores [lat, lng]
+    zoom: CONFIG.MAP_ZOOM,
+    attributionControl: true
+  });
 
-  // Start on satellite so farm fields are visible
-  _satTile = L.tileLayer(CONFIG.SAT_URL, { attribution: CONFIG.SAT_ATTR, maxZoom: 20 }).addTo(map);
-  _darkTile = L.tileLayer(CONFIG.DARK_URL, { attribution: CONFIG.DARK_ATTR, subdomains: CONFIG.DARK_SUBS, maxZoom: 19 });
   _isSat = true;
 
-  drawnItems = new L.FeatureGroup().addTo(map);
+  // Navigation controls
+  map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
-  // Polygon completed
-  map.on(L.Draw.Event.CREATED, function (e) {
-    drawnItems.clearLayers();
-    if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
-    if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
-    drawnItems.addLayer(e.layer);
+  // MapboxDraw — polygon drawing tool
+  draw = new MapboxDraw({
+    displayControlsDefault: false,
+    controls: {},
+    defaultMode: 'simple_select',
+    styles: [
+      // Active polygon fill
+      {
+        id: 'gl-draw-polygon-fill',
+        type: 'fill',
+        filter: ['all', ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
+        paint: {
+          'fill-color': CONFIG.DRAW_STYLE.fillColor || '#3fb950',
+          'fill-opacity': CONFIG.DRAW_STYLE.fillOpacity || 0.12
+        }
+      },
+      // Active polygon outline
+      {
+        id: 'gl-draw-polygon-stroke-active',
+        type: 'line',
+        filter: ['all', ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
+        paint: {
+          'line-color': CONFIG.DRAW_STYLE.color || '#3fb950',
+          'line-width': CONFIG.DRAW_STYLE.weight || 2
+        }
+      },
+      // Vertex points
+      {
+        id: 'gl-draw-point',
+        type: 'circle',
+        filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'vertex']],
+        paint: {
+          'circle-radius': 5,
+          'circle-color': '#fff',
+          'circle-stroke-color': CONFIG.DRAW_STYLE.color || '#3fb950',
+          'circle-stroke-width': 2
+        }
+      },
+      // Midpoint indicators
+      {
+        id: 'gl-draw-point-midpoint',
+        type: 'circle',
+        filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'midpoint']],
+        paint: {
+          'circle-radius': 3,
+          'circle-color': CONFIG.DRAW_STYLE.color || '#3fb950'
+        }
+      },
+      // Static (committed) polygon fill
+      {
+        id: 'gl-draw-polygon-fill-static',
+        type: 'fill',
+        filter: ['all', ['==', '$type', 'Polygon'], ['==', 'mode', 'static']],
+        paint: {
+          'fill-color': CONFIG.DRAW_STYLE.fillColor || '#3fb950',
+          'fill-opacity': CONFIG.DRAW_STYLE.fillOpacity || 0.12
+        }
+      },
+      // Static polygon outline
+      {
+        id: 'gl-draw-polygon-stroke-static',
+        type: 'line',
+        filter: ['all', ['==', '$type', 'Polygon'], ['==', 'mode', 'static']],
+        paint: {
+          'line-color': CONFIG.DRAW_STYLE.color || '#3fb950',
+          'line-width': CONFIG.DRAW_STYLE.weight || 2
+        }
+      },
+      // Active line strings
+      {
+        id: 'gl-draw-line',
+        type: 'line',
+        filter: ['all', ['==', '$type', 'LineString'], ['!=', 'mode', 'static']],
+        paint: {
+          'line-color': CONFIG.DRAW_STYLE.color || '#3fb950',
+          'line-width': CONFIG.DRAW_STYLE.weight || 2
+        }
+      }
+    ]
+  });
 
-    // Explicitly ensure [Longitude, Latitude] mapping for GEE compatibility
-    const latLngs = e.layer.getLatLngs()[0];
-    const coords = latLngs.map(ll => [ll.lng, ll.lat]);
+  map.addControl(draw, 'top-left');
 
-    // 🔒 FIX: Close the linear ring (A→B→C→D→A) — PostGIS/GEE require it
+  // ── Draw event listeners (replaces Leaflet L.Draw.Event.CREATED) ──────
+  map.on('draw.create', function (e) {
+    var features = e.features;
+    if (!features || features.length === 0) return;
+
+    var feature = features[0];
+    if (feature.geometry.type !== 'Polygon') return;
+
+    // MapboxDraw emits GeoJSON in [lng, lat] order — exactly what GEE expects
+    var coords = feature.geometry.coordinates[0];
+
+    // 🔒 FIX: Ensure the linear ring is closed (A→B→C→D→A) — PostGIS/GEE require it
     if (coords.length > 0) {
-      coords.push([...coords[0]]);
+      var first = coords[0];
+      var last = coords[coords.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        coords.push([first[0], first[1]]);
+      }
     }
 
     drawnPolygon = {
@@ -127,9 +259,105 @@ function initMap() {
     _onDrawn();
   });
 
-  map.on(L.Draw.Event.DRAWSTOP, function () {
-    _isDrawing = false;
-    _updateDrawBtn(false);
+  map.on('draw.update', function (e) {
+    var features = e.features;
+    if (!features || features.length === 0) return;
+
+    var feature = features[0];
+    if (feature.geometry.type !== 'Polygon') return;
+
+    var coords = feature.geometry.coordinates[0];
+
+    // Ensure the ring is closed
+    if (coords.length > 0) {
+      var first = coords[0];
+      var last = coords[coords.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        coords.push([first[0], first[1]]);
+      }
+    }
+
+    drawnPolygon = {
+      type: 'Polygon',
+      coordinates: [coords]
+    };
+
+    window.currentPolygonCoords = null;
+  });
+
+  map.on('draw.delete', function () {
+    drawnPolygon = null;
+    window.currentPolygonCoords = null;
+
+    const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
+    const btnEstimateInst = document.getElementById('btn-estimate-inst');
+    const btnClear = document.getElementById('btn-clear');
+    const btnClearInst = document.getElementById('btn-clear-inst');
+
+    if (btnEstimateFarmer) btnEstimateFarmer.disabled = true;
+    if (btnEstimateInst) btnEstimateInst.disabled = true;
+    if (btnClear) btnClear.disabled = true;
+    if (btnClearInst) btnClearInst.disabled = true;
+  });
+
+  // ── Provision result overlay source + layers on map load ──────────────
+  map.on('load', function () {
+    // GeoJSON runtime source for result parcels
+    map.addSource('result-source', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+
+    // Result fill layer
+    map.addLayer({
+      id: 'result-layer-fill',
+      type: 'fill',
+      source: 'result-source',
+      paint: {
+        'fill-color': CONFIG.DONE_STYLE.fillColor || '#3fb950',
+        'fill-opacity': CONFIG.DONE_STYLE.fillOpacity || 0.18
+      }
+    });
+
+    // Result outline layer
+    map.addLayer({
+      id: 'result-layer-outline',
+      type: 'line',
+      source: 'result-source',
+      paint: {
+        'line-color': CONFIG.DONE_STYLE.color || '#ff6b6b',
+        'line-width': CONFIG.DONE_STYLE.weight || 2.5,
+        'line-opacity': CONFIG.DONE_STYLE.opacity || 0.9,
+        'line-dasharray': [5, 4]
+      }
+    });
+
+    // Location accuracy circle source (for GPS)
+    map.addSource('location-accuracy', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+
+    map.addLayer({
+      id: 'location-accuracy-fill',
+      type: 'fill',
+      source: 'location-accuracy',
+      paint: {
+        'fill-color': '#58a6ff',
+        'fill-opacity': 0.10
+      }
+    });
+
+    map.addLayer({
+      id: 'location-accuracy-outline',
+      type: 'line',
+      source: 'location-accuracy',
+      paint: {
+        'line-color': '#58a6ff',
+        'line-width': 1,
+        'line-dasharray': [4, 4]
+      }
+    });
   });
 }
 
@@ -139,7 +367,34 @@ function initMap() {
 var GPS_TARGET_ACCURACY = 20;   // metres — stop refining once this is reached
 var GPS_MAX_WAIT_MS = 20000; // max time to wait for a good fix
 var _watchId = null;
-var _accuracyCircle = null;
+
+/**
+ * Create a GeoJSON circle polygon (approximation) for rendering GPS accuracy.
+ * MapLibre GL doesn't have L.circle() — we generate a polygon.
+ */
+function _createGeoJSONCircle(center, radiusMeters, points) {
+  if (!points) points = 64;
+  var coords = [];
+  var distanceX = radiusMeters / (111320 * Math.cos(center[1] * Math.PI / 180));
+  var distanceY = radiusMeters / 110540;
+
+  for (var i = 0; i < points; i++) {
+    var theta = (i / points) * (2 * Math.PI);
+    var x = distanceX * Math.cos(theta);
+    var y = distanceY * Math.sin(theta);
+    coords.push([center[0] + x, center[1] + y]);
+  }
+  coords.push(coords[0]); // close ring
+
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords]
+    },
+    properties: {}
+  };
+}
 
 function goToMyLocation() {
   if (!navigator.geolocation) {
@@ -171,35 +426,48 @@ function goToMyLocation() {
       if (acc >= bestAccuracy && hasFlewToLocation) return;
       bestAccuracy = acc;
 
-      // Remove previous markers/circles
-      if (locationMarker) { map.removeLayer(locationMarker); locationMarker = null; }
-      if (_accuracyCircle) { map.removeLayer(_accuracyCircle); _accuracyCircle = null; }
+      // Remove previous marker
+      if (locationMarker) {
+        locationMarker.remove();
+        locationMarker = null;
+      }
 
-      // Draw accuracy circle (same as Google Maps blue halo)
-      _accuracyCircle = L.circle([lat, lon], {
-        radius: acc,
-        color: '#58a6ff', fillColor: '#58a6ff',
-        fillOpacity: 0.10, weight: 1, dashArray: '4 4',
-      }).addTo(map);
+      // Draw accuracy circle via GeoJSON source
+      if (map.getSource('location-accuracy')) {
+        var circleFeature = _createGeoJSONCircle([lon, lat], acc);
+        map.getSource('location-accuracy').setData({
+          type: 'FeatureCollection',
+          features: [circleFeature]
+        });
+      }
 
-      // Centre dot
-      locationMarker = L.circleMarker([lat, lon], {
-        radius: 7, color: '#fff', fillColor: '#58a6ff',
-        fillOpacity: 1, weight: 2,
-      }).addTo(map)
-        .bindPopup(
-          '📍 <b>You are here</b><br>' +
-          '<small>' + lat.toFixed(6) + ', ' + lon.toFixed(6) + '</small><br>' +
-          '<small>Accuracy: <b>±' + acc + ' m</b></small>' +
-          (acc > 100 ? '<br><small style="color:#d29922">⚠ Low accuracy — open a window or use mobile</small>' : '')
-        );
+      // Centre dot — use a MapLibre GL Marker
+      var markerEl = document.createElement('div');
+      markerEl.style.width = '14px';
+      markerEl.style.height = '14px';
+      markerEl.style.borderRadius = '50%';
+      markerEl.style.background = '#58a6ff';
+      markerEl.style.border = '2px solid #fff';
+      markerEl.style.boxShadow = '0 0 6px rgba(88, 166, 255, 0.5)';
+
+      locationMarker = new maplibregl.Marker({ element: markerEl })
+        .setLngLat([lon, lat])
+        .setPopup(
+          new maplibregl.Popup({ offset: 10 }).setHTML(
+            '📍 <b>You are here</b><br>' +
+            '<small>' + lat.toFixed(6) + ', ' + lon.toFixed(6) + '</small><br>' +
+            '<small>Accuracy: <b>±' + acc + ' m</b></small>' +
+            (acc > 100 ? '<br><small style="color:#d29922">⚠ Low accuracy — open a window or use mobile</small>' : '')
+          )
+        )
+        .addTo(map);
 
       // Fly to location on first fix
       if (!hasFlewToLocation) {
-        map.flyTo([lat, lon], 17, { animate: true, duration: 1.5 });
+        map.flyTo({ center: [lon, lat], zoom: 17, duration: 1500 });
         hasFlewToLocation = true;
       } else {
-        map.panTo([lat, lon], { animate: true, duration: 0.5 });
+        map.panTo([lon, lat], { duration: 500 });
       }
 
       // Update status with current accuracy
@@ -207,13 +475,13 @@ function goToMyLocation() {
         // Good enough — stop watching
         navigator.geolocation.clearWatch(_watchId);
         _watchId = null;
-        locationMarker.openPopup();
+        locationMarker.togglePopup();
         clearStatus();
         document.getElementById('btn-gps').disabled = false;
         if (document.getElementById('btn-gps-inst')) document.getElementById('btn-gps-inst').disabled = false;
         _setStep(2);
         var labelEl = document.getElementById('f-label');
-        if (!labelEl.value.trim()) {
+        if (labelEl && !labelEl.value.trim()) {
           labelEl.value = 'Farm at ' + lat.toFixed(5) + ', ' + lon.toFixed(5);
         }
       } else {
@@ -228,7 +496,7 @@ function goToMyLocation() {
       if (Date.now() - startTime > GPS_MAX_WAIT_MS) {
         navigator.geolocation.clearWatch(_watchId);
         _watchId = null;
-        locationMarker.openPopup();
+        locationMarker.togglePopup();
         document.getElementById('btn-gps').disabled = false;
         if (document.getElementById('btn-gps-inst')) document.getElementById('btn-gps-inst').disabled = false;
         _setStep(2);
@@ -243,7 +511,7 @@ function goToMyLocation() {
           );
         }
         var labelEl = document.getElementById('f-label');
-        if (!labelEl.value.trim()) {
+        if (labelEl && !labelEl.value.trim()) {
           labelEl.value = 'Farm at ' + lat.toFixed(5) + ', ' + lon.toFixed(5);
         }
       }
@@ -267,16 +535,22 @@ function goToMyLocation() {
 
 function startDrawing() {
   if (_isDrawing) {
-    map.fire('draw:drawstop');
+    // Cancel current drawing — switch back to simple_select
+    draw.changeMode('simple_select');
+    _isDrawing = false;
+    _updateDrawBtn(false);
+    clearStatus();
     return;
   }
 
-  drawnItems.clearLayers();
+  // Clear existing drawings
+  draw.deleteAll();
   drawnPolygon = null;
   // 🔒 FIX: Clear pasted coordinates to prevent ghost geometry overriding the new drawing
   window.currentPolygonCoords = null;
-  if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
-  if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
+
+  // Clear result layers
+  _clearResultLayers();
 
   const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
   const btnEstimateInst = document.getElementById('btn-estimate-inst');
@@ -293,21 +567,19 @@ function startDrawing() {
   _isDrawing = true;
   _updateDrawBtn(true);
 
-  new L.Draw.Polygon(map, {
-    shapeOptions: CONFIG.DRAW_STYLE,
-    allowIntersection: false,
-    showArea: true,
-  }).enable();
+  // Activate polygon drawing mode
+  draw.changeMode('draw_polygon');
 
   setStatus('loading', '✏️  Click points around your farm boundary. Double-click to finish.');
 }
 
 function clearPolygon() {
-  drawnItems.clearLayers();
+  draw.deleteAll();
   drawnPolygon = null;
   window.currentPolygonCoords = null;
-  if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
-  if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
+
+  // Clear result layers
+  _clearResultLayers();
 
   const btnEstimateFarmer = document.getElementById('btn-estimate-farmer');
   const btnEstimateInst = document.getElementById('btn-estimate-inst');
@@ -322,6 +594,23 @@ function clearPolygon() {
   clearStatus();
   clearResultsPanel();
 }
+
+/**
+ * Helper to clear result-source data and any open popups.
+ */
+function _clearResultLayers() {
+  if (map && map.getSource('result-source')) {
+    map.getSource('result-source').setData({
+      type: 'FeatureCollection',
+      features: []
+    });
+  }
+  if (currentResultPopup) {
+    currentResultPopup.remove();
+    currentResultPopup = null;
+  }
+}
+
 // ==========================================
 // INSTITUTIONAL FEATURE: PASTE COORDINATES
 // ==========================================
@@ -391,15 +680,21 @@ function loadPastedCoordinates() {
     // SCENARIO A: SINGLE CENTER POINT PROVIDED
     // ==========================================
     if (latlngs.length === 1) {
-      const center = latlngs[0];
+      const center = latlngs[0]; // [lat, lng]
 
-      // Fly to the location at a good zoom level for farms
-      map.flyTo(center, 15, { duration: 1.5 });
+      // Fly to the location at a good zoom level for farms — MapLibre uses [lng, lat]
+      map.flyTo({ center: [center[1], center[0]], zoom: 15, duration: 1500 });
 
       // Drop a temporary marker to guide the user
-      L.marker(center).addTo(map)
-        .bindPopup("<b>Project Center Point</b><br>Please use the Draw tool to outline the boundaries.")
-        .openPopup();
+      new maplibregl.Marker({ color: '#3fb950' })
+        .setLngLat([center[1], center[0]])
+        .setPopup(
+          new maplibregl.Popup({ offset: 10 }).setHTML(
+            "<b>Project Center Point</b><br>Please use the Draw tool to outline the boundaries."
+          )
+        )
+        .addTo(map)
+        .togglePopup();
 
       document.getElementById('f-coords').value = "";
       alert("Center point located! We've flown you there. Please draw the exact polygon boundaries around this area to run the estimation.");
@@ -420,18 +715,27 @@ function loadPastedCoordinates() {
 
     // Clear existing drawings
     if (typeof clearPolygon === 'function') clearPolygon();
-    if (typeof drawnItems !== 'undefined') drawnItems.clearLayers();
+    draw.deleteAll();
 
-    // Draw new polygon
-    const poly = L.polygon(latlngs, {
-      color: '#3fb950',
-      weight: 3,
-      fillColor: '#3fb950',
-      fillOpacity: 0.2
-    });
+    // Draw new polygon using MapboxDraw
+    var pastedFeature = {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [geoJsonCoords]
+      },
+      properties: {}
+    };
 
-    drawnItems.addLayer(poly);
-    map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1.5 });
+    draw.add(pastedFeature);
+
+    // Fit bounds — compute bounding box from [lng, lat] coords
+    var lngs = geoJsonCoords.map(function (c) { return c[0]; });
+    var lats = geoJsonCoords.map(function (c) { return c[1]; });
+    var sw = [Math.min.apply(null, lngs), Math.min.apply(null, lats)];
+    var ne = [Math.max.apply(null, lngs), Math.max.apply(null, lats)];
+
+    map.fitBounds([sw, ne], { padding: 50, duration: 1500 });
 
     // Save state and unlock UI
     window.currentPolygonCoords = geoJsonCoords;
@@ -493,53 +797,69 @@ function _setStep(n) {
 
 function _swapToSatellite() {
   if (_isSat) return;
-  if (_darkTile) _darkTile.remove();
-  _satTile.addTo(map);
+  map.setLayoutProperty('dark-layer', 'visibility', 'none');
+  map.setLayoutProperty('satellite-layer', 'visibility', 'visible');
   _isSat = true;
 }
 
 function _swapToDark() {
   if (!_isSat) return;
-  if (_satTile) _satTile.remove();
-  _darkTile.addTo(map);
+  map.setLayoutProperty('satellite-layer', 'visibility', 'none');
+  map.setLayoutProperty('dark-layer', 'visibility', 'visible');
   _isSat = false;
 }
 
 /* ── Result rendering ──────────────────────────────────────────────────────── */
 
 function drawResult(geojson, data) {
-  if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
-  if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
-  drawnItems.clearLayers();
+  // Clear previous results
+  _clearResultLayers();
+  draw.deleteAll();
 
   let confStr = data.confidence_score ? data.confidence_score.toFixed(1) + '%' : '-';
 
-  currentResultLayer = L.geoJSON(
-    { type: 'Feature', geometry: geojson, properties: {} },
-    { style: CONFIG.DONE_STYLE }
-  ).addTo(map);
+  // Push result geometry into the result GeoJSON source
+  var resultFeature = {
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      geometry: geojson,
+      properties: {}
+    }]
+  };
 
-  currentResultLayer.bindPopup(
-    '<b>🌿 ' + data.parcel_id + '</b><br><br>' +
-    '<b>Confidence Score</b> <b style="color:#58a6ff">' + confStr + '</b><br>' +
-    '<b>NDVI</b> ' + fmt(data.ndvi_mean, 3) + '&nbsp;&nbsp;' +
-    '<b>Canopy</b> ' + fmt(data.canopy_area_hectares) + ' ha<br>' +
-    '<b>Biomass</b> ' + fmt(data.biomass_tons, 1) + ' t&nbsp;&nbsp;' +
-    '<b>Carbon</b> ' + fmt(data.carbon_tons, 1) + ' t C<br>' +
-    '<b>CO₂e</b> <b style="color:#3fb950">' + fmt(data.co2_equivalent_tons, 1) + ' t</b>'
-  ).openPopup();
+  if (map.getSource('result-source')) {
+    map.getSource('result-source').setData(resultFeature);
+  }
 
-  // Fit bounds with satellite
+  // Compute center of the parcel bounding box for the popup
   var ring = geojson.coordinates[0];
   var lons = ring.map(function (c) { return c[0]; });
   var lats = ring.map(function (c) { return c[1]; });
-  var bounds = [
-    [Math.min.apply(null, lats), Math.min.apply(null, lons)],
-    [Math.max.apply(null, lats), Math.max.apply(null, lons)],
-  ];
+  var centerLng = (Math.min.apply(null, lons) + Math.max.apply(null, lons)) / 2;
+  var centerLat = (Math.min.apply(null, lats) + Math.max.apply(null, lats)) / 2;
+
+  // Create and bind popup at center
+  currentResultPopup = new maplibregl.Popup({ offset: 10, maxWidth: '320px' })
+    .setLngLat([centerLng, centerLat])
+    .setHTML(
+      '<b>🌿 ' + data.parcel_id + '</b><br><br>' +
+      '<b>Confidence Score</b> <b style="color:#58a6ff">' + confStr + '</b><br>' +
+      '<b>NDVI</b> ' + fmt(data.ndvi_mean, 3) + '&nbsp;&nbsp;' +
+      '<b>Canopy</b> ' + fmt(data.canopy_area_hectares) + ' ha<br>' +
+      '<b>Biomass</b> ' + fmt(data.biomass_tons, 1) + ' t&nbsp;&nbsp;' +
+      '<b>Carbon</b> ' + fmt(data.carbon_tons, 1) + ' t C<br>' +
+      '<b>CO₂e</b> <b style="color:#3fb950">' + fmt(data.co2_equivalent_tons, 1) + ' t</b>'
+    )
+    .addTo(map);
+
+  // Fit bounds with satellite
+  var sw = [Math.min.apply(null, lons), Math.min.apply(null, lats)];
+  var ne = [Math.max.apply(null, lons), Math.max.apply(null, lats)];
+
   setTimeout(function () {
     _swapToSatellite();
-    map.fitBounds(bounds, { padding: [80, 80], animate: true, duration: 1.5 });
+    map.fitBounds([sw, ne], { padding: 80, duration: 1500 });
   }, 200);
 }
 
@@ -757,12 +1077,12 @@ function processSuccessfulLogin(token) {
       initMap();
       // Ensure map renders correctly
       setTimeout(() => {
-        if (map) map.invalidateSize();
+        if (map) map.resize();
       }, 200);
     }, 100);
   } else {
     // Map already exists, just resize it
-    map.invalidateSize();
+    map.resize();
   }
 }
 
@@ -874,21 +1194,31 @@ function loadHistoricalParcel(p) {
   activeParcelId = p.id;
   drawnPolygon = p.polygon;
 
-  // Convert GeoJSON to Leaflet LatLng format
-  const coords = p.polygon.coordinates[0].map(c => [c[1], c[0]]); // [lat, lng]
+  // Clear existing drawings and result layers
+  draw.deleteAll();
+  _clearResultLayers();
 
-  drawnItems.clearLayers();
-  if (currentResultLayer) { map.removeLayer(currentResultLayer); currentResultLayer = null; }
-  if (resultLayer) { map.removeLayer(resultLayer); resultLayer = null; }
+  // GeoJSON coordinates are already [lng, lat] — add directly to MapboxDraw
+  var coords = p.polygon.coordinates[0];
 
-  const poly = L.polygon(coords, {
-    color: '#3fb950',
-    weight: 3,
-    fillColor: '#3fb950',
-    fillOpacity: 0.2
-  });
-  drawnItems.addLayer(poly);
-  map.flyToBounds(poly.getBounds(), { padding: [50, 50], duration: 1.5 });
+  var pastedFeature = {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords]
+    },
+    properties: {}
+  };
+
+  draw.add(pastedFeature);
+
+  // Fit bounds — compute bounding box from [lng, lat] coords
+  var lngs = coords.map(function (c) { return c[0]; });
+  var lats = coords.map(function (c) { return c[1]; });
+  var sw = [Math.min.apply(null, lngs), Math.min.apply(null, lats)];
+  var ne = [Math.max.apply(null, lngs), Math.max.apply(null, lats)];
+
+  map.fitBounds([sw, ne], { padding: 50, duration: 1500 });
 
   window.currentPolygonCoords = p.polygon.coordinates[0];
 
