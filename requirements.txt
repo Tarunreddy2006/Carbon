@@ -21,6 +21,6 @@ numpy==1.26.2
 joblib==1.3.2
 xgboost==2.0.2
 pandas
-rasterio
+rasterio>=1.3.0
 requests
 polars>=0.20.0

@@ -2,8 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install critical OS-level C-libraries required by XGBoost and GeoAlchemy
-RUN apt-get update && apt-get install -y libgomp1
+# Install critical OS-level C-libraries required by XGBoost, GeoAlchemy, and rasterio (GDAL)
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    g++ \
+    gcc \
+    gdal-bin \
+    libgdal-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 

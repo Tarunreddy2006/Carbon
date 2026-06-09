@@ -40,14 +40,13 @@ def initialise_gee():
         return
 
     try:
-        # 🟢 THE FIX 2: Matching variable names
         key_path = "/app/detrixai.json"
         
         if not os.path.exists(key_path):
             raise FileNotFoundError(f"CRITICAL: Cannot find {key_path} inside the container!")
 
         credentials = service_account.Credentials.from_service_account_file(
-            key_path, # Matches the variable above perfectly
+            key_path,
             scopes=['https://www.googleapis.com/auth/earthengine'] 
         )
 
@@ -96,8 +95,8 @@ def get_canopy_height(ee_geom):
                  .filterBounds(ee_geom) \
                  .select('rh100')
         
-        # If GEDI tracks hit the polygon, take the mean
-        height_image = gedi.mean()
+        # If GEDI tracks hit the polygon, take the mean and explicitly select and rename the GEDI composite band 'rh100' to 'b1'
+        height_image = gedi.mean().select(['rh100'], ['b1'])
         
         # Fallback to ETH Global Canopy Height (fused Sentinel/GEDI) for gap-filling
         fallback = ee.Image('users/nlang/ETH_GlobalCanopyHeight_2020_10m_v1')
@@ -261,13 +260,6 @@ def export_ndvi_cog(gee_data: dict, geojson_geometry: dict, parcel_id: str) -> d
         logger.info(f"✅ COG exported: {cog_path}")
 
         # ── Step 3: Construct TiTiler tile URL ───────────────────────────────
-        # In the Docker network:
-        #   - Worker writes to:     /app/cog_exports/{filename}
-        #   - TiTiler reads from:   /data/cogs/{filename}   (same volume, different mount)
-        #   - Browser requests:     http://localhost:8002/cog/tiles/{z}/{x}/{y}?url=...
-        #
-        # For the TiTiler tile URL, we construct using the container-internal path
-        # that TiTiler can resolve (file:///data/cogs/{filename})
         titiler_cog_url = f"file:///data/cogs/{cog_filename}"
 
         titiler_tiles_url = (
