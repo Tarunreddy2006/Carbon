@@ -1616,8 +1616,8 @@ async function handleBulkUpload(file) {
   const progressPanel = document.getElementById('bulk-progress-panel');
   const downloadBtn = document.getElementById('bulk-download-btn');
 
-  if (!file.name.toLowerCase().endsWith('.csv')) {
-    setStatus('error', 'Only CSV files are accepted.', '✖');
+  if (!file.name.toLowerCase().endsWith('.csv', '.xlsx', '.xls', '.kml', '.kmz')) {
+    setStatus('error', 'Only CSV/Excel files are accepted.', '✖');
     return;
   }
 
