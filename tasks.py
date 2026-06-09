@@ -13,6 +13,7 @@ from sqlalchemy import func, update
 import shapely.wkt
 import shapely.geometry
 from datetime import datetime, timezone
+import json
 
 from database.db import SessionLocal
 from database.models import (
@@ -434,7 +435,8 @@ def async_process_bulk_item(self, item_id: str):
 
     Flow:
         1. Load item from DB, set status → PROCESSING
-        2. Synthesize circular polygon from (lat, lon, radius)
+        2. If item contains custom_geometry, use it directly.
+           Otherwise, synthesize circular polygon from (lat, lon, radius)
         3. Determine biome via PostGIS intersection
         4. Run GEE analyse_parcel() for satellite metrics
         5. Run run_carbon_pipeline() for carbon calculations
@@ -455,12 +457,19 @@ def async_process_bulk_item(self, item_id: str):
         item.status = JobStatus.PROCESSING
         db.commit()
 
-        # ── 2. Synthesize circular polygon ────────────────────────────────
-        geojson_geom = _synthesize_circle_polygon(
-            lat=item.latitude,
-            lon=item.longitude,
-            radius_m=item.radius_meters
-        )
+        # ── 2. Determine Geometry ─────────────────────────────────────────
+        if item.custom_geometry:
+            if isinstance(item.custom_geometry, dict):
+                geojson_geom = item.custom_geometry
+            else:
+                geojson_geom = json.loads(item.custom_geometry)
+        else:
+            # Synthesize circular polygon
+            geojson_geom = _synthesize_circle_polygon(
+                lat=item.latitude,
+                lon=item.longitude,
+                radius_m=item.radius_meters
+            )
 
         parcel_area_ha = _compute_polygon_area_ha(geojson_geom)
 

@@ -69,6 +69,7 @@ class BulkItem(Base):
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     radius_meters = Column(Float, nullable=False, default=500.0)
+    custom_geometry = Column(JSONB, nullable=True)
 
     # ── Processing State ──────────────────────────────────────────────────
     status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False)
@@ -153,4 +154,4 @@ class Ecoregion(Base):
     __tablename__ = "ecoregions"
     id = Column(Integer, primary_key=True, index=True)
     biome_name = Column(String, nullable=False)
-    geom = Column(Geometry(geometry_type='MULTIPOLYGON', srid=4326), nullable=False)
+    geom = Column(Geometry(geometry_type='MULTIPOLYGON', srid=4326), nullable=False)

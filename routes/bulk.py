@@ -14,9 +14,10 @@ import csv
 import io
 import logging
 import uuid
+import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status,HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from celery import group
@@ -35,7 +36,7 @@ router = APIRouter(
 
 # ── Maximum rows per CSV upload (safety guard) ────────────────────────────
 MAX_CSV_ROWS = 10_000
-# ── Required CSV columns ──────────────────────────────────────────────────
+# ── Required CSV columns for Point-Radius check ───────────────────────────
 REQUIRED_COLUMNS = {"latitude", "longitude"}
 
 
@@ -52,11 +53,15 @@ async def upload_bulk_csv(
     """
     Ingest a corporate CSV file containing target coordinates.
 
-    Expected CSV columns:
-        - latitude (required)
-        - longitude (required)
-        - parcel_label (optional — defaults to row index)
-        - radius_meters (optional — defaults to 500m)
+    Supports two polymorphic formats:
+      1. Point-Radius Mode:
+         - latitude (required)
+         - longitude (required)
+         - parcel_label / label / plot_id / farm_id (optional)
+         - radius_meters (optional — defaults to 500m)
+      2. Coordinates Polygon Matrix Mode:
+         - coordinates (required — array of [lat, lon] vertices)
+         - parcel_label / label / plot_id / farm_id (optional)
 
     Creates one BulkJob with N BulkItems in a single atomic transaction,
     then dispatches a Celery group() to fan tasks across worker nodes.
@@ -92,11 +97,13 @@ async def upload_bulk_csv(
 
     header_set = {col.strip().lower() for col in reader.fieldnames}
 
-    missing_cols = REQUIRED_COLUMNS - header_set
-    if missing_cols:
+    has_lat_lon = REQUIRED_COLUMNS.issubset(header_set)
+    has_coords = "coordinates" in header_set
+
+    if not (has_lat_lon or has_coords):
         raise HTTPException(
             status_code=422,
-            detail=f"Missing required CSV columns: {', '.join(sorted(missing_cols))}. "
+            detail=f"CSV file must contain either 'latitude' and 'longitude' columns or a 'coordinates' column. "
                    f"Found columns: {', '.join(reader.fieldnames)}"
         )
 
@@ -114,49 +121,114 @@ async def upload_bulk_csv(
             parse_errors.append(f"Row limit exceeded. Maximum {MAX_CSV_ROWS} rows per file.")
             break
 
-        try:
-            lat_raw = row.get(col_map.get("latitude", ""), "").strip()
-            lon_raw = row.get(col_map.get("longitude", ""), "").strip()
+        # Label fallback mapping (parcel_label, label, plot_id, farm_id)
+        label = ""
+        label_keys = ["parcel_label", "label", "plot_id", "farm_id"]
+        for lk in label_keys:
+            if lk in col_map:
+                raw_val = row.get(col_map[lk], "")
+                if raw_val:
+                    label = raw_val.strip()
+                    break
+        if not label:
+            label = f"Point-{row_idx + 1}"
+
+        # Determine if coordinates matrix exists in this row
+        has_coords_val = False
+        coords_raw = ""
+        if "coordinates" in col_map:
+            coords_raw = row.get(col_map["coordinates"], "").strip()
+            if coords_raw:
+                has_coords_val = True
+
+        lat = 0.0
+        lon = 0.0
+        radius = 500.0
+        custom_geom = None
+
+        if has_coords_val:
+            try:
+                parsed_coords = json.loads(coords_raw)
+                if not isinstance(parsed_coords, list):
+                    raise ValueError("Coordinates column must be a JSON array.")
+                if len(parsed_coords) < 3:
+                    raise ValueError("A polygon coordinates array must contain at least 3 vertices.")
+
+                inverted = []
+                for vertex in parsed_coords:
+                    if not isinstance(vertex, list) or len(vertex) < 2:
+                        raise ValueError("Each vertex must be a list containing at least [latitude, longitude].")
+                    
+                    lat_val = float(vertex[0])
+                    lon_val = float(vertex[1])
+
+                    if not (-90.0 <= lat_val <= 90.0):
+                        raise ValueError(f"Latitude {lat_val} out of range [-90, 90].")
+                    if not (-180.0 <= lon_val <= 180.0):
+                        raise ValueError(f"Longitude {lon_val} out of range [-180, 180].")
+
+                    # Invert human-readable [latitude, longitude] to strict GeoJSON/PostGIS [longitude, latitude]
+                    inverted.append([lon_val, lat_val])
+
+                # Ensure the linear ring is closed implicitly
+                if inverted[0] != inverted[-1]:
+                    inverted.append(list(inverted[0]))
+
+                # Calculate the basic mean average of latitudes and longitudes
+                avg_lat = sum(v[0] for v in parsed_coords) / len(parsed_coords)
+                avg_lon = sum(v[1] for v in parsed_coords) / len(parsed_coords)
+
+                lat = avg_lat
+                lon = avg_lon
+                custom_geom = {
+                    "type": "Polygon",
+                    "coordinates": [inverted]
+                }
+            except Exception as parse_err:
+                parse_errors.append(f"Row {row_idx + 1}: Coordinates parse failure — {str(parse_err)}")
+                continue
+        else:
+            # Point-Radius Mode
+            lat_col = col_map.get("latitude", "")
+            lon_col = col_map.get("longitude", "")
+            lat_raw = row.get(lat_col, "").strip() if lat_col else ""
+            lon_raw = row.get(lon_col, "").strip() if lon_col else ""
 
             if not lat_raw or not lon_raw:
-                parse_errors.append(f"Row {row_idx + 1}: Missing latitude or longitude.")
+                parse_errors.append(f"Row {row_idx + 1}: Missing latitude/longitude or coordinates.")
                 continue
 
-            lat = float(lat_raw)
-            lon = float(lon_raw)
+            try:
+                lat = float(lat_raw)
+                lon = float(lon_raw)
 
-            # Sanity-check coordinate ranges
-            if not (-90.0 <= lat <= 90.0):
-                parse_errors.append(f"Row {row_idx + 1}: Latitude {lat} out of range [-90, 90].")
+                # Sanity-check coordinate ranges
+                if not (-90.0 <= lat <= 90.0):
+                    parse_errors.append(f"Row {row_idx + 1}: Latitude {lat} out of range [-90, 90].")
+                    continue
+                if not (-180.0 <= lon <= 180.0):
+                    parse_errors.append(f"Row {row_idx + 1}: Longitude {lon} out of range [-180, 180].")
+                    continue
+
+                radius_col = col_map.get("radius_meters", col_map.get("radius", ""))
+                radius_raw = row.get(radius_col, "").strip() if radius_col else ""
+                radius = float(radius_raw) if radius_raw else 500.0
+
+                if radius <= 0 or radius > 50000:
+                    radius = 500.0
+
+            except ValueError as ve:
+                parse_errors.append(f"Row {row_idx + 1}: Invalid numeric value — {str(ve)}")
                 continue
-            if not (-180.0 <= lon <= 180.0):
-                parse_errors.append(f"Row {row_idx + 1}: Longitude {lon} out of range [-180, 180].")
-                continue
 
-            # Optional fields
-            label_col = col_map.get("parcel_label", col_map.get("label",col_map.get("plot_id", "")))
-            label = row.get(label_col, "").strip() if label_col else ""
-            if not label:
-                label = f"Point-{row_idx + 1}"
-
-            radius_col = col_map.get("radius_meters", col_map.get("radius", ""))
-            radius_raw = row.get(radius_col, "").strip() if radius_col else ""
-            radius = float(radius_raw) if radius_raw else 500.0
-
-            if radius <= 0 or radius > 50000:
-                radius = 500.0
-
-            rows.append({
-                "row_index": row_idx,
-                "parcel_label": label,
-                "latitude": lat,
-                "longitude": lon,
-                "radius_meters": radius
-            })
-
-        except (ValueError, TypeError) as ve:
-            parse_errors.append(f"Row {row_idx + 1}: Invalid numeric value — {str(ve)}")
-            continue
+        rows.append({
+            "row_index": row_idx,
+            "parcel_label": label,
+            "latitude": lat,
+            "longitude": lon,
+            "radius_meters": radius,
+            "custom_geometry": custom_geom
+        })
 
     if not rows:
         raise HTTPException(
@@ -188,6 +260,7 @@ async def upload_bulk_csv(
             latitude=r["latitude"],
             longitude=r["longitude"],
             radius_meters=r["radius_meters"],
+            custom_geometry=r["custom_geometry"],
             status=JobStatus.PENDING
         )
         db.add(item)
