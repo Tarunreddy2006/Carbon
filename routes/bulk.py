@@ -16,7 +16,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status,HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from celery import group
@@ -134,7 +134,7 @@ async def upload_bulk_csv(
                 continue
 
             # Optional fields
-            label_col = col_map.get("parcel_label", col_map.get("label", ""))
+            label_col = col_map.get("parcel_label", col_map.get("label",col_map.get("plot_id", "")))
             label = row.get(label_col, "").strip() if label_col else ""
             if not label:
                 label = f"Point-{row_idx + 1}"
