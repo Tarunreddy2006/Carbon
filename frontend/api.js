@@ -27,7 +27,8 @@ async function apiClient(endpoint, options = {}) {
   const headers = new Headers(options.headers || {});
 
   // Auto-attach JSON content-type for requests with a body (unless overridden)
-  if (options.body && !headers.has('Content-Type')) {
+  // FIX: Only attach application/json if the body is NOT a FormData object
+  if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -154,7 +155,7 @@ const api = Object.freeze({
   fetchUserParcels() {
     return apiClient('/user/parcels', { method: 'GET' }).then(r => r.json());
   },
-  
+
   estimateCarbonRerun(parcelId) {
     return apiClient(`/estimate-carbon/rerun/${parcelId}`, { method: 'POST' }).then(r => r.json());
   },
@@ -231,15 +232,14 @@ const api = Object.freeze({
       method: 'GET',
     }).then(r => r.json());
   },
-
-  /**
-   * Export bulk audit results as a downloadable CSV blob.
-   * @param {string} jobId
-   * @returns {Promise<Blob>}
-   */
-  exportBulkCSV(jobId) {
-    return apiClient(`/api/v1/audit/export/${jobId}`, {
-      method: 'GET',
-    }).then(r => r.blob());
-  },
+/**
+ * Export bulk audit results as a downloadable CSV blob.
+ * @param {string} jobId
+ * @returns {Promise<Blob>}
+ */
+exportBulkCSV(jobId) {
+  return apiClient(`/api/v1/audit/export/${jobId}`, {
+    method: 'GET',
+  }).then(r => r.blob());
+},
 });

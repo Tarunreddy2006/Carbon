@@ -30,7 +30,7 @@ from tasks import async_process_bulk_item
 logger = logging.getLogger("bulk_audit")
 
 router = APIRouter(
-    prefix="/estimate-carbon/draw",
+    prefix="/api/v1/audit",
     tags=["Bulk Audit"]
 )
 
