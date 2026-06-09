@@ -192,6 +192,58 @@
                             onclick="downloadCertificate(new URLSearchParams(window.location.search).get('credit_id'))">Download
                             Certificate</button>
                         <button id="btn-rerun-estimation" class="btn btn--primary" style="width: 100%; margin-top: 15px; display: none; background: #f59e0b; color: #fff;">🔄 Rerun MRV for Current Year</button>
+
+                        <hr style="border-color: #374151; margin: 20px 0;">
+
+                        <!-- ═══════════════════════════════════════════ -->
+                        <!-- BULK PARCEL AUDIT ZONE                     -->
+                        <!-- ═══════════════════════════════════════════ -->
+                        <h3 style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">
+                            📦 Bulk Parcel Audit
+                        </h3>
+
+                        <div id="bulk-drop-zone" class="bulk-zone">
+                            <div class="bulk-zone__icon">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <div class="bulk-zone__text">
+                                <strong>Drop CSV here</strong> or click to browse
+                            </div>
+                            <div class="bulk-zone__hint">
+                                Required: latitude, longitude columns
+                            </div>
+                            <input type="file" id="bulk-file-input" accept=".csv" style="display: none;">
+                        </div>
+
+                        <!-- Progress Tracker (hidden by default) -->
+                        <div id="bulk-progress-panel" class="bulk-progress" style="display: none;">
+                            <div class="bulk-progress__header">
+                                <span id="bulk-job-filename" class="bulk-progress__filename">—</span>
+                                <span id="bulk-job-status" class="bulk-progress__status-badge">PROCESSING</span>
+                            </div>
+                            <div class="bulk-progress__bar-track">
+                                <div id="bulk-progress-bar" class="bulk-progress__bar-fill" style="width: 0%;"></div>
+                            </div>
+                            <div class="bulk-progress__stats">
+                                <span id="bulk-progress-text">0 / 0 parcels</span>
+                                <span id="bulk-progress-pct">0%</span>
+                            </div>
+                        </div>
+
+                        <!-- Download Results (hidden until complete) -->
+                        <button id="bulk-download-btn" class="btn bulk-download-btn" style="display: none; width: 100%; margin-top: 12px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download Results CSV
+                        </button>
+
                     </div>
 
                     <div id="status-banner" class="status-banner" style="margin-top: 15px;"></div>

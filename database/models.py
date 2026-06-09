@@ -23,6 +23,65 @@ class CreditStatus(enum.Enum):
     RETIRED = "RETIRED"
     FLAGGED = "FLAGGED"
 
+class JobStatus(enum.Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+# ==========================================
+# BULK PARCEL AUDIT ARCHITECTURE
+# ==========================================
+
+class BulkJob(Base):
+    """
+    Parent tracking entry for a bulk CSV audit job.
+    Each uploaded CSV file spawns one BulkJob containing N child BulkItems.
+    """
+    __tablename__ = 'bulk_jobs'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, index=True, nullable=False)
+    filename = Column(String, nullable=False)
+    status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False)
+    total_rows = Column(Integer, nullable=False, default=0)
+    processed_rows = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    items = relationship("BulkItem", back_populates="job", cascade="all, delete-orphan",
+                         order_by="BulkItem.row_index")
+
+class BulkItem(Base):
+    """
+    Child record mapping a single CSV row to its downstream carbon metrics.
+    Each item runs independently through the GEE + carbon pipeline.
+    """
+    __tablename__ = 'bulk_items'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id = Column(UUID(as_uuid=True), ForeignKey('bulk_jobs.id', ondelete='CASCADE'),
+                    nullable=False, index=True)
+    row_index = Column(Integer, nullable=False)
+
+    # ── Raw CSV Inputs ────────────────────────────────────────────────────
+    parcel_label = Column(String, nullable=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    radius_meters = Column(Float, nullable=False, default=500.0)
+
+    # ── Processing State ──────────────────────────────────────────────────
+    status = Column(Enum(JobStatus), default=JobStatus.PENDING, nullable=False)
+    error_message = Column(String, nullable=True)
+
+    # ── Downstream Calculated Metrics ─────────────────────────────────────
+    calculated_area_ha = Column(Float, nullable=True)
+    ndvi_mean = Column(Float, nullable=True)
+    co2_equivalent_tons = Column(Float, nullable=True)
+    confidence_score = Column(Float, nullable=True)
+
+    job = relationship("BulkJob", back_populates="items")
+
 # ==========================================
 # USER ARCHITECTURE (Concrete Table Inheritance)
 # ==========================================

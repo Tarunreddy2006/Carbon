@@ -1550,7 +1550,7 @@ async function performRegister() {
   errorText.style.display = 'none';
 
   try {
-    await api.registerFarmer({ username: user, password: pass });
+    await api.registerInstitution({ username: user, password: pass, company_name: company });
 
     alert("Registration successful! Switching to login tab...");
     showLoginScreen();
@@ -1563,6 +1563,198 @@ async function performRegister() {
     btn.innerHTML = originalContent;
   }
 }
+
+// ==========================================
+// 8. BULK PARCEL AUDIT ENGINE
+// ==========================================
+let bulkPollingInterval = null;
+
+function initBulkDropZone() {
+  const dropZone = document.getElementById('bulk-drop-zone');
+  const fileInput = document.getElementById('bulk-file-input');
+  const progressPanel = document.getElementById('bulk-progress-panel');
+  const downloadBtn = document.getElementById('bulk-download-btn');
+
+  if (!dropZone || !fileInput) return;
+
+  // Open file dialog on click
+  dropZone.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  // Drag & drop handlers
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('drag-over');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleBulkUpload(files[0]);
+    }
+  });
+
+  // File input change
+  fileInput.addEventListener('change', (e) => {
+    const files = e.target.files;
+    if (files.length > 0) {
+      handleBulkUpload(files[0]);
+    }
+  });
+}
+
+async function handleBulkUpload(file) {
+  const dropZone = document.getElementById('bulk-drop-zone');
+  const progressPanel = document.getElementById('bulk-progress-panel');
+  const downloadBtn = document.getElementById('bulk-download-btn');
+
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    setStatus('error', 'Only CSV files are accepted.', '✖');
+    return;
+  }
+
+  // Set loading state on dropzone
+  dropZone.classList.add('uploading');
+  const originalHtml = dropZone.innerHTML;
+  dropZone.innerHTML = `
+    <div class="spinner"></div>
+    <div class="bulk-zone__text">Uploading <strong>${file.name}</strong>...</div>
+  `;
+
+  setStatus('loading', 'Uploading bulk CSV file...');
+
+  try {
+    const response = await api.uploadBulkCSV(file);
+    setStatus('success', `CSV uploaded successfully. Job ID: ${response.job_id.substring(0, 8)}`, '✔');
+
+    // Show progress panel and start polling
+    if (progressPanel) {
+      progressPanel.style.display = 'block';
+      document.getElementById('bulk-job-filename').textContent = file.name;
+      document.getElementById('bulk-job-status').textContent = 'PROCESSING';
+      document.getElementById('bulk-job-status').className = 'bulk-progress__status-badge';
+      document.getElementById('bulk-progress-bar').style.width = '0%';
+      document.getElementById('bulk-progress-text').textContent = `0 / ${response.total_rows} parcels`;
+      document.getElementById('bulk-progress-pct').textContent = '0%';
+    }
+
+    if (downloadBtn) {
+      downloadBtn.style.display = 'none';
+    }
+
+    // Start polling
+    startBulkPolling(response.job_id);
+
+  } catch (error) {
+    console.error('[bulk-audit] Upload failed:', error);
+    setStatus('error', 'Upload failed: ' + error.message, '✖');
+  } finally {
+    dropZone.classList.remove('uploading');
+    dropZone.innerHTML = originalHtml;
+  }
+}
+
+function startBulkPolling(jobId) {
+  if (bulkPollingInterval) {
+    clearInterval(bulkPollingInterval);
+  }
+
+  // Poll immediately, then every 3 seconds
+  pollStatus(jobId);
+  bulkPollingInterval = setInterval(() => {
+    pollStatus(jobId);
+  }, 3000);
+}
+
+async function pollStatus(jobId) {
+  try {
+    const data = await api.getBulkStatus(jobId);
+
+    const progressBar = document.getElementById('bulk-progress-bar');
+    const progressText = document.getElementById('bulk-progress-text');
+    const progressPct = document.getElementById('bulk-progress-pct');
+    const statusBadge = document.getElementById('bulk-job-status');
+
+    if (progressBar) progressBar.style.width = `${data.percent_complete}%`;
+    if (progressText) progressText.textContent = `${data.processed_rows} / ${data.total_rows} parcels`;
+    if (progressPct) progressPct.textContent = `${data.percent_complete}%`;
+
+    if (statusBadge) {
+      statusBadge.textContent = data.status;
+      statusBadge.className = 'bulk-progress__status-badge';
+      if (data.status === 'COMPLETED') {
+        statusBadge.classList.add('completed');
+      } else if (data.status === 'FAILED') {
+        statusBadge.classList.add('failed');
+      }
+    }
+
+    if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+      clearInterval(bulkPollingInterval);
+      bulkPollingInterval = null;
+      onBulkComplete(jobId, data.status);
+    }
+  } catch (error) {
+    console.error('[bulk-audit] Polling failed:', error);
+    if (error.status === 404) {
+      clearInterval(bulkPollingInterval);
+      bulkPollingInterval = null;
+      setStatus('error', 'Bulk job not found on server.', '✖');
+    }
+  }
+}
+
+function onBulkComplete(jobId, status) {
+  const downloadBtn = document.getElementById('bulk-download-btn');
+  if (downloadBtn) {
+    downloadBtn.style.display = 'flex';
+    downloadBtn.onclick = () => downloadBulkResults(jobId);
+  }
+
+  if (status === 'COMPLETED') {
+    setStatus('success', 'Bulk parcel audit job completed successfully.', '✔');
+  } else {
+    setStatus('error', 'Bulk parcel audit job failed.', '✖');
+  }
+}
+
+async function downloadBulkResults(jobId) {
+  const downloadBtn = document.getElementById('bulk-download-btn');
+  const originalContent = downloadBtn.innerHTML;
+
+  downloadBtn.disabled = true;
+  downloadBtn.innerHTML = `<div class="spinner"></div> Downloading...`;
+  setStatus('loading', 'Generating and downloading results CSV...');
+
+  try {
+    const blob = await api.exportBulkCSV(jobId);
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `bulk_audit_results_${jobId.substring(0, 8)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    setStatus('success', 'Results CSV downloaded successfully.', '✔');
+  } catch (error) {
+    console.error('[bulk-audit] Export failed:', error);
+    setStatus('error', 'Failed to download results: ' + error.message, '✖');
+  } finally {
+    downloadBtn.disabled = false;
+    downloadBtn.innerHTML = originalContent;
+  }
+}
+
 
 /* ── Exports & wiring ──────────────────────────────────────────────────────── */
 
@@ -1580,6 +1772,7 @@ window.showRegisterScreen = showRegisterScreen;
 window.showLoginScreen = showLoginScreen;
 window.performRegister = performRegister;
 window.toggleSidebar = toggleSidebar;
+window.initBulkDropZone = initBulkDropZone;
 
 document.addEventListener('DOMContentLoaded', function () {
   // Check if already logged in
@@ -1612,6 +1805,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Initialize starry background for login screen
   initStarryBackground();
+
+  // Initialize bulk upload drop zone
+  initBulkDropZone();
 
   // Initialize cookie consent
   if (localStorage.getItem('cookie_consent_status') === null) {

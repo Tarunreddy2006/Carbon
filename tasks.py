@@ -6,14 +6,19 @@ The automated AI background tasks.
 """
 import logging
 import asyncio
+import math
 from celery import shared_task
 from sqlalchemy.orm import Session
+from sqlalchemy import func, update
 import shapely.wkt
 import shapely.geometry
+from datetime import datetime, timezone
 
 from database.db import SessionLocal
-from database.models import ParcelRecord, CarbonCredit, CreditStatus, Ecoregion
-from sqlalchemy import func
+from database.models import (
+    ParcelRecord, CarbonCredit, CreditStatus, Ecoregion,
+    BulkJob, BulkItem, JobStatus
+)
 from services.service import analyse_parcel, export_ndvi_cog
 from utils.logic import run_carbon_pipeline
 
@@ -374,3 +379,186 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
         raise
     finally:
         db.close()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BULK PARCEL AUDIT — MICRO-TASK PROCESSOR
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _synthesize_circle_polygon(lat: float, lon: float, radius_m: float, num_points: int = 64) -> dict:
+    """
+    Convert a (lat, lon, radius_meters) triplet into a GeoJSON Polygon
+    representing a circular bounding area.
+
+    Uses geodetic offset approximation (meters → degrees) identical to the
+    frontend _createGeoJSONCircle helper in app.js.
+
+    Returns:
+        GeoJSON geometry dict with type 'Polygon' and coordinates in [lng, lat] order.
+    """
+    coords = []
+    # Degree-distance conversion at the given latitude
+    dist_x = radius_m / (111320.0 * math.cos(math.radians(lat)))
+    dist_y = radius_m / 110540.0
+
+    for i in range(num_points):
+        theta = (i / num_points) * (2.0 * math.pi)
+        x = dist_x * math.cos(theta)
+        y = dist_y * math.sin(theta)
+        coords.append([round(lon + x, 8), round(lat + y, 8)])
+
+    # Close the ring
+    coords.append(coords[0])
+
+    return {"type": "Polygon", "coordinates": [coords]}
+
+
+def _compute_polygon_area_ha(geojson_geom: dict) -> float:
+    """
+    Compute polygon area in hectares using an equal-area projection (EPSG:6933),
+    consistent with services/geometry.py calculations.
+    """
+    import pyproj
+    from shapely.geometry import shape
+    from shapely.ops import transform
+
+    poly = shape(geojson_geom)
+    project = pyproj.Transformer.from_crs("epsg:4326", "epsg:6933", always_xy=True).transform
+    projected = transform(project, poly)
+    return round(projected.area / 10000.0, 4)
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def async_process_bulk_item(self, item_id: str):
+    """
+    Process a single BulkItem through the full carbon analysis pipeline.
+
+    Flow:
+        1. Load item from DB, set status → PROCESSING
+        2. Synthesize circular polygon from (lat, lon, radius)
+        3. Determine biome via PostGIS intersection
+        4. Run GEE analyse_parcel() for satellite metrics
+        5. Run run_carbon_pipeline() for carbon calculations
+        6. Save results to item row
+        7. Atomically increment parent job counter
+        8. Check if job is complete → mark COMPLETED if so
+    """
+    logger.info(f"▶ BULK ITEM PROCESSING: {item_id}")
+    db: Session = SessionLocal()
+
+    try:
+        # ── 1. Load item ──────────────────────────────────────────────────
+        item = db.query(BulkItem).filter(BulkItem.id == item_id).first()
+        if not item:
+            logger.error(f"BulkItem {item_id} not found in database.")
+            return {"status": "error", "message": "Item not found"}
+
+        item.status = JobStatus.PROCESSING
+        db.commit()
+
+        # ── 2. Synthesize circular polygon ────────────────────────────────
+        geojson_geom = _synthesize_circle_polygon(
+            lat=item.latitude,
+            lon=item.longitude,
+            radius_m=item.radius_meters
+        )
+
+        parcel_area_ha = _compute_polygon_area_ha(geojson_geom)
+
+        # ── 3. Determine biome via PostGIS ────────────────────────────────
+        geom_obj = shapely.geometry.shape(geojson_geom)
+        intersecting_biome = db.query(Ecoregion).filter(
+            func.ST_Intersects(
+                Ecoregion.geom,
+                func.ST_GeomFromWKB(geom_obj.wkb, 4326)
+            )
+        ).first()
+        biome_name = intersecting_biome.biome_name if intersecting_biome else "Default"
+
+        # ── 4. GEE Satellite Analysis ─────────────────────────────────────
+        logger.info(f"⏳ Sending bulk item {item_id} to Google Earth Engine...")
+        gee_data = analyse_parcel(geojson_geom)
+
+        total_scenes = gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0)
+
+        # ── 5. Carbon Pipeline ────────────────────────────────────────────
+        results = run_carbon_pipeline(
+            parcel_area_ha=parcel_area_ha,
+            biome_name=biome_name,
+            canopy_height=gee_data.get("canopy_height", 15.0),
+            veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)),
+            ndvi_mean=gee_data["ndvi_mean"],
+            sar_vv=gee_data.get("sar_vv_backscatter", -20.0),
+            sar_vh=gee_data.get("sar_vh_backscatter", -20.0),
+            scenes_used=total_scenes
+        )
+
+        # ── 6. Persist results to item ────────────────────────────────────
+        item.calculated_area_ha = parcel_area_ha
+        item.ndvi_mean = round(gee_data["ndvi_mean"], 4)
+        item.co2_equivalent_tons = results["co2_equivalent_tons"]
+        item.confidence_score = results.get("confidence_score", 0.0)
+        item.status = JobStatus.COMPLETED
+        item.error_message = None
+        db.commit()
+
+        logger.info(
+            f"✅ Bulk item {item_id} complete: "
+            f"{results['co2_equivalent_tons']} t CO₂e @ {results.get('confidence_score', 0)}% confidence"
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Bulk item {item_id} failed: {e}", exc_info=True)
+        db.rollback()
+
+        # Mark item as failed but don't kill the whole job
+        try:
+            item = db.query(BulkItem).filter(BulkItem.id == item_id).first()
+            if item:
+                item.status = JobStatus.FAILED
+                item.error_message = str(e)[:500]
+                db.commit()
+        except Exception:
+            db.rollback()
+
+    finally:
+        # ── 7. Atomic parent counter increment ────────────────────────────
+        # Uses SQL-level arithmetic to prevent race conditions across
+        # parallel Celery workers updating the same BulkJob row.
+        try:
+            item = db.query(BulkItem).filter(BulkItem.id == item_id).first()
+            if item:
+                job_id = item.job_id
+
+                db.execute(
+                    update(BulkJob)
+                    .where(BulkJob.id == job_id)
+                    .values(processed_rows=BulkJob.processed_rows + 1)
+                )
+                db.commit()
+
+                # ── 8. Check job completion ───────────────────────────────
+                job = db.query(BulkJob).filter(BulkJob.id == job_id).first()
+                if job and job.processed_rows >= job.total_rows:
+                    # Determine final status: COMPLETED if any items succeeded,
+                    # FAILED if ALL items failed
+                    failed_count = db.query(BulkItem).filter(
+                        BulkItem.job_id == job_id,
+                        BulkItem.status == JobStatus.FAILED
+                    ).count()
+
+                    if failed_count >= job.total_rows:
+                        job.status = JobStatus.FAILED
+                    else:
+                        job.status = JobStatus.COMPLETED
+
+                    job.completed_at = datetime.now(timezone.utc)
+                    db.commit()
+                    logger.info(
+                        f"🏁 Bulk Job {job_id} FINISHED — "
+                        f"{job.total_rows - failed_count}/{job.total_rows} items succeeded"
+                    )
+        except Exception as counter_err:
+            logger.error(f"Counter update error: {counter_err}", exc_info=True)
+            db.rollback()
+        finally:
+            db.close()

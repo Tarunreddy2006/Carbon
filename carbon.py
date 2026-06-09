@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
         allow_headers     = ["*"],
     )
 
-    from routes import estimate, verify, auth, billing, certificate, user
+    from routes import estimate, verify, auth, billing, certificate, user, bulk
 
     app.include_router(auth.router)
     app.include_router(user.router)
@@ -79,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(verify.router)
     app.include_router(billing.router)
     app.include_router(certificate.router)
+    app.include_router(bulk.router)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

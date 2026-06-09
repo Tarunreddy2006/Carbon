@@ -200,4 +200,46 @@ const api = Object.freeze({
       method: 'GET',
     }).then(r => r.json());
   },
+
+  // ── Bulk Audit ──────────────────────────────────────────────────────
+
+  /**
+   * Upload a CSV file for bulk parcel auditing.
+   * @param {File} file — The .csv File object
+   * @returns {Promise<{job_id, filename, total_rows, status, parse_warnings}>}
+   */
+  uploadBulkCSV(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // Note: We pass a custom header map WITHOUT Content-Type so the browser
+    // sets the correct multipart/form-data boundary automatically.
+    return apiClient('/api/v1/audit/bulk', {
+      method: 'POST',
+      body: formData,
+      headers: {}  // Override default JSON content-type
+    }).then(r => r.json());
+  },
+
+  /**
+   * Poll the progress of a bulk audit job.
+   * @param {string} jobId
+   * @returns {Promise<{job_id, status, total_rows, processed_rows, percent_complete, ...}>}
+   */
+  getBulkStatus(jobId) {
+    return apiClient(`/api/v1/audit/status/${jobId}`, {
+      method: 'GET',
+    }).then(r => r.json());
+  },
+
+  /**
+   * Export bulk audit results as a downloadable CSV blob.
+   * @param {string} jobId
+   * @returns {Promise<Blob>}
+   */
+  exportBulkCSV(jobId) {
+    return apiClient(`/api/v1/audit/export/${jobId}`, {
+      method: 'GET',
+    }).then(r => r.blob());
+  },
 });
