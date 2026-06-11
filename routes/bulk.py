@@ -47,8 +47,8 @@ REQUIRED_COLUMNS = {"latitude", "longitude"}
 @router.post("/bulk", status_code=status.HTTP_202_ACCEPTED)
 async def upload_bulk_csv(
     file: UploadFile = File(...),
-    user_token: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_token = Depends(get_current_user)  # 🌟 FIXED: Un-typed dependency prevents multi-part form 422 conflicts
 ):
     """
     Ingest a corporate CSV file containing target coordinates.
