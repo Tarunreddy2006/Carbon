@@ -215,7 +215,7 @@ const api = Object.freeze({
 
     // Note: We pass a custom header map WITHOUT Content-Type so the browser
     // sets the correct multipart/form-data boundary automatically.
-    return apiClient('/api/v1/audit/bulk', {
+    return apiClient('/estimate-carbon/bulk', {
       method: 'POST',
       body: formData,
       headers: {}  // Override default JSON content-type
@@ -228,7 +228,7 @@ const api = Object.freeze({
    * @returns {Promise<{job_id, status, total_rows, processed_rows, percent_complete, ...}>}
    */
   getBulkStatus(jobId) {
-    return apiClient(`/api/v1/audit/status/${jobId}`, {
+    return apiClient(`/estimate-carbon/bulk/status/${jobId}`, {
       method: 'GET',
     }).then(r => r.json());
   },
@@ -238,7 +238,7 @@ const api = Object.freeze({
  * @returns {Promise<Blob>}
  */
 exportBulkCSV(jobId) {
-  return apiClient(`/api/v1/audit/export/${jobId}`, {
+  return apiClient(`/estimate-carbon/bulk/export/${jobId}`, {
     method: 'GET',
   }).then(r => r.blob());
 },

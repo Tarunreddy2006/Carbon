@@ -3,9 +3,9 @@ routes/bulk.py
 ─────────────────────────────────────────────────────────────────────────────
 API endpoints for the mass-parallelized bulk parcel auditing subsystem.
 
-POST /api/v1/audit/bulk      → Upload CSV, create job + items, fan out tasks
-GET  /api/v1/audit/status/{} → Poll job progress (total vs. processed)
-GET  /api/v1/audit/export/{} → Stream finished results as downloadable CSV
+POST /estimate-carbon/bulk           → Upload CSV, create job + items, fan out tasks
+GET  /estimate-carbon/bulk/status/{} → Poll job progress (total vs. processed)
+GET  /estimate-carbon/bulk/export/{} → Stream finished results as downloadable CSV
 ─────────────────────────────────────────────────────────────────────────────
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ from tasks import async_process_bulk_item
 logger = logging.getLogger("bulk_audit")
 
 router = APIRouter(
-    prefix="/api/v1/audit",
+    prefix="/estimate-carbon",
     tags=["Bulk Audit"]
 )
 
@@ -293,10 +293,10 @@ async def upload_bulk_csv(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# GET /api/v1/audit/status/{job_id} — Progress Polling
+# GET /estimate-carbon/bulk/status/{job_id} — Progress Polling
 # ═══════════════════════════════════════════════════════════════════════════
 
-@router.get("/status/{job_id}")
+@router.get("/bulk/status/{job_id}")
 async def get_bulk_status(
     job_id: str,
     user_token: dict = Depends(get_current_user),
@@ -342,10 +342,10 @@ async def get_bulk_status(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# GET /api/v1/audit/export/{job_id} — Streaming CSV Export
+# GET /estimate-carbon/bulk/export/{job_id} — Streaming CSV Export
 # ═══════════════════════════════════════════════════════════════════════════
 
-@router.get("/export/{job_id}")
+@router.get("/bulk/export/{job_id}")
 async def export_bulk_csv(
     job_id: str,
     user_token: dict = Depends(get_current_user),
