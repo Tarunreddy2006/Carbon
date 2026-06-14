@@ -1,103 +1,240 @@
-# Save this exactly as training.py
-import pandas as pd
-import numpy as np
+import warnings
 import joblib
-import os
-from sklearn.model_selection import KFold, RandomizedSearchCV
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import r2_score, mean_absolute_percentage_error
-import xgboost as xgb
+from sklearn.metrics import (
+    r2_score,
+    mean_squared_error,
+    mean_absolute_percentage_error
+)
 
-# Silence the Windows Loky Core warning completely
-os.environ["LOKY_MAX_CPU_COUNT"] = "4"
+from xgboost import XGBRegressor
 
-print("🚀 Loading multi-sensor calibration dataset...")
-df = pd.read_csv("carbon_model_training_500_rows.csv")
+warnings.filterwarnings("ignore")
 
-# ==================== 1. FIXED ACCURATE GEOSPATIAL FEATURE ENGINEERING ====================
-# 🔴 FIX A: Convert raw logarithmic Decibels (dB) to Linear Power values first
-df['vv_linear'] = 10 ** (df['sar_vv'] / 10)
-df['vh_linear'] = 10 ** (df['sar_vh'] / 10)
+# ==========================================================
+# CONFIG
+# ==========================================================
 
-# 🔴 FIX B: Calculate a true physical radar volume cross-ratio using linear fields
-df['radar_ratio'] = df['vh_linear'] / (df['vv_linear'] + 1e-6)
+CSV_FILE = "Carbon_SouthIndia_Final_Training.csv"
 
-# 🔴 FIX C: Compute Radar Vegetation Index (RVI) -> Standard industry proxy for tree volume
-df['rvi'] = (4 * df['vh_linear']) / (df['vv_linear'] + df['vh_linear'] + 1e-6)
+MODEL_FILE = "carbonestimator.pkl"
+SCALER_FILE = "feature_scaler.pkl"
+IMPORTANCE_FILE = "feature_importance.png"
 
-# 🔴 FIX D: Build a positive 3D Canopy Volume Index (Height * True Volume Proxy)
-df['canopy_volume_index'] = df['rvi'] * df['canopy_height']
+# ==========================================================
+# LOAD DATA
+# ==========================================================
 
-# Keep the optical height calculation since it behaves normally
-df['optical_height_proxy'] = df['ndvi_mean'] * df['canopy_height']
+print("Loading dataset...")
 
-# Update feature columns to use the new mathematically sound inputs
-feature_cols = ['canopy_height', 'ndvi_mean', 'radar_ratio', 'rvi', 'canopy_volume_index', 'optical_height_proxy']
-# ===========================================================================================
+df = pd.read_csv(CSV_FILE)
 
-# 🔴 CRITICAL FIX: DATA EXPANSION TO PREVENT OVERFITTING 
-if len(df) < 300:
-    print("📈 Dataset size is below optimal thresholds. Applying high-fidelity spatial expansion...")
-    expanded_chunks = []
-    for _ in range(5):
-        corrupted_copy = df.copy()
-        corrupted_copy['ndvi_mean'] = np.clip(corrupted_copy['ndvi_mean'] + np.random.normal(0, 0.02, len(df)), 0.1, 0.98)
-        
-        # Apply the physical variance directly to the raw satellite decibels before scaling
-        corrupted_copy['sar_vh'] = corrupted_copy['sar_vh'] + np.random.normal(0, 0.3, len(df))
-        corrupted_copy['biomass_per_ha'] = corrupted_copy['biomass_per_ha'] * np.random.uniform(0.95, 1.05, len(df))
-        expanded_chunks.append(corrupted_copy)
-    df = pd.concat(expanded_chunks, ignore_index=True)
-    
-    # Re-trigger linear conversion for expanded rows to ensure mathematical continuity
-    df['vv_linear'] = 10 ** (df['sar_vv'] / 10)
-    df['vh_linear'] = 10 ** (df['sar_vh'] / 10)
-    df['radar_ratio'] = df['vh_linear'] / (df['vv_linear'] + 1e-6)
-    df['rvi'] = (4 * df['vh_linear']) / (df['vv_linear'] + df['vh_linear'] + 1e-6)
-    df['canopy_volume_index'] = df['rvi'] * df['canopy_height']
-    df['optical_height_proxy'] = df['ndvi_mean'] * df['canopy_height']
+print("Original Shape:", df.shape)
 
-X = df[feature_cols]
-y = df['biomass_per_ha']
+# ==========================================================
+# CLEAN DATA
+# ==========================================================
 
-# 2. STANDARD SCALING (Normalizes heights, indices, and linear values uniformly)
+# Remove metadata columns if present
+for col in ["system:index", ".geo"]:
+    if col in df.columns:
+        df.drop(columns=[col], inplace=True)
+
+# Remove extreme EVI outliers
+df = df[
+    (df["EVI"] > -5) &
+    (df["EVI"] < 5)
+]
+
+# Remove missing values
+df = df.dropna()
+
+print("Clean Shape:", df.shape)
+
+# ==========================================================
+# FEATURE ENGINEERING
+# ==========================================================
+
+print("Creating CVI feature...")
+
+# Recommended by your AI Lead
+df["CVI"] = df["VH"] * df["rh95"]
+
+# ==========================================================
+# FEATURES
+# ==========================================================
+
+FEATURES = [
+    "NDVI",
+    "EVI",
+    "NDMI",
+    "VV",
+    "VH",
+    "VV_VH_ratio",
+    "elevation",
+    "slope",
+    "rh95",
+    "CVI"
+]
+
+TARGET = "agbd"
+
+X = df[FEATURES]
+y = df[TARGET]
+
+# ==========================================================
+# TRAIN TEST SPLIT
+# ==========================================================
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.20,
+    random_state=42
+)
+
+print("Train Samples:", len(X_train))
+print("Test Samples:", len(X_test))
+
+# ==========================================================
+# SCALE FEATURES
+# ==========================================================
+
 scaler = StandardScaler()
-X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=feature_cols)
-print(f"📊 Extracted scaled feature matrix: {X_scaled.shape[1]} inputs across {X_scaled.shape[0]} expanded rows.")
 
-# 3. Setting Up 5-Fold Cross-Validation Matrix
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
-xgb_r2_scores, xgb_mape_scores = [], []
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
-xgb_param_dist = {
-    'n_estimators': [100,150, 200],
-    'max_depth': [4, 5, 6],
-    'learning_rate': [0.03, 0.05],
-    'subsample': [0.8, 0.9],
-    'colsample_bytree': [0.8, 0.9]
-}
+joblib.dump(
+    scaler,
+    SCALER_FILE
+)
 
-print("🏋️‍♂️ Tuning and training high-dimensional ensemble regressors...")
-for fold, (train_idx, val_idx) in enumerate(kf.split(X_scaled, y)):
-    X_train, X_val = X_scaled.iloc[train_idx], X_scaled.iloc[val_idx]
-    y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-    
-    base_xgb = xgb.XGBRegressor(objective='reg:squarederror', random_state=42, n_jobs=-1)
-    xgb_search = RandomizedSearchCV(base_xgb, param_distributions=xgb_param_dist, n_iter=8, cv=3, random_state=42, n_jobs=-1)
-    xgb_search.fit(X_train, y_train)
-    
-    best_xgb_model = xgb_search.best_estimator_
-    xgb_pred = best_xgb_model.predict(X_val)
-    
-    xgb_r2_scores.append(r2_score(y_val, xgb_pred))
-    xgb_mape_scores.append(mean_absolute_percentage_error(y_val, xgb_pred) * 100)
+print(f"Scaler saved -> {SCALER_FILE}")
 
-print("\n🎯 ==================== UPGRADED MODEL ACCURACY REPORT ====================")
-print(f"| Model Framework | Mean Correlation Score (R²) | Mean Percentage Error (MAPE) |")
-print(f"|------------------|-----------------------------|------------------------------|")
-print(f"| 📈 Optimized XGB | {np.mean(xgb_r2_scores):.4f} | {np.mean(xgb_mape_scores):.2f}% |")
-print("==========================================================================")
+# ==========================================================
+# XGBOOST MODEL
+# ==========================================================
 
-joblib.dump(best_xgb_model, 'carbonestimator.pkl')
-joblib.dump(scaler, 'feature_scaler.pkl')
-print("\n🏆 Saved the optimized weights and feature scaler safely to disk!")
+print("Training XGBoost...")
+
+model = XGBRegressor(
+    objective="reg:squarederror",
+    n_estimators=500,
+    learning_rate=0.05,
+    max_depth=4,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    random_state=42,
+    n_jobs=-1
+)
+
+model.fit(
+    X_train_scaled,
+    y_train,
+    eval_set=[(X_test_scaled, y_test)],
+    verbose=False
+)
+
+# ==========================================================
+# PREDICTIONS
+# ==========================================================
+
+predictions = model.predict(
+    X_test_scaled
+)
+
+# ==========================================================
+# METRICS
+# ==========================================================
+
+r2 = r2_score(
+    y_test,
+    predictions
+)
+
+rmse = np.sqrt(
+    mean_squared_error(
+        y_test,
+        predictions
+    )
+)
+
+mape = (
+    mean_absolute_percentage_error(
+        y_test,
+        predictions
+    ) * 100
+)
+
+print("\n============================")
+print("MODEL PERFORMANCE")
+print("============================")
+print(f"R²   : {r2:.4f}")
+print(f"RMSE : {rmse:.4f}")
+print(f"MAPE : {mape:.2f}%")
+print("============================")
+
+# ==========================================================
+# FEATURE IMPORTANCE
+# ==========================================================
+
+importance_df = pd.DataFrame({
+    "Feature": FEATURES,
+    "Importance": model.feature_importances_
+})
+
+importance_df = importance_df.sort_values(
+    by="Importance",
+    ascending=False
+)
+
+print("\nFeature Importance:\n")
+print(importance_df)
+
+# Plot
+plt.figure(figsize=(10, 6))
+
+plt.barh(
+    importance_df["Feature"],
+    importance_df["Importance"]
+)
+
+plt.gca().invert_yaxis()
+
+plt.title(
+    "Carbon Biomass Model Feature Importance"
+)
+
+plt.xlabel("Importance")
+
+plt.tight_layout()
+
+plt.savefig(
+    IMPORTANCE_FILE,
+    dpi=300
+)
+
+print(
+    f"\nFeature importance plot saved -> {IMPORTANCE_FILE}"
+)
+
+# ==========================================================
+# SAVE MODEL
+# ==========================================================
+
+joblib.dump(
+    model,
+    MODEL_FILE
+)
+
+print(
+    f"Model saved -> {MODEL_FILE}"
+)
+
+print("\nTraining Complete.")
