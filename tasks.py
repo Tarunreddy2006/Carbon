@@ -64,11 +64,15 @@ def run_continuous_mrv_audit():
             current_results = run_carbon_pipeline(
                 biome_name=biome_name,
                 parcel_area_ha=parcel.calculated_area_ha,
-                canopy_height=gee_data.get("canopy_height", 15.0),
+                rh95=gee_data.get("rh95", 15.0),
                 veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-                ndvi_mean=gee_data["ndvi_mean"],
-                sar_vv=gee_data.get("sar_vv_backscatter", -20.0),
-                sar_vh=gee_data.get("sar_vh_backscatter", -20.0),
+                ndvi=gee_data["ndvi"],
+                evi=gee_data.get("evi", 0.0),
+                ndmi=gee_data.get("ndmi", 0.0),
+                vv=gee_data.get("vv", -20.0),
+                vh=gee_data.get("vh", -20.0),
+                elevation=gee_data.get("elevation", 0.0),
+                slope=gee_data.get("slope", 0.0),
                 scenes_used=total_scenes
             )
 
@@ -178,11 +182,15 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         results = run_carbon_pipeline(
             parcel_area_ha=parcel_area_ha,
             biome_name=biome_name,
-            canopy_height=gee_data.get("canopy_height", 15.0),
+            rh95=gee_data.get("rh95", 15.0),
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-            ndvi_mean=gee_data["ndvi_mean"],
-            sar_vv=gee_data.get("sar_vv_backscatter", -20.0),
-            sar_vh=gee_data.get("sar_vh_backscatter", -20.0),
+            ndvi=gee_data["ndvi"],
+            evi=gee_data.get("evi", 0.0),
+            ndmi=gee_data.get("ndmi", 0.0),
+            vv=gee_data.get("vv", -20.0),
+            vh=gee_data.get("vh", -20.0),
+            elevation=gee_data.get("elevation", 0.0),
+            slope=gee_data.get("slope", 0.0),
             scenes_used=total_scenes
         )
         
@@ -197,12 +205,12 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         for year in range(curr_year - 4, curr_year + 1):
             hist_ndvi = get_historical_ndvi(geojson_geom, year)
             
-            hist_co2 = round(hist_ndvi * results["co2_equivalent_tons"] / max(0.01, gee_data["ndvi_mean"]), 2)
+            hist_co2 = round(hist_ndvi * results["co2_equivalent_tons"] / max(0.01, gee_data["ndvi"]), 2)
             
             trends.append({
                 "year": year, 
                 "carbon_tons": round(hist_co2 / 3.66, 2),
-                "canopy_area_hectares": round(results.get("area_hectares", 0) * (hist_ndvi / max(0.01, gee_data["ndvi_mean"])), 2),
+                "canopy_area_hectares": round(results.get("area_hectares", 0) * (hist_ndvi / max(0.01, gee_data["ndvi"])), 2),
                 "confidence_score": round(max(5.0, results.get("confidence_score", 95.0) - (curr_year - year)), 1)})
 
         final_conf = results.get("confidence_score", 95.0)
@@ -213,7 +221,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             vintage_year=str(curr_year),
             co2e=results["co2_equivalent_tons"],
             geojson_geom=geojson_geom,
-            ndvi_mean=gee_data["ndvi_mean"]
+            ndvi_mean=gee_data["ndvi"]
         )
         
         new_credit = CarbonCredit(
@@ -237,7 +245,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             "parcel_polygon": geojson_geom,
             
             "parcel_area_hectares": parcel_area_ha,
-            "ndvi_mean": round(gee_data["ndvi_mean"], 3),
+            "ndvi_mean": round(gee_data["ndvi"], 3),
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
             "vegetation_pixel_count": int(results.get("area_hectares", 0) * 100),
@@ -307,11 +315,15 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
         results = run_carbon_pipeline(
             parcel_area_ha=parcel.calculated_area_ha,
             biome_name=biome_name,
-            canopy_height=gee_data.get("canopy_height", 15.0),
+            rh95=gee_data.get("rh95", 15.0),
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-            ndvi_mean=gee_data["ndvi_mean"],
-            sar_vv=gee_data.get("sar_vv_backscatter", -20.0),
-            sar_vh=gee_data.get("sar_vh_backscatter", -20.0),
+            ndvi=gee_data["ndvi"],
+            evi=gee_data.get("evi", 0.0),
+            ndmi=gee_data.get("ndmi", 0.0),
+            vv=gee_data.get("vv", -20.0),
+            vh=gee_data.get("vh", -20.0),
+            elevation=gee_data.get("elevation", 0.0),
+            slope=gee_data.get("slope", 0.0),
             scenes_used=total_scenes
         )
 
@@ -323,7 +335,7 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             vintage_year=str(curr_year),
             co2e=results["co2_equivalent_tons"],
             geojson_geom=geojson_geom,
-            ndvi_mean=gee_data["ndvi_mean"]
+            ndvi_mean=gee_data["ndvi"]
         )
         
         new_credit = CarbonCredit(
@@ -348,7 +360,7 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             "parcel_polygon": geojson_geom,
             
             "parcel_area_hectares": parcel.calculated_area_ha,
-            "ndvi_mean": round(gee_data["ndvi_mean"], 3),
+            "ndvi_mean": round(gee_data["ndvi"], 3),
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
             "vegetation_pixel_count": int(results.get("area_hectares", 0) * 100),
@@ -493,17 +505,21 @@ def async_process_bulk_item(self, item_id: str):
         results = run_carbon_pipeline(
             parcel_area_ha=parcel_area_ha,
             biome_name=biome_name,
-            canopy_height=gee_data.get("canopy_height", 15.0),
+            rh95=gee_data.get("rh95", 15.0),
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)),
-            ndvi_mean=gee_data["ndvi_mean"],
-            sar_vv=gee_data.get("sar_vv_backscatter", -20.0),
-            sar_vh=gee_data.get("sar_vh_backscatter", -20.0),
+            ndvi=gee_data["ndvi"],
+            evi=gee_data.get("evi", 0.0),
+            ndmi=gee_data.get("ndmi", 0.0),
+            vv=gee_data.get("vv", -20.0),
+            vh=gee_data.get("vh", -20.0),
+            elevation=gee_data.get("elevation", 0.0),
+            slope=gee_data.get("slope", 0.0),
             scenes_used=total_scenes
         )
 
         # ── 6. Persist results to item ────────────────────────────────────
         item.calculated_area_ha = parcel_area_ha
-        item.ndvi_mean = round(gee_data["ndvi_mean"], 4)
+        item.ndvi_mean = round(gee_data["ndvi"], 4)
         item.co2_equivalent_tons = results["co2_equivalent_tons"]
         item.confidence_score = results.get("confidence_score", 0.0)
         item.status = JobStatus.COMPLETED

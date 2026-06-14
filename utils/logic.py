@@ -23,7 +23,7 @@ except FileNotFoundError as e:
     biomass_model = None
     feature_scaler = None
 
-def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, scenes_used: int = 0) -> float:
+def calculate_asset_confidence(ndvi: float, vv: float, vh: float, rh95: float, scenes_used: int = 0) -> float:
     """
     Calculates an asset-specific confidence score based on remote sensing data quality,
     statistical training drift, and biophysical sanity checks.
@@ -51,10 +51,10 @@ def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, c
     
     # 1. Extrapolation Risk Profile (Statistical Z-Score Check)
     features_to_check = [
-        (ndvi_mean, 'ndvi'),
-        (canopy_height, 'height'),
-        (sar_vv, 'vv'),
-        (sar_vh, 'vh')
+        (ndvi, 'ndvi'),
+        (rh95, 'height'),
+        (vv, 'vv'),
+        (vh, 'vh')
     ]
     
     for current_val, key in features_to_check:
@@ -72,11 +72,11 @@ def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, c
 
     # 3. Sensor Contradiction Matrix
     # High structural canopy height combined with low greenness implies data anomalies or cloud shadows
-    if canopy_height > 22.0 and ndvi_mean < 0.35:
+    if rh95 > 22.0 and ndvi < 0.35:
         total_penalty += 30.0
         
     # Dense radar scattering with low height indicates possible calibration drift or wet soil interference
-    if sar_vh > -10.0 and canopy_height < 4.0:
+    if vh > -10.0 and rh95 < 4.0:
         total_penalty += 20.0
 
     # 4. Low scene count degrades trust even when data looks normal
@@ -89,7 +89,7 @@ def calculate_asset_confidence(ndvi_mean: float, sar_vv: float, sar_vh: float, c
     # Return bounded score between a floor of 5% and ceiling of 99.5%
     return round(max(5.0, min(calculated_score, 99.5)), 1)
 
-def run_carbon_pipeline(parcel_area_ha: float, ndvi_mean: float, sar_vv: float, sar_vh: float, canopy_height: float, veg_pixels: int = 0, biome_name: str = "Default", scenes_used: int = 0) -> dict:
+def run_carbon_pipeline(parcel_area_ha: float, ndvi: float, evi: float, ndmi: float, vv: float, vh: float, elevation: float, slope: float, rh95: float, veg_pixels: int = 0, biome_name: str = "Default", scenes_used: int = 0) -> dict:
     """
     ML-Driven Biomass Inference Engine with Asset Integrity Guardrails.
     
@@ -99,35 +99,41 @@ def run_carbon_pipeline(parcel_area_ha: float, ndvi_mean: float, sar_vv: float, 
         total_carbon_tons, co2_equivalent_tons, confidence_score
     """
     if biomass_model and feature_scaler:
-        # Define strict feature column template
+        # Define strict feature column template in exact training order
         feature_cols = [
-            'canopy_height', 
-            'ndvi_mean', 
-            'sar_vv', 
-            'sar_vh', 
-            'radar_ratio', 
-            'canopy_volume_index', 
-            'optical_height_proxy'
+            'NDVI',
+            'EVI',
+            'NDMI',
+            'VV',
+            'VH',
+            'VV_VH_ratio',
+            'elevation',
+            'slope',
+            'rh95',
+            'CVI'
         ]
         
         # 1. Create expression-optimized Polars DataFrame with initial inputs
         raw_features_df = pl.DataFrame({
-            "canopy_height": [canopy_height],
-            "ndvi_mean": [ndvi_mean],
-            "sar_vv": [sar_vv],
-            "sar_vh": [sar_vh]
+            "NDVI": [ndvi],
+            "EVI": [evi],
+            "NDMI": [ndmi],
+            "VV": [vv],
+            "VH": [vh],
+            "elevation": [elevation],
+            "slope": [slope],
+            "rh95": [rh95]
         })
         
-        # Compute derived structural features using Polars expressions
+        # Compute derived features using Polars expressions with divide-by-zero protection
         raw_features_df = raw_features_df.with_columns(
-            pl.when(pl.col("sar_vv") == 0.0)
-            .then(1e-5)
-            .otherwise(pl.col("sar_vv"))
-            .alias("safe_sar_vv")
+            pl.when(pl.col("VH").abs() < 1e-10)
+            .then(1e-10)
+            .otherwise(pl.col("VH").abs())
+            .alias("safe_vh_abs")
         ).with_columns([
-            (pl.col("sar_vh") / pl.col("safe_sar_vv")).alias("radar_ratio"),
-            ((pl.col("sar_vh") - pl.col("sar_vv")) * pl.col("canopy_height")).alias("canopy_volume_index"),
-            (pl.col("ndvi_mean") * pl.col("canopy_height")).alias("optical_height_proxy")
+            (pl.col("VV") / pl.col("safe_vh_abs")).alias("VV_VH_ratio"),
+            (pl.col("VH") * pl.col("rh95")).alias("CVI")
         ]).select(feature_cols)
 
         # Convert Polars DataFrame smoothly to NumPy directly at the boundary of the transformation statement
@@ -161,7 +167,8 @@ def run_carbon_pipeline(parcel_area_ha: float, ndvi_mean: float, sar_vv: float, 
     
     # Compute the non-random asset data integrity metrics
     # Pass scenes_used so the kill-switch can fire on zero-scene fallback data
-    confidence = calculate_asset_confidence(ndvi_mean, sar_vv, sar_vh, canopy_height, scenes_used=scenes_used)
+    # Map new parameters to the existing confidence function signature
+    confidence = calculate_asset_confidence(ndvi, vv, vh, rh95, scenes_used=scenes_used)
     
     return {
         # ══════════════════════════════════════════════════════════════
