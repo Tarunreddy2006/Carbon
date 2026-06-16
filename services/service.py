@@ -103,6 +103,7 @@ def get_canopy_height(ee_geom):
         gedi_height = (
             gedi.mean()
             .select(["rh95"], ["height"])
+            .toFloat()
         )
 
         fallback = ee.Image(
@@ -242,9 +243,13 @@ def analyse_parcel(geojson_geometry):
         )
         .addBands(slope)
     )
-
+    combined_reducer =( ee.Reducer.mean()
+    .combine(ee.Reducer.min(), sharedInputs=True)
+    .combine(ee.Reducer.max(), sharedInputs=True)
+    .combine(ee.Reducer.count(), sharedInputs=True)
+    )
     stats = stack.reduceRegion(
-        reducer=ee.Reducer.mean(),
+        reducer=combined_reducer(),
         geometry=geom,
         scale=10,
         maxPixels=1e9
@@ -256,6 +261,8 @@ def analyse_parcel(geojson_geometry):
 
     return {
         "ndvi": stats.get("NDVI", 0.0),
+        "ndvi_min": stats.get("NDVI_min", 0.0),
+        "ndvi_max": stats.get("NDVI_max", 0.0),
         "evi": stats.get("EVI", 0.0),
         "ndmi": stats.get("NDMI", 0.0),
 
