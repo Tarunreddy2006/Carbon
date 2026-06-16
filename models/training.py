@@ -4,6 +4,10 @@ Retrain the operational South India biomass estimator.
 This script fits the exact 10-feature production schema consumed by
 utils.logic.run_carbon_pipeline and overwrites the live model artifacts:
 models/carbonestimator.pkl and models/feature_scaler.pkl.
+
+Feature column order MUST match the exact mixed-case nomenclature used
+in both the training CSV and utils/logic.py:
+    NDVI, EVI, NDMI, VV, VH, VV_VH_ratio, elevation, slope, rh95, CVI
 """
 from pathlib import Path
 import pickle
@@ -20,31 +24,22 @@ DATASET_PATH = BASE_DIR / "Carbon_SouthIndia_Final_Training.csv"
 MODEL_PATH = BASE_DIR / "carbonestimator.pkl"
 SCALER_PATH = BASE_DIR / "feature_scaler.pkl"
 
+# ══════════════════════════════════════════════════════════════════════════
+# CANONICAL FEATURE SCHEMA — mixed-case, matching CSV headers exactly.
+# This is the single source of truth shared with utils/logic.py.
+# ══════════════════════════════════════════════════════════════════════════
 FEATURE_SCHEMA = [
-    "ndvi",
-    "evi",
-    "ndmi",
-    "vv",
-    "vh",
-    "vv_vh_ratio",
+    "NDVI",
+    "EVI",
+    "NDMI",
+    "VV",
+    "VH",
+    "VV_VH_ratio",
     "elevation",
     "slope",
     "rh95",
-    "cvi",
+    "CVI",
 ]
-
-SOURCE_COLUMNS = {
-    "ndvi": "NDVI",
-    "evi": "EVI",
-    "ndmi": "NDMI",
-    "vv": "VV",
-    "vh": "VH",
-    "vv_vh_ratio": "VV_VH_ratio",
-    "elevation": "elevation",
-    "slope": "slope",
-    "rh95": "rh95",
-    "cvi": "CVI",
-}
 
 TARGET_COLUMN = "agbd"
 
@@ -54,15 +49,16 @@ def load_training_frame(dataset_path: Path = DATASET_PATH) -> pd.DataFrame:
         raise FileNotFoundError(f"Training dataset not found: {dataset_path}")
 
     df = pd.read_csv(dataset_path)
-    required_columns = list(SOURCE_COLUMNS.values()) + [TARGET_COLUMN]
+
+    # Validate that all required columns exist in the CSV
+    required_columns = FEATURE_SCHEMA + [TARGET_COLUMN]
     missing = [column for column in required_columns if column not in df.columns]
     if missing:
         raise ValueError(f"Training dataset missing required columns: {missing}")
 
+    # Select only the columns we need — no renaming required since
+    # FEATURE_SCHEMA already matches the CSV header case exactly
     training_df = df[required_columns].copy()
-    training_df = training_df.rename(
-        columns={source: feature for feature, source in SOURCE_COLUMNS.items()}
-    )
     training_df = training_df.apply(pd.to_numeric, errors="coerce")
     training_df = training_df.replace([float("inf"), float("-inf")], pd.NA)
     training_df = training_df.dropna(subset=FEATURE_SCHEMA + [TARGET_COLUMN])
@@ -120,10 +116,13 @@ def train() -> dict:
 
 if __name__ == "__main__":
     result = train()
-    print("South India biomass model retraining complete.")
-    print(f"Rows used: {result['rows_used']}")
-    print(f"Feature order: {', '.join(result['features'])}")
-    print(f"Validation R2: {result['r2']:.4f}")
-    print(f"Validation MAE: {result['mae']:.4f}")
-    print(f"Model written: {MODEL_PATH}")
-    print(f"Scaler written: {SCALER_PATH}")
+    print("═" * 55)
+    print("  South India biomass model retraining complete.")
+    print("═" * 55)
+    print(f"  Rows used      : {result['rows_used']}")
+    print(f"  Feature order   : {', '.join(result['features'])}")
+    print(f"  Validation R²   : {result['r2']:.4f}")
+    print(f"  Validation MAE  : {result['mae']:.4f}")
+    print(f"  Model written   : {MODEL_PATH}")
+    print(f"  Scaler written  : {SCALER_PATH}")
+    print("═" * 55)
