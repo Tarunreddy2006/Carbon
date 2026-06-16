@@ -138,7 +138,7 @@ def run_carbon_pipeline(parcel_area_ha: float, ndvi: float, evi: float, ndmi: fl
 
         # Convert Polars DataFrame smoothly to NumPy directly at the boundary of the transformation statement
         scaled_features = feature_scaler.transform(raw_features_df.to_numpy())
-        tuned_biomass_per_ha = biomass_model.predict(scaled_features)[0]
+        tuned_biomass_per_ha = max(0.0, float(biomass_model.predict(scaled_features)[0]))
     else:
         tuned_biomass_per_ha = 120.0
         

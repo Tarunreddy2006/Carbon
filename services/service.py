@@ -208,6 +208,7 @@ def analyse_parcel(geojson_geometry):
         .addBands(s1_median.select("VH"))
         .addBands(srtm.select("elevation"))
         .addBands(slope)
+        .clip(geom)
     )
 
     # Combine statistical reducers

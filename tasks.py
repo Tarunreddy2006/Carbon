@@ -181,7 +181,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         
         # 🌟 FIXED: Pull the true, active vegetation pixel arrays from GEE data dict
         true_veg_pixels = int(gee_data.get("veg_pixels", 0))
-        true_canopy_m2 = float(true_veg_pixels * 100.0)
+        true_canopy_m2 = min(float(parcel_area_ha * 10000.0), float(true_veg_pixels * 100.0))
         true_canopy_ha = round(true_canopy_m2 / 10000.0, 4)
 
         results = run_carbon_pipeline(
@@ -262,8 +262,8 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             
             # 🌟 FIXED: True telemetry metrics loaded dynamically to restore audit alignment
             "vegetation_pixel_count": true_veg_pixels,
-            "canopy_area_m2": true_canopy_m2,
-            "canopy_area_hectares": true_canopy_ha,
+            "canopy_area_m2": min(float(parcel_area_ha * 10000.0), true_canopy_m2),
+            "canopy_area_hectares": min(float(parcel_area_ha), true_canopy_ha),
             
             "biomass_density_tons_per_ha": results.get("biomass_per_ha", 0),
             "biomass_tons": results.get("total_biomass_tons", 0),
@@ -329,7 +329,7 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
         
         # 🌟 FIXED: Pull the true, active vegetation pixel arrays from GEE data dict for Rerun
         true_veg_pixels = int(gee_data.get("veg_pixels", 0))
-        true_canopy_m2 = float(true_veg_pixels * 100.0)
+        true_canopy_m2 = min(float(parcel.calculated_area_ha * 10000.0), float(true_veg_pixels * 100.0))
         true_canopy_ha = round(true_canopy_m2 / 10000.0, 4)
 
         results = run_carbon_pipeline(
@@ -386,8 +386,8 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             
             # 🌟 FIXED: True telemetry metrics loaded dynamically during reruns
             "vegetation_pixel_count": true_veg_pixels,
-            "canopy_area_m2": true_canopy_m2,
-            "canopy_area_hectares": true_canopy_ha,
+            "canopy_area_m2": min(float(parcel.calculated_area_ha * 10000.0), true_canopy_m2),
+            "canopy_area_hectares": min(float(parcel.calculated_area_ha), true_canopy_ha),
             
             "biomass_density_tons_per_ha": results.get("biomass_per_ha", 0),
             "biomass_tons": results.get("total_biomass_tons", 0),
