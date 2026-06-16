@@ -9,6 +9,7 @@ mathematically clamped claimable areas, and safe numpy/polars scaling.
 import joblib
 import logging
 import numpy as np
+import pandas as pd
 import polars as pl
 
 logger = logging.getLogger(__name__)
@@ -112,33 +113,62 @@ def run_carbon_pipeline(parcel_area_ha: float, ndvi: float, evi: float, ndmi: fl
             'rh95',
             'CVI'
         ]
-        
-        # 1. Create expression-optimized Polars DataFrame with initial inputs
+
+        # ======================================================
+        # DERIVED FEATURE COMPUTATION with non-zero denominators
+        # ======================================================
+        safe_vh_abs = max(0.01, abs(vh))
+        vv_vh_ratio = vv / safe_vh_abs
+        cvi = vh * rh95
+
+        # ======================================================
+        # DIAGNOSTIC: Pre-Scaler Feature Matrix Logging
+        # ======================================================
+        diag_df = pd.DataFrame([{
+            'ndvi': ndvi, 'evi': evi, 'ndmi': ndmi,
+            'vv': vv, 'vh': vh, 'vv_vh_ratio': vv_vh_ratio,
+            'elevation': elevation, 'slope': slope,
+            'rh95': rh95, 'cvi': cvi,
+        }])
+        logger.info("PRE-SCALER FEATURE MATRIX DIAGNOSTIC")
+        logger.info(f"\n{diag_df.to_string(index=False)}")
+        logger.info(f"Data types:\n{diag_df.dtypes.to_string()}")
+        nan_check = diag_df.isnull().any().any()
+        zero_check = (diag_df == 0.0).any().any()
+        logger.info(f"Contains NaN/None: {nan_check} | Contains structural 0.0: {zero_check}")
+        if nan_check:
+            logger.warning("NaN DETECTED in feature matrix!")
+        if zero_check:
+            zero_cols = diag_df.columns[(diag_df == 0.0).any()].tolist()
+            logger.warning(f"Structural 0.0 detected in columns: {zero_cols}")
+
+        # 1. Create Polars DataFrame with all 10 features pre-computed
         raw_features_df = pl.DataFrame({
             "NDVI": [ndvi],
             "EVI": [evi],
             "NDMI": [ndmi],
             "VV": [vv],
             "VH": [vh],
+            "VV_VH_ratio": [vv_vh_ratio],
             "elevation": [elevation],
             "slope": [slope],
-            "rh95": [rh95]
-        })
-        
-        # Compute derived features using Polars expressions with divide-by-zero protection
-        raw_features_df = raw_features_df.with_columns(
-            pl.when(pl.col("VH").abs() < 1e-10)
-            .then(1e-10)
-            .otherwise(pl.col("VH").abs())
-            .alias("safe_vh_abs")
-        ).with_columns([
-            (pl.col("VV") / pl.col("safe_vh_abs")).alias("VV_VH_ratio"),
-            (pl.col("VH") * pl.col("rh95")).alias("CVI")
-        ]).select(feature_cols)
+            "rh95": [rh95],
+            "CVI": [cvi],
+        }).select(feature_cols)
 
-        # Convert Polars DataFrame smoothly to NumPy directly at the boundary of the transformation statement
+        # Convert Polars DataFrame to NumPy for scaler transform
         scaled_features = feature_scaler.transform(raw_features_df.to_numpy())
-        tuned_biomass_per_ha = max(0.0, float(biomass_model.predict(scaled_features)[0]))
+
+        # ======================================================
+        # DIAGNOSTIC: Raw vs Clamped Prediction Tracking
+        # ======================================================
+        raw_prediction = float(biomass_model.predict(scaled_features)[0])
+        tuned_biomass_per_ha = max(0.0, raw_prediction)
+        logger.info("MODEL INFERENCE DIAGNOSTIC")
+        logger.info(f"Raw unclamped prediction : {raw_prediction:.6f} t/ha")
+        logger.info(f"Clamped production weight: {tuned_biomass_per_ha:.6f} t/ha")
+        if raw_prediction < 0.0:
+            logger.warning(f"NEGATIVE RAW PREDICTION -- under-run variance: {raw_prediction:.6f}")
     else:
         tuned_biomass_per_ha = 120.0
         

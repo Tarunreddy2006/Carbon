@@ -66,7 +66,7 @@ def run_continuous_mrv_audit():
                 parcel_area_ha=parcel.calculated_area_ha,
                 rh95=gee_data.get("rh95", 15.0),
                 veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-                ndvi=gee_data["ndvi"],
+                ndvi=gee_data["ndvi_mean"],
                 evi=gee_data.get("evi", 0.0),
                 ndmi=gee_data.get("ndmi", 0.0),
                 vv=gee_data.get("vv", -20.0),
@@ -529,7 +529,7 @@ def async_process_bulk_item(self, item_id: str):
             biome_name=biome_name,
             rh95=gee_data.get("rh95", 15.0),
             veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)),
-            ndvi=gee_data["ndvi"],
+            ndvi=gee_data["ndvi_mean"],
             evi=gee_data.get("evi", 0.0),
             ndmi=gee_data.get("ndmi", 0.0),
             vv=gee_data.get("vv", -20.0),
@@ -541,7 +541,7 @@ def async_process_bulk_item(self, item_id: str):
 
         # ── 6. Persist results to item ────────────────────────────────────
         item.calculated_area_ha = parcel_area_ha
-        item.ndvi_mean = round(gee_data["ndvi"], 4)
+        item.ndvi_mean = round(gee_data["ndvi_mean"], 4)
         item.co2_equivalent_tons = results["co2_equivalent_tons"]
         item.confidence_score = results.get("confidence_score", 0.0)
         item.status = JobStatus.COMPLETED
