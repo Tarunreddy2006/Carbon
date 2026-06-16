@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 from google.oauth2 import service_account
 
 logger = logging.getLogger(__name__)
-
+current_year = datetime.now().year
 _IS_GEE_INITIALIZED = False
 
 # ── COG Storage Configuration ──────────────────────────────────────────────
@@ -68,8 +68,10 @@ def mask_clouds(image):
 
 def get_historical_ndvi(geometry, year):
     """Retrieves median NDVI for a specific year to prove additionality."""
-    start = f"{year}-01-01"
-    end = f"{year}-12-31"
+    start_year = current_year-4
+    end_year = current_year
+    start = f"{start_year}-01-01"
+    end = f"{end_year}-12-31"
     
     ee_geom = ee.Geometry.Polygon(geometry["coordinates"])
     col = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
