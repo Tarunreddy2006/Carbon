@@ -167,7 +167,6 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
 
         # 4. Multi-Sensor Analysis (GEE)
         logger.info("⏳ Sending geometry to Google Earth Engine...")
-        # Called synchronously
         gee_data = analyse_parcel(geojson_geom)
 
         # 4b. Export NDVI raster as Cloud Optimized GeoTIFF for TiTiler streaming
@@ -178,13 +177,19 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         total_scenes = gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0)
 
         # 5. Scientific Metrics Calculation
-        from utils.logic import calculate_asset_confidence
+        from utils.logic import run_carbon_pipeline
+        
+        # 🌟 FIXED: Pull the true, active vegetation pixel arrays from GEE data dict
+        true_veg_pixels = int(gee_data.get("veg_pixels", 0))
+        true_canopy_m2 = float(true_veg_pixels * 100.0)
+        true_canopy_ha = round(true_canopy_m2 / 10000.0, 4)
+
         results = run_carbon_pipeline(
             parcel_area_ha=parcel_area_ha,
             biome_name=biome_name,
             rh95=gee_data.get("rh95", 15.0),
-            veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-            ndvi=gee_data["ndvi"],
+            veg_pixels=true_veg_pixels, 
+            ndvi=gee_data["ndvi_mean"],
             evi=gee_data.get("evi", 0.0),
             ndmi=gee_data.get("ndmi", 0.0),
             vv=gee_data.get("vv", -20.0),
@@ -205,13 +210,19 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         for year in range(curr_year - 4, curr_year + 1):
             hist_ndvi = get_historical_ndvi(geojson_geom, year)
             
-            hist_co2 = round(hist_ndvi * results["co2_equivalent_tons"] / max(0.01, gee_data["ndvi"]), 2)
+            hist_co2 = round(hist_ndvi * results["co2_equivalent_tons"] / max(0.01, gee_data["ndvi_mean"]), 2)
             
+            # 🌟 FIXED: Historical canopy area calculation now respects true baseline canopy density bounds
+            hist_canopy_ha = round(true_canopy_ha * (hist_ndvi / max(0.01, gee_data["ndvi_mean"])), 4)
+            # Ensure it never overflows gross physical parcel property bounds
+            hist_canopy_ha = min(parcel_area_ha, hist_canopy_ha)
+
             trends.append({
                 "year": year, 
                 "carbon_tons": round(hist_co2 / 3.66, 2),
-                "canopy_area_hectares": round(results.get("area_hectares", 0) * (hist_ndvi / max(0.01, gee_data["ndvi"])), 2),
-                "confidence_score": round(max(5.0, results.get("confidence_score", 95.0) - (curr_year - year)), 1)})
+                "canopy_area_hectares": hist_canopy_ha,
+                "confidence_score": round(max(5.0, results.get("confidence_score", 95.0) - (curr_year - year)), 1)
+            })
 
         final_conf = results.get("confidence_score", 95.0)
 
@@ -221,7 +232,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             vintage_year=str(curr_year),
             co2e=results["co2_equivalent_tons"],
             geojson_geom=geojson_geom,
-            ndvi_mean=gee_data["ndvi"]
+            ndvi_mean=gee_data["ndvi_mean"]
         )
         
         new_credit = CarbonCredit(
@@ -245,12 +256,15 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             "parcel_polygon": geojson_geom,
             
             "parcel_area_hectares": parcel_area_ha,
-            "ndvi_mean": round(gee_data["ndvi"], 3),
+            "ndvi_mean": round(gee_data["ndvi_mean"], 3),
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
-            "vegetation_pixel_count": int(results.get("area_hectares", 0) * 100),
-            "canopy_area_m2": results.get("area_hectares", 0) * 10000,
-            "canopy_area_hectares": results.get("area_hectares", 0),
+            
+            # 🌟 FIXED: True telemetry metrics loaded dynamically to restore audit alignment
+            "vegetation_pixel_count": true_veg_pixels,
+            "canopy_area_m2": true_canopy_m2,
+            "canopy_area_hectares": true_canopy_ha,
+            
             "biomass_density_tons_per_ha": results.get("biomass_per_ha", 0),
             "biomass_tons": results.get("total_biomass_tons", 0),
             "carbon_tons": results.get("total_carbon_tons", 0),
@@ -263,11 +277,10 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             "optical_images_used": gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
             "radar_images_used": gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0)),
             "fusion_ratio": "ML Random Forest Inference",
-            "image_count": gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0),
+            "image_count": total_scenes,
             "date_range": {"start": str(curr_year - 4), "end": str(curr_year)},
             "user_id": user_id,
 
-            # ── TiTiler COG streaming layer ────────────────────────────────
             "ndvi_tiles_url": cog_result.get("titiler_tiles_url", None),
             "cog_filename": cog_result.get("cog_filename", None)
         }
@@ -277,6 +290,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         raise
     finally:
         db.close()
+
 
 @shared_task(bind=True)
 def async_rerun_mrv(self, parcel_id: str, user_id: str):
@@ -311,13 +325,19 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
         total_scenes = gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0)
 
         # 3. Scientific Metrics Calculation
-        from utils.logic import run_carbon_pipeline, calculate_asset_confidence
+        from utils.logic import run_carbon_pipeline
+        
+        # 🌟 FIXED: Pull the true, active vegetation pixel arrays from GEE data dict for Rerun
+        true_veg_pixels = int(gee_data.get("veg_pixels", 0))
+        true_canopy_m2 = float(true_veg_pixels * 100.0)
+        true_canopy_ha = round(true_canopy_m2 / 10000.0, 4)
+
         results = run_carbon_pipeline(
             parcel_area_ha=parcel.calculated_area_ha,
             biome_name=biome_name,
             rh95=gee_data.get("rh95", 15.0),
-            veg_pixels=gee_data.get("vegetation_pixel_count", gee_data.get("veg_pixels", 0)), 
-            ndvi=gee_data["ndvi"],
+            veg_pixels=true_veg_pixels, 
+            ndvi=gee_data["ndvi_mean"],
             evi=gee_data.get("evi", 0.0),
             ndmi=gee_data.get("ndmi", 0.0),
             vv=gee_data.get("vv", -20.0),
@@ -335,7 +355,7 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             vintage_year=str(curr_year),
             co2e=results["co2_equivalent_tons"],
             geojson_geom=geojson_geom,
-            ndvi_mean=gee_data["ndvi"]
+            ndvi_mean=gee_data["ndvi_mean"]
         )
         
         new_credit = CarbonCredit(
@@ -360,12 +380,15 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             "parcel_polygon": geojson_geom,
             
             "parcel_area_hectares": parcel.calculated_area_ha,
-            "ndvi_mean": round(gee_data["ndvi"], 3),
+            "ndvi_mean": round(gee_data["ndvi_mean"], 3),
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
-            "vegetation_pixel_count": int(results.get("area_hectares", 0) * 100),
-            "canopy_area_m2": results.get("area_hectares", 0) * 10000,
-            "canopy_area_hectares": results.get("area_hectares", 0),
+            
+            # 🌟 FIXED: True telemetry metrics loaded dynamically during reruns
+            "vegetation_pixel_count": true_veg_pixels,
+            "canopy_area_m2": true_canopy_m2,
+            "canopy_area_hectares": true_canopy_ha,
+            
             "biomass_density_tons_per_ha": results.get("biomass_per_ha", 0),
             "biomass_tons": results.get("total_biomass_tons", 0),
             "carbon_tons": results.get("total_carbon_tons", 0),
@@ -378,11 +401,10 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             "optical_images_used": gee_data.get("optical_images_used", gee_data.get("opt_imgs", 0)),
             "radar_images_used": gee_data.get("radar_images_used", gee_data.get("rad_imgs", 0)),
             "fusion_ratio": "ML Random Forest Inference",
-            "image_count": gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0),
+            "image_count": total_scenes,
             "date_range": {"start": str(curr_year), "end": str(curr_year)},
             "user_id": user_id,
 
-            # ── TiTiler COG streaming layer ────────────────────────────────
             "ndvi_tiles_url": cog_result.get("titiler_tiles_url", None),
             "cog_filename": cog_result.get("cog_filename", None)
         }
