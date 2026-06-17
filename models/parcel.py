@@ -43,6 +43,8 @@ class CarbonEstimateResponse(BaseModel):
     vegetation_pixel_count: int
     canopy_area_m2: float
     canopy_area_hectares: float
+    canopy_area_ha: float
+    canopy_cover_percent: float
     biomass_density_tons_per_ha: float
     biomass_tons: float
     carbon_tons: float

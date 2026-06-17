@@ -262,7 +262,7 @@ def analyse_parcel(geojson_geometry):
     ndvi_image = ndvi
 
     return {
-        "ndvi": stats.get("NDVI", 0.0),
+        "ndvi": stats.get("NDVI_mean", 0.0),
         "ndvi_min": stats.get("NDVI_min", 0.0),
         "ndvi_max": stats.get("NDVI_max", 0.0),
         "evi": stats.get("EVI", 0.0),

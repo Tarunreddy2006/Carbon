@@ -141,42 +141,61 @@ def run_carbon_pipeline(parcel_area_ha: float, ndvi: float, evi: float, ndmi: fl
         tuned_biomass_per_ha = biomass_model.predict(scaled_features)[0]
     else:
         tuned_biomass_per_ha = 120.0
-        
-    # ==========================================
-    # THE VECTOR-RASTER FIX
-    # ==========================================
-    # Land area calculation based on chunky pixel grid geometry
-    canopy_area_ha = veg_pixels * 0.01 
-    
-    # 🚨 THE FAILSAFE: If optical sensors are completely blinded by clouds (0 pixels),
-    # assume the canopy covers the full drawn polygon area.
-    if canopy_area_ha == 0.0 or veg_pixels == 0:
+
+    # ══════════════════════════════════════════════════════════════════
+    # FRACTIONAL VEGETATION COVER (FVC) — REPORTING ONLY
+    # This does NOT affect biomass, carbon, or CO₂ calculations.
+    # ══════════════════════════════════════════════════════════════════
+    import math
+
+    NDVI_SOIL = 0.15        # Bare soil baseline
+    NDVI_VEGETATION = 0.80  # Full canopy reference
+
+    # SAFETY FALLBACK: If NDVI is missing, NaN, or invalid → assume full canopy
+    if ndvi is None or (isinstance(ndvi, float) and math.isnan(ndvi)) or ndvi <= 0:
+        logger.warning("⚠ NDVI invalid (%s), defaulting FVC=1.0 (full canopy)", ndvi)
+        fvc = 1.0
         canopy_area_ha = parcel_area_ha
-    
-    # Cap the claimable area so it NEVER exceeds the legal drawn boundary
-    effective_claimable_area = min(parcel_area_ha, canopy_area_ha)
-    
-    # Multiply by the CAP, not the raw grid area!
-    total_biomass = tuned_biomass_per_ha * effective_claimable_area
-    
+        canopy_cover_percent = 100.0
+    else:
+        fvc = (ndvi - NDVI_SOIL) / (NDVI_VEGETATION - NDVI_SOIL)
+        fvc = max(0.0, min(1.0, fvc))
+        canopy_area_ha = parcel_area_ha * fvc
+        canopy_cover_percent = fvc * 100.0
+
+    # Validation logging
+    logger.info(f"NDVI Mean: {ndvi}")
+    logger.info(f"FVC: {fvc}")
+    logger.info(f"Canopy Area: {canopy_area_ha}")
+    logger.info(f"Parcel Area: {parcel_area_ha}")
+    assert 0.0 <= fvc <= 1.0, f"FVC out of range: {fvc}"
+    assert canopy_area_ha <= parcel_area_ha + 1e-9, f"Canopy {canopy_area_ha} > Parcel {parcel_area_ha}"
+
+    # ══════════════════════════════════════════════════════════════════
+    # BIOMASS / CARBON / CO₂ — uses parcel_area_ha, NOT canopy_area_ha
+    # DO NOT substitute canopy_area_ha here; it would cut carbon output.
+    # ══════════════════════════════════════════════════════════════════
+    total_biomass = tuned_biomass_per_ha * parcel_area_ha
+
     # Standard environmental carbon fraction (IPCC default factor: 0.47)
     carbon_tons = total_biomass * 0.47
-    
+
     # Financial Registry Compliance Multiplier (Exactly 44/12 rounded)
     co2e_tons = carbon_tons * 3.67
-    
+
     # Compute the non-random asset data integrity metrics
     # Pass scenes_used so the kill-switch can fire on zero-scene fallback data
-    # Map new parameters to the existing confidence function signature
     confidence = calculate_asset_confidence(ndvi, vv, vh, rh95, scenes_used=scenes_used)
-    
+
     return {
         # ══════════════════════════════════════════════════════════════
         # THE API CONTRACT — these keys are read by tasks.py AND the
         # frontend JS.  Renaming any key here WILL cause the 0t bug.
         # ══════════════════════════════════════════════════════════════
-        "area_hectares": round(effective_claimable_area, 2),
+        "area_hectares": round(parcel_area_ha, 2),
         "parcel_area_ha": round(parcel_area_ha, 2),
+        "canopy_area_ha": round(canopy_area_ha, 2),
+        "canopy_cover_percent": round(canopy_cover_percent, 1),
         "biomass_per_ha": round(float(tuned_biomass_per_ha), 2),
         "total_biomass_tons": round(float(total_biomass), 2),
         "total_carbon_tons": round(float(carbon_tons), 2),
