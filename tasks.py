@@ -239,6 +239,11 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         logger.info(f"✅ Ledger Entry Created: {cert_id}")
 
         # 8. Compile Final JSON output
+        res_parcel_area = results.get("area_hectares", 0)
+        res_canopy_area = results.get("canopy_area_ha", 0)
+        res_fvc = res_canopy_area / res_parcel_area if res_parcel_area > 0 else 0.0
+        effective_veg_pixels = int(round((res_parcel_area * 100) * res_fvc))
+
         return {
             "parcel_id": str(new_parcel.id),
             "credit_certificate": cert_id,
@@ -248,7 +253,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
             "ndvi_mean": round(gee_data["ndvi"], 3),
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
-            "vegetation_pixel_count": int(results.get("area_hectares", 0) * 100),
+            "vegetation_pixel_count": effective_veg_pixels,
             "canopy_area_m2": results.get("canopy_area_ha", results.get("area_hectares", 0)) * 10000,
             "canopy_area_hectares": results.get("canopy_area_ha", results.get("area_hectares", 0)),
             "canopy_area_ha": results.get("canopy_area_ha", parcel_area_ha),
@@ -356,6 +361,11 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
 
         final_conf = results.get("confidence_score", 95.0)
 
+        res_parcel_area = results.get("area_hectares", 0)
+        res_canopy_area = results.get("canopy_area_ha", 0)
+        res_fvc = res_canopy_area / res_parcel_area if res_parcel_area > 0 else 0.0
+        effective_veg_pixels = int(round((res_parcel_area * 100) * res_fvc))
+
         return {
             "parcel_id": str(parcel.id),
             "credit_certificate": cert_id,
@@ -365,7 +375,7 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
             "ndvi_mean": round(gee_data["ndvi"], 3),
             "ndvi_min": round(gee_data.get("ndvi_min", 0.0), 3),
             "ndvi_max": round(gee_data.get("ndvi_max", 0.0), 3),
-            "vegetation_pixel_count": int(results.get("area_hectares", 0) * 100),
+            "vegetation_pixel_count": effective_veg_pixels,
             "canopy_area_m2": results.get("canopy_area_ha", results.get("area_hectares", 0)) * 10000,
             "canopy_area_hectares": results.get("canopy_area_ha", results.get("area_hectares", 0)),
             "canopy_area_ha": results.get("canopy_area_ha", parcel.calculated_area_ha),
