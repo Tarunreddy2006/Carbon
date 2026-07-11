@@ -22,5 +22,6 @@ ENV KMP_DUPLICATE_LIB_OK=TRUE
 ENV OMP_NUM_THREADS=1
 
 EXPOSE 8000
+EXPOSE 8001
 
 CMD ["uvicorn", "carbon:app", "--host", "0.0.0.0", "--port", "8000"]
