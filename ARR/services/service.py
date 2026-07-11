@@ -251,7 +251,7 @@ def analyse_parcel(geojson_geometry):
     .combine(ee.Reducer.count(), sharedInputs=True)
     )
     stats = stack.reduceRegion(
-        reducer=combined_reducer(),
+        reducer=combined_reducer,
         geometry=geom,
         scale=10,
         maxPixels=1e9
