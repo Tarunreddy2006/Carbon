@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Biochar MRV Pipeline | Stomata</title>
+    <meta name="description" content="Biochar carbon-removal monitoring, reporting and verification pipeline by Stomata.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-card: rgba(15, 23, 42, 0.75);
+            --border: rgba(56, 189, 248, 0.15);
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.25);
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --green-accent: #34d399;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            z-index: 0;
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            max-width: 600px;
+            padding: 3rem 2rem;
+        }
+
+        .icon-ring {
+            width: 96px;
+            height: 96px;
+            margin: 0 auto 2rem;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-glow), rgba(52, 211, 153, 0.2));
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.8rem;
+            animation: pulse-ring 3s ease-in-out infinite;
+        }
+
+        @keyframes pulse-ring {
+            0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+            50% { box-shadow: 0 0 40px 8px var(--accent-glow); }
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.75rem;
+            background: linear-gradient(135deg, var(--accent), var(--green-accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            line-height: 1.6;
+            margin-bottom: 2.5rem;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1.25rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            font-size: 0.85rem;
+            color: var(--green-accent);
+            backdrop-filter: blur(12px);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green-accent);
+            animation: blink 2s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .nav-link {
+            display: inline-block;
+            margin-top: 2rem;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        .nav-link:hover { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="container">
+        <div class="icon-ring">🔥</div>
+        <h1>Biochar MRV Pipeline</h1>
+        <p class="subtitle">
+            End-to-end monitoring, reporting & verification for biochar carbon removal —
+            from pyrolysis telemetry to farmer attestation.
+        </p>
+        <div class="status-badge">
+            <span class="status-dot"></span>
+            API Online — /api/v1/biochar
+        </div>
+        <br>
+        <a href="https://app.stomata.tech" class="nav-link">← Back to Stomata Platform</a>
+    </div>
+</body>
+</html>

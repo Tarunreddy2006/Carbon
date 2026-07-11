@@ -21,7 +21,10 @@ COPY . .
 ENV KMP_DUPLICATE_LIB_OK=TRUE
 ENV OMP_NUM_THREADS=1
 
-EXPOSE 8000
-EXPOSE 8001
+# Parameterized app module — override via docker-compose or env var
+# Defaults to ARR app; set to biochar.app:app or landing.app:app as needed
+ENV APP_MODULE=ARR.carbon:app
 
-CMD ["uvicorn", "carbon:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8000
+
+CMD uvicorn ${APP_MODULE} --host 0.0.0.0 --port 8000

@@ -15,13 +15,16 @@ import shapely.geometry
 from datetime import datetime, timezone
 import json
 
-from database.db import SessionLocal
-from database.models import (
+from ARR.database.db import SessionLocal
+from ARR.database.models import (
     ParcelRecord, CarbonCredit, CreditStatus, Ecoregion,
     BulkJob, BulkItem, JobStatus
 )
-from services.service import analyse_parcel, export_ndvi_cog
-from utils.logic import run_carbon_pipeline
+from ARR.services.service import analyse_parcel, export_ndvi_cog
+from ARR.services.service import get_historical_ndvi
+from ARR.services.ledger import generate_cryptographic_proof
+from ARR.services.validation import validate_and_clean_geometry
+from ARR.utils.logic import run_carbon_pipeline, calculate_asset_confidence
 
 logger = logging.getLogger("celery_tasks")
 
@@ -100,12 +103,7 @@ def run_continuous_mrv_audit():
     finally:
         db.close()
 
-from services.service import get_historical_ndvi
-from services.ledger import generate_cryptographic_proof
-from services.validation import validate_and_clean_geometry
-from sqlalchemy import func
-from datetime import datetime, timezone
-import json
+# (Imports consolidated at top of file)
 
 @shared_task(bind=True)
 def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
@@ -178,7 +176,7 @@ def async_estimate_carbon_draw(self, payload_dict: dict, user_role: str):
         total_scenes = gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0)
 
         # 5. Scientific Metrics Calculation
-        from utils.logic import calculate_asset_confidence
+        # calculate_asset_confidence already imported at top level
         results = run_carbon_pipeline(
             parcel_area_ha=parcel_area_ha,
             biome_name=biome_name,
@@ -318,7 +316,7 @@ def async_rerun_mrv(self, parcel_id: str, user_id: str):
         total_scenes = gee_data.get("opt_imgs", 0) + gee_data.get("rad_imgs", 0)
 
         # 3. Scientific Metrics Calculation
-        from utils.logic import run_carbon_pipeline, calculate_asset_confidence
+        # run_carbon_pipeline, calculate_asset_confidence already imported at top level
         results = run_carbon_pipeline(
             parcel_area_ha=parcel.calculated_area_ha,
             biome_name=biome_name,

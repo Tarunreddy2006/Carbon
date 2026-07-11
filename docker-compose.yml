@@ -3,30 +3,59 @@ services:
     image: redis:7
     container_name: carbon-redis
 
-  api:
+  # ── Landing Page — app.stomata.tech ────────────────────────────────────────
+  landing-api:
     build: .
-    command: uvicorn carbon:app --host 0.0.0.0 --port 8000
+    command: uvicorn landing.app:app --host 0.0.0.0 --port 8000
     ports:
       - "127.0.0.1:8000:8000"
+    environment:
+      - APP_MODULE=landing.app:app
+    restart: always
+
+  # ── ARR Carbon Credits — arr.stomata.tech ──────────────────────────────────
+  arr-api:
+    build: .
+    command: uvicorn ARR.carbon:app --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:8001:8000"
     env_file:
       - .env
+    environment:
+      - APP_MODULE=ARR.carbon:app
     volumes:
       - ./detrixai.json:/app/detrixai.json:ro
       - ./detrixai.json:/detrixai.json:ro
-      - ./utils:/app/utils
-      - ./tasks.py:/app/tasks.py
-      - ./services:/app/services
-      - ./routes:/app/routes
-      - ./database:/app/database
+      - ./ARR/utils:/app/ARR/utils
+      - ./ARR/tasks.py:/app/ARR/tasks.py
+      - ./ARR/services:/app/ARR/services
+      - ./ARR/routes:/app/ARR/routes
+      - ./ARR/database:/app/ARR/database
       - cog-store:/app/cog_exports
     depends_on:
       - redis
     restart: always
 
+  # ── Biochar Pipeline — biochar.stomata.tech ────────────────────────────────
+  biochar-api:
+    build: .
+    command: uvicorn biochar.app:app --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:8002:8000"
+    env_file:
+      - .env
+    environment:
+      - APP_MODULE=biochar.app:app
+    volumes:
+      - ./biochar:/app/biochar
+    depends_on:
+      - redis
+    restart: always
+
+  # ── Celery Worker (ARR background tasks) ───────────────────────────────────
   worker:
     build: .
-    # ADDED: --pool=solo to prevent Fork Poisoning
-    command: celery -A worker.celery_app worker --pool=solo --loglevel=info
+    command: celery -A ARR.worker.celery_app worker --pool=solo --loglevel=info
     env_file:
       - .env
     environment:
@@ -35,19 +64,20 @@ services:
     volumes:
       - ./detrixai.json:/app/detrixai.json:ro
       - ./detrixai.json:/detrixai.json:ro
-      - ./utils:/app/utils
-      - ./tasks.py:/app/tasks.py
-      - ./services:/app/services
-      - ./routes:/app/routes
-      - ./database:/app/database
+      - ./ARR/utils:/app/ARR/utils
+      - ./ARR/tasks.py:/app/ARR/tasks.py
+      - ./ARR/services:/app/ARR/services
+      - ./ARR/routes:/app/ARR/routes
+      - ./ARR/database:/app/ARR/database
       - cog-store:/app/cog_exports
     depends_on:
       - redis
     restart: always
 
+  # ── Celery Beat (periodic scheduler) ───────────────────────────────────────
   beat:
     build: .
-    command: celery -A worker.celery_app beat --loglevel=info
+    command: celery -A ARR.worker.celery_app beat --loglevel=info
     env_file:
       - .env
     environment:
@@ -56,21 +86,21 @@ services:
     volumes:
       - ./detrixai.json:/app/detrixai.json:ro
       - ./detrixai.json:/detrixai.json:ro
-      - ./utils:/app/utils
-      - ./tasks.py:/app/tasks.py
-      - ./services:/app/services
+      - ./ARR/utils:/app/ARR/utils
+      - ./ARR/tasks.py:/app/ARR/tasks.py
+      - ./ARR/services:/app/ARR/services
     depends_on:
       - redis
     restart: always
 
-  # ── TiTiler Dynamic Tile Server ───────────────────────────────────────────
+  # ── TiTiler Dynamic Tile Server ────────────────────────────────────────────
   # Serves Cloud Optimized GeoTIFFs (COGs) as on-the-fly XYZ raster tiles
   # for hardware-accelerated MapLibre GL JS overlays.
   titiler:
     image: ghcr.io/developmentseed/titiler:latest
     container_name: carbon-titiler
     ports:
-      - "127.0.0.1:8002:8000"
+      - "127.0.0.1:8003:8000"
     environment:
       # ── GDAL / VSI performance tuning for COG streaming ──────────────────
       - CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.tiff

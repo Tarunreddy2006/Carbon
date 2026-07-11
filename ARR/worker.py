@@ -15,13 +15,13 @@ celery_app = Celery(
     "carbon_mrv_worker",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["tasks"] # This points to our tasks.py file
+    include=["ARR.tasks"]  # Fully-qualified path for Celery task discovery
 )
 
 # Schedule the Deforestation Sentinel to run on the 1st of every month
 celery_app.conf.beat_schedule = {
     "monthly_deforestation_audit": {
-        "task": "tasks.run_continuous_mrv_audit",
+        "task": "ARR.tasks.run_continuous_mrv_audit",
         "schedule": crontab(day_of_month='1', hour=0, minute=0),
     },
 }

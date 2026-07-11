@@ -11,7 +11,7 @@ services:
     environment_slug: python
     instance_size_slug: basic-xxs
     instance_count: 1
-    run_command: uvicorn carbon:app --host 0.0.0.0 --port 8080
+    run_command: uvicorn ARR.carbon:app --host 0.0.0.0 --port 8080
     http_port: 8080
     envs:
       # Dynamic Bindings to Managed Databases
@@ -34,7 +34,7 @@ services:
       # Application Configuration
       - key: FRONTEND_URL
         scope: RUN_TIME
-        value: "https://stomata.tech"
+        value: "https://arr.stomata.tech"
       - key: APP_ENV
         scope: RUN_TIME
         value: "production"
@@ -49,7 +49,7 @@ workers:
     environment_slug: python
     instance_size_slug: basic-xxs
     instance_count: 1
-    run_command: celery -A worker.celery_app worker --loglevel=info
+    run_command: celery -A ARR.worker.celery_app worker --loglevel=info
     envs:
       # Dynamic Bindings to Managed Databases
       - key: DATABASE_URL

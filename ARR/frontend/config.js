@@ -11,8 +11,8 @@ const CONFIG = (() => {
   const hostname = window.location.hostname;
 
   // Dynamic API base URL resolution
-  const API_BASE_URL = (hostname === 'stomata.tech')
-    ? 'https://stomata.tech'
+  const API_BASE_URL = (hostname === 'arr.stomata.tech')
+    ? 'https://arr.stomata.tech'
     : 'http://localhost:8000';
 
   return Object.freeze({
@@ -20,8 +20,8 @@ const CONFIG = (() => {
     API_BASE_URL,
 
     // ── TiTiler Dynamic Tile Server ─────────────────────────────────────
-    TITILER_URL: (hostname === 'stomata.tech')
-      ? 'https://stomata.tech:8002'
+    TITILER_URL: (hostname === 'arr.stomata.tech')
+      ? 'https://arr.stomata.tech/tiles'
       : 'http://localhost:8002',
 
     // ── Auth ───────────────────────────────────────────────────────────────

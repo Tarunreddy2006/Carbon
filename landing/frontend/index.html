@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Stomata — Carbon Intelligence Platform</title>
+    <meta name="description" content="Stomata: Intelligence-grade carbon credit platform. Choose between ARR afforestation credits and Biochar carbon removal.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Animated background -->
+    <div class="bg-mesh"></div>
+    <div class="bg-grid"></div>
+
+    <div class="page-container">
+
+        <!-- Hero Section -->
+        <header class="hero">
+            <div class="logo-mark">
+                <div class="logo-icon">
+                    <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                        <circle cx="20" cy="20" r="18" stroke="url(#logoGrad)" stroke-width="2.5" fill="none"/>
+                        <path d="M20 8 C14 14, 12 22, 20 32 C28 22, 26 14, 20 8Z" fill="url(#logoGrad)" opacity="0.85"/>
+                        <defs>
+                            <linearGradient id="logoGrad" x1="0" y1="0" x2="40" y2="40">
+                                <stop offset="0%" stop-color="#38bdf8"/>
+                                <stop offset="100%" stop-color="#34d399"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <span class="logo-text">STOMATA</span>
+            </div>
+
+            <h1 class="hero-title">
+                Carbon Intelligence<br>
+                <span class="gradient-text">Platform</span>
+            </h1>
+            <p class="hero-subtitle">
+                Intelligence-grade digital MRV for nature-based and engineered carbon removal.
+                Choose your pathway below.
+            </p>
+        </header>
+
+        <!-- Pathway Cards -->
+        <section class="pathways">
+
+            <!-- ARR Card -->
+            <a href="https://arr.stomata.tech" class="pathway-card" id="card-arr">
+                <div class="card-glow card-glow--arr"></div>
+                <div class="card-content">
+                    <div class="card-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <path d="M24 4L24 44" stroke="#34d399" stroke-width="2.5" stroke-linecap="round"/>
+                            <path d="M24 10C18 10 13 16 13 22C13 28 18 28 24 28" stroke="#34d399" stroke-width="2" fill="none" opacity="0.7"/>
+                            <path d="M24 16C30 16 34 20 34 26C34 30 30 32 24 32" stroke="#34d399" stroke-width="2" fill="none" opacity="0.5"/>
+                            <path d="M16 44H32" stroke="#34d399" stroke-width="2.5" stroke-linecap="round"/>
+                            <circle cx="24" cy="6" r="3" fill="#34d399" opacity="0.8"/>
+                        </svg>
+                    </div>
+                    <div class="card-badge">Nature-Based</div>
+                    <h2 class="card-title">ARR Credits</h2>
+                    <p class="card-description">
+                        Afforestation, Reforestation & Revegetation carbon credits.
+                        Satellite-verified biomass estimation with cryptographic proof.
+                    </p>
+                    <ul class="card-features">
+                        <li>Sentinel-2 & SAR Fusion</li>
+                        <li>Cryptographic Audit Trail</li>
+                        <li>Continuous MRV Monitoring</li>
+                        <li>PostGIS Anti-Fraud Engine</li>
+                    </ul>
+                    <div class="card-cta">
+                        <span>Launch ARR Platform</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Biochar Card -->
+            <a href="https://biochar.stomata.tech" class="pathway-card" id="card-biochar">
+                <div class="card-glow card-glow--biochar"></div>
+                <div class="card-content">
+                    <div class="card-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect x="10" y="28" width="28" height="14" rx="3" stroke="#f59e0b" stroke-width="2" fill="none"/>
+                            <path d="M18 28V18C18 14 20 10 24 8C28 10 30 14 30 18V28" stroke="#f59e0b" stroke-width="2" fill="none" opacity="0.7"/>
+                            <path d="M22 28V22C22 20 23 18 24 16C25 18 26 20 26 22V28" stroke="#f59e0b" stroke-width="2" fill="none" opacity="0.5"/>
+                            <line x1="14" y1="35" x2="34" y2="35" stroke="#f59e0b" stroke-width="1.5" opacity="0.4"/>
+                            <circle cx="24" cy="8" r="2.5" fill="#f59e0b" opacity="0.8"/>
+                        </svg>
+                    </div>
+                    <div class="card-badge card-badge--amber">Engineered</div>
+                    <h2 class="card-title">Biochar Pipeline</h2>
+                    <p class="card-description">
+                        End-to-end biochar carbon removal MRV — from pyrolysis telemetry
+                        to farmer attestation and cryptographic audit dossiers.
+                    </p>
+                    <ul class="card-features">
+                        <li>SCADA Telemetry Ingestion</li>
+                        <li>Lab Permanence Certification</li>
+                        <li>Farmer Sink Attestation</li>
+                        <li>SHA-256 Audit Dossiers</li>
+                    </ul>
+                    <div class="card-cta card-cta--amber">
+                        <span>Launch Biochar Pipeline</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                </div>
+            </a>
+
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2026 Stomata Technologies. Intelligence-grade carbon infrastructure.</p>
+        </footer>
+
+    </div>
+
+</body>
+</html>

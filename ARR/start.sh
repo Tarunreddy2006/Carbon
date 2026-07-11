@@ -27,7 +27,7 @@ echo "[start.sh] mode=$MODE  host=$HOST  port=$PORT"
 # ── Choose launcher ───────────────────────────────────────────────────────────
 if [[ "$MODE" == "dev" ]]; then
 echo "[start.sh] Starting uvicorn in development mode (auto-reload)"
-    exec uvicorn carbon:app \
+    exec uvicorn ARR.carbon:app \
         --host "$HOST" \
         --port "$PORT" \
         --reload \
@@ -35,7 +35,7 @@ echo "[start.sh] Starting uvicorn in development mode (auto-reload)"
 
 else
     echo "[start.sh] Starting gunicorn with $WORKERS uvicorn workers"
-    exec gunicorn carbon:app \
+    exec gunicorn ARR.carbon:app \
         --worker-class uvicorn.workers.UvicornWorker \
         --workers "$WORKERS" \
         --bind "${HOST}:${PORT}" \

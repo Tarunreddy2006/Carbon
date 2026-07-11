@@ -9,8 +9,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     APP_ENV: str = "development"
     LOG_LEVEL: str = "INFO"
-    CORS_ORIGINS: list[str] = ["https://stomata.tech", "https://www.stomata.tech"]
-    FRONTEND_URL: str = "https://stomata.tech"
+    CORS_ORIGINS: list[str] = [
+        "https://arr.stomata.tech",
+        "https://app.stomata.tech",
+        "https://biochar.stomata.tech",
+        "https://stomata.tech",
+        "https://www.stomata.tech",
+    ]
+    FRONTEND_URL: str = "https://app.stomata.tech"
     
     # Stripe integration
     STRIPE_SECRET_KEY: str
