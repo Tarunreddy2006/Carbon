@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from core.config import settings
+from ARR.core.config import settings
 
 # PostGIS connection string
 engine = create_engine(

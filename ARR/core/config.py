@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
-    APP_ENV: str = "development"
+    APP_ENV: str = ""
     LOG_LEVEL: str = "INFO"
     CORS_ORIGINS: list[str] = ["https://stomata.tech", "https://www.stomata.tech"]
     FRONTEND_URL: str = "https://stomata.tech"

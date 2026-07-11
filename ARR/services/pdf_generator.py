@@ -4,7 +4,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from database.models import CarbonCredit
+from ARR.database.models import CarbonCredit
 
 def generate_certificate_pdf(credit: CarbonCredit) -> BytesIO:
     """Generates a professional PDF Certificate of Carbon Sequestration."""

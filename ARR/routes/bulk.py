@@ -22,10 +22,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from celery import group
 
-from database.db import get_db
-from database.models import BulkJob, BulkItem, JobStatus
-from services.auth import get_current_user
-from tasks import async_process_bulk_item
+from ARR.database.db import get_db
+from ARR.database.models import BulkJob, BulkItem, JobStatus
+from ARR.services.auth import get_current_user
+from ARR.tasks import async_process_bulk_item
 
 logger = logging.getLogger("bulk_audit")
 

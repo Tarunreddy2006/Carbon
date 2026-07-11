@@ -9,8 +9,8 @@ import hashlib
 import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from database.db import get_db
-from database.models import CarbonCredit
+from ARR.database.db import get_db
+from ARR.database.models import CarbonCredit
 
 router = APIRouter(tags=["Transparency & Audit"])
 

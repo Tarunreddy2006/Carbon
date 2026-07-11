@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from geoalchemy2 import Geometry
 
-from .db import Base
+from ARR.database.db import Base
 
 class CreditStatus(enum.Enum):
     PROJECTED = "PROJECTED"

@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from database.db import get_db
-from database.models import CarbonCredit, CreditStatus
-from services.pdf_generator import generate_certificate_pdf
-from services.auth import get_current_user
+from ARR.database.db import get_db
+from ARR.database.models import CarbonCredit, CreditStatus
+from ARR.services.pdf_generator import generate_certificate_pdf
+from ARR.services.auth import get_current_user
 
 router = APIRouter(tags=["Certificate"])
 

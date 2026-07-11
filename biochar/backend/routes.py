@@ -14,8 +14,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from carbon.biochar.backend.database import get_db
-from carbon.biochar.backend.models import (
+from biochar.backend.database import get_db
+from biochar.backend.models import (
     BatchStatus,
     BiocharBatch,
     DistributionSink,
@@ -23,18 +23,18 @@ from carbon.biochar.backend.models import (
     PyrolysisTelemetry,
     VerificationTier,
 )
-from carbon.biochar.backend.validation import (
+from biochar.backend.validation import (
     calculate_net_sequestration,
     evaluate_chemical_permanence,
     validate_thermal_stability,
     check_batch_delivery_completion,
 )
-from carbon.biochar.backend.attestation import (
+from biochar.backend.attestation import (
     verify_attestation_token,
     AttestationTokenExpiredError,
     AttestationTokenInvalidError,
 )
-from carbon.biochar.backend.audit import compile_verification_dossier
+from biochar.backend.audit import compile_verification_dossier
 import os
 import uuid
 

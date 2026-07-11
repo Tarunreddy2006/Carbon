@@ -15,8 +15,8 @@ import logging
 from datetime import timedelta
 from sqlalchemy.orm import Session
 
-from carbon.biochar.backend.database import SessionLocal
-from carbon.biochar.backend.models import (
+from biochar.backend.database import SessionLocal
+from biochar.backend.models import (
     BatchStatus,
     BiocharBatch,
     DistributionSink,

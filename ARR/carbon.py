@@ -13,9 +13,9 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from core.config import settings
-from database.db import engine, Base
-from services.service import initialise_gee
+from ARR.core.config import settings
+from ARR.database.db import engine, Base
+from ARR.services.service import initialise_gee
 
 logging.basicConfig(
     stream  = sys.stdout,
@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
         allow_headers     = ["*"],
     )
 
-    from routes import estimate, verify, auth, billing, certificate, user, bulk
+    from ARR.routes import estimate, verify, auth, billing, certificate, user, bulk
 
     app.include_router(auth.router)
     app.include_router(user.router)
@@ -105,7 +105,7 @@ def create_app() -> FastAPI:
     async def app_health() -> dict:
         return {"status": "ok"}
         
-    app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+    app.mount("/", StaticFiles(directory="ARR/frontend", html=True), name="frontend")
 
     return app
 

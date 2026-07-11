@@ -35,7 +35,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from carbon.biochar.backend.database import Base
+from biochar.backend.database import Base
 
 
 # ──────────────────────────────────────────────────────────────────────────────

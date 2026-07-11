@@ -17,7 +17,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL: str = os.getenv(
-    "BIOCHAR_DATABASE_URL",
+    "DATABASE_URL",
     "sqlite:///./biochar_dev.db",
 )
 
