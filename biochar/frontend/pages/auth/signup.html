@@ -624,6 +624,18 @@
                     </div>
 
                     <div class="form-group">
+                        <label class="form-label" for="org-name">Organization Name</label>
+                        <div class="input-wrapper">
+                            <input class="form-input" type="text" id="org-name" name="orgName" placeholder="Acme Biochar Corp"
+                                required autocomplete="organization">
+                            <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 21h18M4 21V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16M9 9h6M9 13h6M9 17h6" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
                         <label class="form-label" for="email">Email address</label>
                         <div class="input-wrapper">
                             <input class="form-input" type="email" id="email" name="email" placeholder="you@company.com"
@@ -755,6 +767,7 @@
         const signupBtn = document.getElementById('signup-btn');
         const firstNameInput = document.getElementById('first-name');
         const lastNameInput = document.getElementById('last-name');
+        const orgNameInput = document.getElementById('org-name');
         const emailInput = document.getElementById('email');
         const phoneInput = document.getElementById('phone');
         const passwordInput = document.getElementById('password');
@@ -773,7 +786,7 @@
         (async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
-                window.location.href = '/';
+                window.location.href = '/app.html';
             }
         })();
 
@@ -845,13 +858,14 @@
 
             const firstName = firstNameInput.value.trim();
             const lastName = lastNameInput.value.trim();
+            const orgName = orgNameInput.value.trim();
             const email = emailInput.value.trim();
             const phone = phoneInput.value.trim();
             const password = passwordInput.value;
             const confirmPassword = confirmPasswordInput.value;
 
             // Validations
-            if (!firstName || !lastName || !email || !password || !confirmPassword) {
+            if (!firstName || !lastName || !orgName || !email || !password || !confirmPassword) {
                 showToast('Please fill in all required fields.');
                 return;
             }
@@ -884,6 +898,7 @@
                             first_name: firstName,
                             last_name: lastName,
                             phone: phone,
+                            org_name: orgName,
                         },
                         emailRedirectTo: window.location.origin + '/pages/auth/login.html',
                     }
@@ -894,12 +909,56 @@
                 } else if (data.user && data.user.identities && data.user.identities.length === 0) {
                     showToast('An account with this email already exists.');
                 } else {
-                    showToast('Account created! Check your email to confirm your account.', 'success');
-                    signupForm.reset();
-                    strengthContainer.classList.remove('visible');
+                    // Check if signed in immediately
+                    if (data.session) {
+                        showToast('Creating organization...', 'success');
+                        
+                        // 1. Create Organization
+                        const { data: org, error: orgErr } = await supabase
+                            .from('organizations')
+                            .insert({ name: orgName })
+                            .select()
+                            .single();
+                        
+                        if (orgErr) throw orgErr;
+
+                        // 2. Create Profile
+                        const { error: profErr } = await supabase
+                            .from('profiles')
+                            .upsert({
+                                id: data.user.id,
+                                first_name: firstName,
+                                last_name: lastName,
+                                phone: phone,
+                                organization_id: org.id
+                            });
+
+                        if (profErr) throw profErr;
+
+                        // 3. Create Org Member with Owner Role (ID 1)
+                        const { error: memErr } = await supabase
+                            .from('organization_members')
+                            .insert({
+                                organization_id: org.id,
+                                user_id: data.user.id,
+                                role_id: 1 // Owner
+                            });
+
+                        if (memErr) throw memErr;
+
+                        showToast('Account setup complete! Redirecting...', 'success');
+                        setTimeout(() => {
+                            window.location.href = '/app.html';
+                        }, 1000);
+                    } else {
+                        showToast('Account created! Check your email to confirm, then sign in to access your organization.', 'success');
+                        signupForm.reset();
+                        strengthContainer.classList.remove('visible');
+                    }
                 }
             } catch (err) {
-                showToast('An unexpected error occurred. Please try again.');
+                console.error(err);
+                showToast('Registration succeeded, but setup failed: ' + (err.message || err));
             } finally {
                 signupBtn.classList.remove('loading');
                 signupBtn.disabled = false;
@@ -910,7 +969,7 @@
         document.getElementById('google-signup').addEventListener('click', async () => {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
-                options: { redirectTo: window.location.origin + '/' }
+                options: { redirectTo: window.location.origin + '/app.html' }
             });
             if (error) showToast(error.message);
         });
@@ -918,7 +977,7 @@
         document.getElementById('github-signup').addEventListener('click', async () => {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'github',
-                options: { redirectTo: window.location.origin + '/' }
+                options: { redirectTo: window.location.origin + '/app.html' }
             });
             if (error) showToast(error.message);
         });

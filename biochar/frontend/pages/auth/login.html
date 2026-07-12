@@ -722,7 +722,7 @@
                 } else {
                     showToast('Sign in successful! Redirecting…', 'success');
                     setTimeout(() => {
-                        window.location.href = '/';
+                        window.location.href = '/app.html';
                     }, 800);
                 }
             } catch (err) {
@@ -737,7 +737,7 @@
         document.getElementById('google-login').addEventListener('click', async () => {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
-                options: { redirectTo: window.location.origin + '/' }
+                options: { redirectTo: window.location.origin + '/app.html' }
             });
             if (error) showToast(error.message);
         });
@@ -745,7 +745,7 @@
         document.getElementById('github-login').addEventListener('click', async () => {
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'github',
-                options: { redirectTo: window.location.origin + '/' }
+                options: { redirectTo: window.location.origin + '/app.html' }
             });
             if (error) showToast(error.message);
         });
