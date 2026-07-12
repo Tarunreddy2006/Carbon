@@ -595,24 +595,24 @@
                 </div>
 
                 <!-- Signup Form -->
-                <form id="signup-form" autocomplete="on">
+                <form id="signupForm" onsubmit="event.preventDefault(); return false;" autocomplete="on">
                     <div class="form-group name-row">
                         <div>
-                            <label class="form-label" for="first-name">First name</label>
-                            <input class="form-input" type="text" id="first-name" name="firstName" placeholder="Jane"
+                            <label class="form-label" for="firstName">First name</label>
+                            <input class="form-input" type="text" id="firstName" name="firstName" placeholder="Jane"
                                 required autocomplete="given-name">
                         </div>
                         <div>
-                            <label class="form-label" for="last-name">Last name</label>
-                            <input class="form-input" type="text" id="last-name" name="lastName" placeholder="Doe"
+                            <label class="form-label" for="lastName">Last name</label>
+                            <input class="form-input" type="text" id="lastName" name="lastName" placeholder="Doe"
                                 required autocomplete="family-name">
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label" for="org-name">Organization / Company</label>
+                        <label class="form-label" for="orgName">Organization / Company</label>
                         <div class="input-wrapper">
-                            <input class="form-input" type="text" id="org-name" name="orgName"
+                            <input class="form-input" type="text" id="orgName" name="orgName"
                                 placeholder="Biochar Carbon Ltd" required autocomplete="organization">
                             <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -680,9 +680,9 @@
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label" for="confirm-password">Confirm password</label>
+                        <label class="form-label" for="confirmPassword">Confirm password</label>
                         <div class="input-wrapper">
-                            <input class="form-input" type="password" id="confirm-password" name="confirmPassword"
+                            <input class="form-input" type="password" id="confirmPassword" name="confirmPassword"
                                 placeholder="Re-enter your password" required autocomplete="new-password" minlength="8">
                             <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -762,15 +762,15 @@
         }
 
         // ─── DOM References ─────────────────────────────────────
-        const signupForm = document.getElementById('signup-form');
+        const signupForm = document.getElementById('signupForm') || document.getElementById('signup-form');
         const signupBtn = document.getElementById('signup-btn');
-        const firstNameInput = document.getElementById('first-name');
-        const lastNameInput = document.getElementById('last-name');
-        const orgNameInput = document.getElementById('org-name');
+        const firstNameInput = document.getElementById('firstName') || document.getElementById('first-name');
+        const lastNameInput = document.getElementById('lastName') || document.getElementById('last-name');
+        const orgNameInput = document.getElementById('orgName') || document.getElementById('org-name');
         const emailInput = document.getElementById('email');
         const phoneInput = document.getElementById('phone');
         const passwordInput = document.getElementById('password');
-        const confirmPasswordInput = document.getElementById('confirm-password');
+        const confirmPasswordInput = document.getElementById('confirmPassword') || document.getElementById('confirm-password');
         const agreeTerms = document.getElementById('agree-terms');
         const togglePassword = document.getElementById('toggle-password');
         const eyeIcon = document.getElementById('eye-icon');
