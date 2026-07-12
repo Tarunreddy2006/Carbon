@@ -285,7 +285,7 @@ class FeedstockIngest(Base):
         Boolean,
         nullable=False,
         default=False,
-        server_default=text("0"),
+        server_default=text("FALSE"),
         comment="True if satellite land-clearance screening passed",
     )
     created_at = Column(
