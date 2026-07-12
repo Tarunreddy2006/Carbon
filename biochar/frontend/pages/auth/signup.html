@@ -176,8 +176,8 @@
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: var(--radius);
-            backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
+            backdrop-filter: blur(24px);
             padding: 2rem;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
@@ -310,6 +310,7 @@
             font-size: 0.85rem;
             color: var(--text-secondary);
             cursor: pointer;
+            -webkit-user-select: none;
             user-select: none;
             line-height: 1.5;
         }
@@ -850,11 +851,10 @@
                 : '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>';
         });
 
-        // ─── Signup Form Submission ─────────────────────────────
+       // ── Signup Form Submission ─────────────────────────────────────────
         async function handleSignupSubmit(e) {
             if (e) e.preventDefault();
             hideToast();
-
             if (!supabase) {
                 showToast('Database SDK failed to load. Please check your network.');
                 return false;
@@ -873,18 +873,15 @@
                 showToast('Please fill in all required fields.');
                 return false;
             }
-
             if (password.length < 8) {
                 showToast('Password must be at least 8 characters long.');
                 return false;
             }
-
             if (password !== confirmPassword) {
                 showToast('Passwords do not match.');
                 confirmPasswordInput.focus();
                 return false;
             }
-
             if (!agreeTerms.checked) {
                 showToast('Please accept the Terms of Service and Privacy Policy.');
                 return false;
@@ -894,6 +891,7 @@
             signupBtn.disabled = true;
 
             try {
+                // Step A: Create identity profile inside auth.users
                 const { data, error } = await supabase.auth.signUp({
                     email,
                     password,
@@ -912,18 +910,28 @@
                     showToast(error.message || 'Registration failed.');
                 } else if (data && data.user && data.user.identities && data.user.identities.length === 0) {
                     showToast('An account with this email address already exists.');
-                } else if (data && data.session) {
+                } else if (data && data.user) { // 🔥 Fix: Check for data.user instead of data.session
                     showToast('Account created! Setting up your organization...', 'success');
-
+                    
                     try {
-                        const { data: org } = await supabase
+                        // Step B: Insert row into organizations using the correct schema column name
+                        const { data: org, error: orgError } = await supabase
                             .from('organizations')
-                            .insert({ name: orgName })
+                            .insert({ 
+                                organization_name: orgName, // Fixed from 'name'
+                                email: email,
+                                phone: phone,
+                                subscription_plan: 'Trial',
+                                subscription_status: 'Active'
+                            })
                             .select()
                             .single();
 
+                        if (orgError) throw orgError;
+
                         if (org) {
-                            await supabase.from('profiles').upsert({
+                            // Step C: Insert profile details referencing user.id UUID
+                            const { error: profileError } = await supabase.from('profiles').insert({
                                 id: data.user.id,
                                 first_name: firstName,
                                 last_name: lastName,
@@ -931,24 +939,43 @@
                                 organization_id: org.id
                             });
 
-                            await supabase.from('organization_members').insert({
+                            if (profileError) throw profileError;
+
+                            // Step D: Query predefined roles table to filter out 'Owner'
+                            const { data: roleRow, error: roleError } = await supabase
+                                .from('roles')
+                                .select('id')
+                                .eq('name', 'Owner')
+                                .single();
+
+                            if (roleError) throw new Error("Role 'Owner' could not be resolved.");
+
+                            // Step E: Link user context inside organization_members
+                            const { error: memberError } = await supabase.from('organization_members').insert({
                                 organization_id: org.id,
                                 user_id: data.user.id,
-                                role_id: 1
+                                role_id: roleRow.id // Dynamically assigned Owner ID
                             });
+
+                            if (memberError) throw memberError;
                         }
                     } catch (setupErr) {
-                        console.warn("Organization setup notice:", setupErr);
+                        console.error("Organization onboarding transaction setup failed:", setupErr);
+                        showToast('Account created, but database onboarding failed: ' + setupErr.message);
+                        return false;
                     }
 
-                    showToast('Account setup complete! Redirecting...', 'success');
-                    setTimeout(() => {
-                        window.location.replace('/app.html');
-                    }, 800);
-                } else {
-                    showToast('Account created! Please check your email to confirm your account.', 'success');
-                    signupForm.reset();
-                    strengthContainer.classList.remove('visible');
+                    // Step F: Route out to dashboard or verification notification depending on session state
+                    if (data.session) {
+                        showToast('Account setup complete! Redirecting...', 'success');
+                        setTimeout(() => {
+                            window.location.replace('/app.html');
+                        }, 800);
+                    } else {
+                        showToast('Account created! Please check your email to confirm your account.', 'success');
+                        signupForm.reset();
+                        strengthContainer.classList.remove('visible');
+                    }
                 }
             } catch (err) {
                 console.error(err);
@@ -959,7 +986,6 @@
             }
             return false;
         }
-
         signupForm.addEventListener('submit', handleSignupSubmit);
 
         // ─── OAuth Handlers ─────────────────────────────────────
