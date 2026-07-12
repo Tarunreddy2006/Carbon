@@ -1,11 +1,10 @@
 """
 carbon/biochar/backend/database.py
 ──────────────────────────────────────────────────────────────────────────────
-SQLAlchemy engine, session factory, and declarative base for the biochar
-pipeline database.
+SQLAlchemy 2.x engine, session factory, and declarative base for the
+CarbonOS biochar platform.
 
-Configure via the ``BIOCHAR_DATABASE_URL`` environment variable.
-Falls back to a local SQLite file for development convenience.
+Configure via the ``DATABASE_URL`` environment variable (PostgreSQL).
 ──────────────────────────────────────────────────────────────────────────────
 """
 
@@ -14,20 +13,23 @@ from __future__ import annotations
 import os
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATABASE_URL: str = os.getenv("DATABASE_URL")
 
-# For SQLite: enable foreign-key enforcement and allow multithreaded access.
-_connect_args: dict = {}
-if DATABASE_URL.startswith("sqlite"):
-    _connect_args["check_same_thread"] = False
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "The CarbonOS backend requires a PostgreSQL connection string."
+    )
 
 engine = create_engine(
     DATABASE_URL,
     echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true",
-    connect_args=_connect_args,
     pool_pre_ping=True,
+    pool_size=int(os.getenv("SQLALCHEMY_POOL_SIZE", "5")),
+    max_overflow=int(os.getenv("SQLALCHEMY_MAX_OVERFLOW", "10")),
 )
 
 SessionLocal = sessionmaker(
@@ -36,7 +38,10 @@ SessionLocal = sessionmaker(
     bind=engine,
 )
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """SQLAlchemy 2.x declarative base for all CarbonOS models."""
+    pass
 
 
 def get_db():

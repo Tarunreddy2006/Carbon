@@ -53,11 +53,10 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     logger.info("═══════════════════════════════════════════════════════")
 
     try:
-        logger.info("Initialising Biochar Database...")
-        Base.metadata.create_all(bind=engine)
-        logger.info("✔  Biochar database tables created/verified")
+        logger.info("Connecting to CarbonOS Biochar Database (PostgreSQL)...")
+        logger.info("✔  CarbonOS ORM models loaded (%d tables mapped). Database schema managed via Supabase.", len(Base.metadata.tables))
     except Exception as exc:
-        logger.error("❌  Failed to initialise Biochar Database (%s).", exc)
+        logger.error("❌  Failed during startup verification (%s).", exc)
 
     yield
     logger.info("Biochar Carbon-Removal Pipeline – shutting down")
