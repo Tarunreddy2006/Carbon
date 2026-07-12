@@ -16,10 +16,7 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL: str = os.getenv(
-    "DATABASE_URL",
-    os.getenv("DATABASE_URL", "sqlite:///./biochar_dev.db"),
-)
+DATABASE_URL: str = os.getenv("DATABASE_URL")
 
 # For SQLite: enable foreign-key enforcement and allow multithreaded access.
 _connect_args: dict = {}
