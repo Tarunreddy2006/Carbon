@@ -1,13 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Biochar MRV Pipeline | Stomata</title>
-    <meta name="description" content="Biochar carbon-removal monitoring, reporting and verification pipeline by Stomata.">
+    <meta name="description"
+        content="Biochar carbon-removal monitoring, reporting and verification pipeline by Stomata.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
         :root {
             --bg-primary: #0a0e17;
@@ -41,6 +49,15 @@
             z-index: 0;
         }
 
+        /* Hidden until auth check passes */
+        .app-content {
+            display: none;
+        }
+
+        .app-content.visible {
+            display: block;
+        }
+
         .container {
             position: relative;
             z-index: 1;
@@ -64,8 +81,15 @@
         }
 
         @keyframes pulse-ring {
-            0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
-            50% { box-shadow: 0 0 40px 8px var(--accent-glow); }
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 var(--accent-glow);
+            }
+
+            50% {
+                box-shadow: 0 0 40px 8px var(--accent-glow);
+            }
         }
 
         h1 {
@@ -84,6 +108,17 @@
             font-size: 1.05rem;
             line-height: 1.6;
             margin-bottom: 2.5rem;
+        }
+
+        .welcome-text {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .welcome-text strong {
+            color: var(--accent);
+            font-weight: 600;
         }
 
         .status-badge {
@@ -109,8 +144,15 @@
         }
 
         @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
         }
 
         .nav-link {
@@ -123,24 +165,139 @@
             opacity: 0.8;
             transition: opacity 0.2s;
         }
-        .nav-link:hover { opacity: 1; }
+
+        .nav-link:hover {
+            opacity: 1;
+        }
+
+        .btn-logout {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1.25rem;
+            padding: 0.55rem 1.5rem;
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.25);
+            border-radius: 999px;
+            color: #f87171;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s, transform 0.15s;
+        }
+
+        .btn-logout:hover {
+            background: rgba(248, 113, 113, 0.18);
+            border-color: rgba(248, 113, 113, 0.4);
+            transform: translateY(-1px);
+        }
     </style>
+
+    <!-- Redirect to login immediately if no stored session (fast check before SDK loads) -->
+    <script>
+        (function () {
+            // Quick pre-check: if no Supabase auth token exists in storage, redirect immediately
+            // This prevents the dashboard from flashing before the full SDK loads
+            var hasSession = false;
+            try {
+                var keys = Object.keys(localStorage);
+                for (var i = 0; i < keys.length; i++) {
+                    if (keys[i].indexOf('sb-') === 0 && keys[i].indexOf('-auth-token') !== -1) {
+                        hasSession = true;
+                        break;
+                    }
+                }
+            } catch (e) { /* localStorage not available */ }
+
+            if (!hasSession) {
+                window.location.replace('/pages/auth/login.html');
+            }
+        })();
+    </script>
 </head>
+
 <body>
     <div class="bg-grid"></div>
-    <div class="container">
-        <div class="icon-ring">🔥</div>
-        <h1>Biochar MRV Pipeline</h1>
-        <p class="subtitle">
-            End-to-end monitoring, reporting & verification for biochar carbon removal —
-            from pyrolysis telemetry to farmer attestation.
-        </p>
-        <div class="status-badge">
-            <span class="status-dot"></span>
-            API Online — /api/v1/biochar
+
+    <div class="app-content" id="app-content">
+        <div class="container">
+            <div class="icon-ring">🔥</div>
+            <h1>Biochar MRV Pipeline</h1>
+            <p class="welcome-text">Welcome back, <strong id="user-name">—</strong></p>
+            <p class="subtitle">
+                End-to-end monitoring, reporting & verification for biochar carbon removal —
+                from pyrolysis telemetry to farmer attestation.
+            </p>
+            <div class="status-badge">
+                <span class="status-dot"></span>
+                API Online — /api/v1/biochar
+            </div>
+            <br>
+            <button class="btn-logout" id="logout-btn" type="button">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Sign Out
+            </button>
+            <br>
+            <a href="https://app.stomata.tech" class="nav-link">← Back to Stomata Platform</a>
         </div>
-        <br>
-        <a href="https://app.stomata.tech" class="nav-link">← Back to Stomata Platform</a>
     </div>
+
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // ─── Supabase Configuration ─────────────────────────────
+        const SUPABASE_URL = 'https://yrjiiacdxknesvpaxdjr.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlyamlpYWNkeGtuZXN2cGF4ZGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjIwODMsImV4cCI6MjA5NTA5ODA4M30.ieQV-H7HPFj6ihBkWDoZv68klpvwT4iUCD6O7R2h6Lg'; // TODO: replace with your actual anon key
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const appContent = document.getElementById('app-content');
+        const userName = document.getElementById('user-name');
+
+        // ─── Full auth verification with Supabase SDK ───────────
+        (async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+
+                if (!session) {
+                    // No valid session — redirect to login
+                    window.location.replace('/pages/auth/login.html');
+                    return;
+                }
+
+                // User is authenticated — show the dashboard
+                const user = session.user;
+                const firstName = user.user_metadata?.first_name || '';
+                const lastName = user.user_metadata?.last_name || '';
+                const displayName = (firstName + ' ' + lastName).trim() || user.email;
+
+                userName.textContent = displayName;
+                appContent.classList.add('visible');
+
+            } catch (err) {
+                console.error('Auth check failed:', err);
+                window.location.replace('/pages/auth/login.html');
+            }
+        })();
+
+        // ─── Logout handler ─────────────────────────────────────
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await supabase.auth.signOut();
+            window.location.replace('/pages/auth/login.html');
+        });
+
+        // ─── Listen for auth state changes (e.g. token expiry) ──
+        supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_OUT' || (!session && event === 'TOKEN_REFRESHED')) {
+                window.location.replace('/pages/auth/login.html');
+            }
+        });
+    </script>
 </body>
+
 </html>
