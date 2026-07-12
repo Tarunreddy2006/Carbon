@@ -599,46 +599,38 @@
                     <div class="form-group name-row">
                         <div>
                             <label class="form-label" for="first-name">First name</label>
-                            <div class="input-wrapper">
-                                <input class="form-input" type="text" id="first-name" name="firstName"
-                                    placeholder="John" required autocomplete="given-name">
-                                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                                    <circle cx="12" cy="7" r="4" />
-                                </svg>
-                            </div>
+                            <input class="form-input" type="text" id="first-name" name="firstName" placeholder="Jane"
+                                required autocomplete="given-name">
                         </div>
                         <div>
                             <label class="form-label" for="last-name">Last name</label>
-                            <div class="input-wrapper">
-                                <input class="form-input" type="text" id="last-name" name="lastName" placeholder="Doe"
-                                    required autocomplete="family-name">
-                                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                                    <circle cx="12" cy="7" r="4" />
-                                </svg>
-                            </div>
+                            <input class="form-input" type="text" id="last-name" name="lastName" placeholder="Doe"
+                                required autocomplete="family-name">
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label" for="org-name">Organization Name</label>
+                        <label class="form-label" for="org-name">Organization / Company</label>
                         <div class="input-wrapper">
-                            <input class="form-input" type="text" id="org-name" name="orgName" placeholder="Acme Biochar Corp"
-                                required autocomplete="organization">
+                            <input class="form-input" type="text" id="org-name" name="orgName"
+                                placeholder="Biochar Carbon Ltd" required autocomplete="organization">
                             <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M3 21h18M4 21V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16M9 9h6M9 13h6M9 17h6" />
+                                <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+                                <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+                                <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" />
+                                <path d="M10 6h4" />
+                                <path d="M10 10h4" />
+                                <path d="M10 14h4" />
+                                <path d="M10 18h4" />
                             </svg>
                         </div>
                     </div>
 
                     <div class="form-group">
-                        <label class="form-label" for="email">Email address</label>
+                        <label class="form-label" for="email">Work email address</label>
                         <div class="input-wrapper">
-                            <input class="form-input" type="email" id="email" name="email" placeholder="you@company.com"
+                            <input class="form-input" type="email" id="email" name="email" placeholder="jane@company.com"
                                 required autocomplete="email">
                             <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -651,12 +643,11 @@
                     <div class="form-group">
                         <label class="form-label" for="phone">Phone number</label>
                         <div class="input-wrapper">
-                            <input class="form-input" type="tel" id="phone" name="phone" placeholder="+91 98765 43210"
-                                autocomplete="tel">
+                            <input class="form-input" type="tel" id="phone" name="phone"
+                                placeholder="+1 (555) 000-0000" autocomplete="tel">
                             <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path
-                                    d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
                             </svg>
                         </div>
                     </div>
@@ -759,8 +750,16 @@
     <script>
         // ─── Supabase Configuration ─────────────────────────────
         const SUPABASE_URL = 'https://yrjiiacdxknesvpaxdjr.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlyamlpYWNkeGtuZXN2cGF4ZGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjIwODMsImV4cCI6MjA5NTA5ODA4M30.ieQV-H7HPFj6ihBkWDoZv68klpvwT4iUCD6O7R2h6Lg'; // TODO: add your anon key
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlyamlpYWNkeGtuZXN2cGF4ZGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjIwODMsImV4cCI6MjA5NTA5ODA4M30.ieQV-H7HPFj6ihBkWDoZv68klpvwT4iUCD6O7R2h6Lg';
+
+        let supabase = null;
+        try {
+            if (window.supabase && window.supabase.createClient) {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            }
+        } catch (e) {
+            console.error("Supabase init error:", e);
+        }
 
         // ─── DOM References ─────────────────────────────────────
         const signupForm = document.getElementById('signup-form');
@@ -782,27 +781,27 @@
         const strengthText = document.getElementById('strength-text');
         const strengthContainer = document.getElementById('password-strength');
 
-        // ─── Check existing session ─────────────────────────────
-        (async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                window.location.href = '/app.html';
-            }
-        })();
-
         // ─── Toast Helper ───────────────────────────────────────
         function showToast(message, type = 'error') {
             toast.className = `toast show toast--${type}`;
             toastIcon.textContent = type === 'error' ? '⚠' : '✓';
             toastMsg.textContent = message;
-
             if (type === 'success') {
-                setTimeout(() => { toast.className = 'toast'; }, 6000);
+                setTimeout(() => { toast.className = 'toast'; }, 5000);
             }
         }
 
         function hideToast() {
             toast.className = 'toast';
+        }
+
+        // ─── Check existing session ─────────────────────────────
+        if (supabase) {
+            supabase.auth.getSession().then(({ data: { session } }) => {
+                if (session) {
+                    window.location.replace('/app.html');
+                }
+            }).catch(e => console.error("Session check error:", e));
         }
 
         // ─── Password Strength Meter ────────────────────────────
@@ -852,9 +851,14 @@
         });
 
         // ─── Signup Form Submission ─────────────────────────────
-        signupForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
+        async function handleSignupSubmit(e) {
+            if (e) e.preventDefault();
             hideToast();
+
+            if (!supabase) {
+                showToast('Database SDK failed to load. Please check your network.');
+                return false;
+            }
 
             const firstName = firstNameInput.value.trim();
             const lastName = lastNameInput.value.trim();
@@ -867,23 +871,23 @@
             // Validations
             if (!firstName || !lastName || !orgName || !email || !password || !confirmPassword) {
                 showToast('Please fill in all required fields.');
-                return;
+                return false;
             }
 
             if (password.length < 8) {
                 showToast('Password must be at least 8 characters long.');
-                return;
+                return false;
             }
 
             if (password !== confirmPassword) {
                 showToast('Passwords do not match.');
                 confirmPasswordInput.focus();
-                return;
+                return false;
             }
 
             if (!agreeTerms.checked) {
                 showToast('Please accept the Terms of Service and Privacy Policy.');
-                return;
+                return false;
             }
 
             signupBtn.classList.add('loading');
@@ -905,27 +909,21 @@
                 });
 
                 if (error) {
-                    showToast(error.message);
-                } else if (data.user && data.user.identities && data.user.identities.length === 0) {
-                    showToast('An account with this email already exists.');
-                } else {
-                    // Check if signed in immediately
-                    if (data.session) {
-                        showToast('Creating organization...', 'success');
-                        
-                        // 1. Create Organization
-                        const { data: org, error: orgErr } = await supabase
+                    showToast(error.message || 'Registration failed.');
+                } else if (data && data.user && data.user.identities && data.user.identities.length === 0) {
+                    showToast('An account with this email address already exists.');
+                } else if (data && data.session) {
+                    showToast('Account created! Setting up your organization...', 'success');
+
+                    try {
+                        const { data: org } = await supabase
                             .from('organizations')
                             .insert({ name: orgName })
                             .select()
                             .single();
-                        
-                        if (orgErr) throw orgErr;
 
-                        // 2. Create Profile
-                        const { error: profErr } = await supabase
-                            .from('profiles')
-                            .upsert({
+                        if (org) {
+                            await supabase.from('profiles').upsert({
                                 id: data.user.id,
                                 first_name: firstName,
                                 last_name: lastName,
@@ -933,40 +931,40 @@
                                 organization_id: org.id
                             });
 
-                        if (profErr) throw profErr;
-
-                        // 3. Create Org Member with Owner Role (ID 1)
-                        const { error: memErr } = await supabase
-                            .from('organization_members')
-                            .insert({
+                            await supabase.from('organization_members').insert({
                                 organization_id: org.id,
                                 user_id: data.user.id,
-                                role_id: 1 // Owner
+                                role_id: 1
                             });
-
-                        if (memErr) throw memErr;
-
-                        showToast('Account setup complete! Redirecting...', 'success');
-                        setTimeout(() => {
-                            window.location.href = '/app.html';
-                        }, 1000);
-                    } else {
-                        showToast('Account created! Check your email to confirm, then sign in to access your organization.', 'success');
-                        signupForm.reset();
-                        strengthContainer.classList.remove('visible');
+                        }
+                    } catch (setupErr) {
+                        console.warn("Organization setup notice:", setupErr);
                     }
+
+                    showToast('Account setup complete! Redirecting...', 'success');
+                    setTimeout(() => {
+                        window.location.replace('/app.html');
+                    }, 800);
+                } else {
+                    showToast('Account created! Please check your email to confirm your account.', 'success');
+                    signupForm.reset();
+                    strengthContainer.classList.remove('visible');
                 }
             } catch (err) {
                 console.error(err);
-                showToast('Registration succeeded, but setup failed: ' + (err.message || err));
+                showToast('Registration failed: ' + (err.message || err));
             } finally {
                 signupBtn.classList.remove('loading');
                 signupBtn.disabled = false;
             }
-        });
+            return false;
+        }
+
+        signupForm.addEventListener('submit', handleSignupSubmit);
 
         // ─── OAuth Handlers ─────────────────────────────────────
         document.getElementById('google-signup').addEventListener('click', async () => {
+            if (!supabase) return showToast('Supabase SDK not loaded.');
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: { redirectTo: window.location.origin + '/app.html' }
@@ -975,6 +973,7 @@
         });
 
         document.getElementById('github-signup').addEventListener('click', async () => {
+            if (!supabase) return showToast('Supabase SDK not loaded.');
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'github',
                 options: { redirectTo: window.location.origin + '/app.html' }

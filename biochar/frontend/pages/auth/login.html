@@ -553,7 +553,7 @@
                 </div>
 
                 <!-- Login Form -->
-                <form id="login-form" autocomplete="on">
+                <form id="login-form" onsubmit="event.preventDefault(); return false;" autocomplete="on">
                     <div class="form-group">
                         <label class="form-label" for="email">Email address</label>
                         <div class="input-wrapper">
@@ -647,10 +647,17 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         // ─── Supabase Configuration ─────────────────────────────
-        // Replace these with your actual Supabase project credentials
         const SUPABASE_URL = 'https://yrjiiacdxknesvpaxdjr.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlyamlpYWNkeGtuZXN2cGF4ZGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjIwODMsImV4cCI6MjA5NTA5ODA4M30.ieQV-H7HPFj6ihBkWDoZv68klpvwT4iUCD6O7R2h6Lg'; // TODO: add your anon key
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlyamlpYWNkeGtuZXN2cGF4ZGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjIwODMsImV4cCI6MjA5NTA5ODA4M30.ieQV-H7HPFj6ihBkWDoZv68klpvwT4iUCD6O7R2h6Lg';
+
+        let supabase = null;
+        try {
+            if (window.supabase && window.supabase.createClient) {
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            }
+        } catch (e) {
+            console.error("Supabase init error:", e);
+        }
 
         // ─── DOM References ─────────────────────────────────────
         const loginForm = document.getElementById('login-form');
@@ -663,20 +670,11 @@
         const toastIcon = document.getElementById('toast-icon');
         const toastMsg = document.getElementById('toast-message');
 
-        // ─── Check existing session ─────────────────────────────
-        (async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                window.location.href = '/';
-            }
-        })();
-
         // ─── Toast Helper ───────────────────────────────────────
         function showToast(message, type = 'error') {
             toast.className = `toast show toast--${type}`;
             toastIcon.textContent = type === 'error' ? '⚠' : '✓';
             toastMsg.textContent = message;
-
             if (type === 'success') {
                 setTimeout(() => { toast.className = 'toast'; }, 4000);
             }
@@ -684,6 +682,15 @@
 
         function hideToast() {
             toast.className = 'toast';
+        }
+
+        // ─── Check existing session ─────────────────────────────
+        if (supabase) {
+            supabase.auth.getSession().then(({ data: { session } }) => {
+                if (session) {
+                    window.location.replace('/app.html');
+                }
+            }).catch(e => console.error("Session check error:", e));
         }
 
         // ─── Toggle Password Visibility ─────────────────────────
@@ -696,16 +703,21 @@
         });
 
         // ─── Login Form Submission ──────────────────────────────
-        loginForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
+        async function handleLoginSubmit(e) {
+            if (e) e.preventDefault();
             hideToast();
+
+            if (!supabase) {
+                showToast('Database SDK failed to load. Please check your network.');
+                return false;
+            }
 
             const email = emailInput.value.trim();
             const password = passwordInput.value;
 
             if (!email || !password) {
-                showToast('Please fill in all fields.');
-                return;
+                showToast('Please enter both email and password.');
+                return false;
             }
 
             loginBtn.classList.add('loading');
@@ -718,23 +730,30 @@
                 });
 
                 if (error) {
-                    showToast(error.message);
-                } else {
+                    showToast(error.message || 'Invalid login credentials.');
+                } else if (data && data.session) {
                     showToast('Sign in successful! Redirecting…', 'success');
                     setTimeout(() => {
-                        window.location.href = '/app.html';
-                    }, 800);
+                        window.location.replace('/app.html');
+                    }, 600);
+                } else {
+                    showToast('Please confirm your email address before signing in.');
                 }
             } catch (err) {
-                showToast('An unexpected error occurred. Please try again.');
+                showToast('An unexpected error occurred during sign in.');
+                console.error(err);
             } finally {
                 loginBtn.classList.remove('loading');
                 loginBtn.disabled = false;
             }
-        });
+            return false;
+        }
+
+        loginForm.addEventListener('submit', handleLoginSubmit);
 
         // ─── OAuth Handlers ─────────────────────────────────────
         document.getElementById('google-login').addEventListener('click', async () => {
+            if (!supabase) return showToast('Supabase SDK not loaded.');
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: { redirectTo: window.location.origin + '/app.html' }
@@ -743,6 +762,7 @@
         });
 
         document.getElementById('github-login').addEventListener('click', async () => {
+            if (!supabase) return showToast('Supabase SDK not loaded.');
             const { error } = await supabase.auth.signInWithOAuth({
                 provider: 'github',
                 options: { redirectTo: window.location.origin + '/app.html' }
@@ -759,6 +779,8 @@
                 emailInput.focus();
                 return;
             }
+
+            if (!supabase) return showToast('Supabase SDK not loaded.');
 
             try {
                 const { error } = await supabase.auth.resetPasswordForEmail(email, {
