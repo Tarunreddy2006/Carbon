@@ -339,18 +339,78 @@
         (async function bootstrap() {
             // Initialize appearance themes
             Theme.init();
-
-            // Intercept unauthenticated users
-            const profile = await Auth.guard();
-            if (!profile) return; 
-
-            // 🚀 LAZY ONBOARDING TRIGGER
-            // If Auth.guard() returned a placeholder (due to missing profile), run onboarding
-            if (!profile.organization_id) {
-                await completeLazyOnboarding(Auth.user);
-                return; // Stop and wait for reload
+            const session = await window.getSession();
+            if(!session) {
+                window.location.replace('/pages/auth/login.html');
+                return;
             }
+            let profile = await window.getUserProfile();
+            if (!profile) {
+                const sessionUser = session.user;
+                const meta = sessionUser.user_metadata;
+                const orgName = meta?.org_name || 'My Organization';
+                const firstName = meta?.first_name || '';
+                const lastName = meta?.last_name || '';
+                const phone = meta?.phone || '';
+                try {
+                    const { data: org, error: orgError } = await window.supabaseClient
+                    .from('organizations')
+                        .insert({
+                        name: orgName,
+                        email: sessionUser.email,
+                        phone: phone,
+                        subscription_plan: 'Trial',
+                        subscription_status: 'Active'
+                    })
+                    .select()
+                    .single(); 
+                if (orgError) throw orgError;
+                if (org) {
+                    const { error: profileError } = await window.supabaseClient
+                        .from('profiles')
+                        .insert({
+                            id: sessionUser.id,
+                            first_name: firstName,
+                            last_name: lastName,
+                            phone: phone,
+                            organization_id: org.id
+                        });
 
+                    if (profileError) throw profileError;
+
+                    // Step D: Query predefined roles table to pull 'Owner' ID[cite: 6]
+                    const { data: roleRow, error: roleError } = await window.supabaseClient
+                        .from('roles')
+                        .select('id')
+                        .eq('name', 'Owner')
+                        .single();
+
+                    if (roleError) throw new Error("Role 'Owner' could not be resolved.");
+
+                    // Step E: Link user context inside organization_members[cite: 6]
+                    const { error: memberError } = await window.supabaseClient
+                        .from('organization_members')
+                        .insert({
+                            organization_id: org.id,
+                            user_id: sessionUser.id,
+                            role_id: roleRow.id
+                        });
+
+                    if (memberError) throw memberError;
+
+                    // Clear local cache layers and force-refresh the profile memory context
+                    window.clearProfileCache();
+                    profile = await window.getUserProfile();
+                    console.log("🎉 Onboarding transaction completed successfully.");
+                }
+            } catch (setupErr) {
+                console.error("Critical organization onboarding transaction failed:", setupErr);
+                alert('Account verified, but database organization setup failed: ' + setupErr.message);
+                return;
+            }
+        }
+            Auth._user=session.user;
+            Auth._profile=profile;
             // Sync verified account layouts
             Auth.populateUI();
             document.getElementById('dropdown-user-name').textContent = Auth.displayName;
