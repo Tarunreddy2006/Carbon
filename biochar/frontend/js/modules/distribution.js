@@ -324,3 +324,7 @@ const DistributionModule = {
         }
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.DistributionModule = DistributionModule;
+}

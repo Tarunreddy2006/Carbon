@@ -61,3 +61,7 @@ const Theme = {
         }
     },
 };
+
+if (typeof window !== 'undefined') {
+    window.Theme = Theme;
+}

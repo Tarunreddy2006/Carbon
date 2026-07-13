@@ -297,3 +297,7 @@ const BatchesModule = {
         }
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.BatchesModule = BatchesModule;
+}

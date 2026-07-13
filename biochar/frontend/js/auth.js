@@ -2,12 +2,12 @@
 // CarbonOS — Multi-Tenant Auth Lifecycle & Guard (ESM & Browser Support)
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { supabase, getSession, getUserProfile, clearProfileCache } from './supabase.js';
+// supabase, getSession, getUserProfile, and clearProfileCache are resolved from global scope (supabase.js)
 
 /**
  * Global Logout Exporter
  */
-export async function handleLogout() {
+async function handleLogout() {
     try {
         if (typeof supabase !== 'undefined' && supabase && supabase.auth) {
             await supabase.auth.signOut();
@@ -33,7 +33,7 @@ if (typeof window !== 'undefined') {
 /**
  * Auth Guard & UI Helper
  */
-export const Auth = {
+const Auth = {
     _user: null,
     _profile: null,
 
@@ -255,4 +255,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     });
 }
 
-export default Auth;
+// Expose Auth globally
+if (typeof window !== 'undefined') {
+    window.Auth = Auth;
+}

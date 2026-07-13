@@ -301,3 +301,7 @@ const FeedstockModule = {
         }
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.FeedstockModule = FeedstockModule;
+}

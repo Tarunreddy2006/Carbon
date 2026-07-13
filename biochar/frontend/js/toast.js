@@ -68,3 +68,7 @@ const Toast = {
     warning(msg, duration) { return this.show(msg, 'warning', duration); },
     info(msg, duration) { return this.show(msg, 'info', duration); },
 };
+
+if (typeof window !== 'undefined') {
+    window.Toast = Toast;
+}

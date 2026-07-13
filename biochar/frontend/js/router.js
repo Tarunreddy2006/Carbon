@@ -153,3 +153,7 @@ const Router = {
         `;
     },
 };
+
+if (typeof window !== 'undefined') {
+    window.Router = Router;
+}

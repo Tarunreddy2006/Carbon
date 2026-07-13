@@ -294,3 +294,7 @@ const DashboardModule = {
         container.innerHTML = html;
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.DashboardModule = DashboardModule;
+}

@@ -352,3 +352,7 @@ const LaboratoryModule = {
         }
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.LaboratoryModule = LaboratoryModule;
+}

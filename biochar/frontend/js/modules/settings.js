@@ -368,3 +368,7 @@ const SettingsModule = {
         });
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.SettingsModule = SettingsModule;
+}

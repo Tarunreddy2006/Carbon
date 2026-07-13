@@ -3,11 +3,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Resolve initialization endpoints from global app config definitions with safe string fallbacks[cite: 4]
-export const SUPABASE_URL = (typeof CARBONOS_CONFIG !== 'undefined' && CARBONOS_CONFIG.SUPABASE_URL)
+const SUPABASE_URL = (typeof CARBONOS_CONFIG !== 'undefined' && CARBONOS_CONFIG.SUPABASE_URL)
     ? CARBONOS_CONFIG.SUPABASE_URL
     : "https://yrjiiacdxknesvpaxdjr.supabase.co";
 
-export const SUPABASE_ANON_KEY = (typeof CARBONOS_CONFIG !== 'undefined' && CARBONOS_CONFIG.SUPABASE_ANON_KEY)
+const SUPABASE_ANON_KEY = (typeof CARBONOS_CONFIG !== 'undefined' && CARBONOS_CONFIG.SUPABASE_ANON_KEY)
     ? CARBONOS_CONFIG.SUPABASE_ANON_KEY
     : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlyamlpYWNkeGtuZXN2cGF4ZGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjIwODMsImV4cCI6MjA5NTA5ODA4M30.ieQV-H7HPFj6ihBkWDoZv68klpvwT4iUCD6O7R2h6Lg";
 
@@ -29,18 +29,19 @@ function assertSupabaseConfiguration() {
 assertSupabaseConfiguration();
 
 // Initialize the Supabase Client safely within the browser context boundary[cite: 4]
-export const supabase = (typeof window !== 'undefined' && window.supabase && window.supabase.createClient)
+const supabase = (typeof window !== 'undefined' && window.supabase && window.supabase.createClient)
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
 if (typeof window !== 'undefined' && supabase) {
     window.supabaseClient = supabase;
+    window.supabase = supabase;
 }
 
 /**
  * Get the current session. Returns null if not authenticated.[cite: 4]
  */
-export async function getSession() {
+async function getSession() {
     if (!supabase) return null;
     const { data: { session }, error } = await supabase.auth.getSession();
     if (error) {
@@ -53,7 +54,7 @@ export async function getSession() {
 /**
  * Get the current authenticated identity tracking block[cite: 4].
  */
-export async function getUser() {
+async function getUser() {
     const session = await getSession();
     return session?.user || null;
 }
@@ -65,7 +66,7 @@ let _cachedProfile = null;
 /**
  * Fetch and cache user profile and company association rules[cite: 4].
  */
-export async function getUserProfile() {
+async function getUserProfile() {
     if (_cachedProfile) return _cachedProfile;
 
     const user = await getUser();
@@ -90,7 +91,7 @@ export async function getUserProfile() {
 /**
  * Extract organization ID link boundary context[cite: 4].
  */
-export async function getOrganizationId() {
+async function getOrganizationId() {
     if (_cachedOrgId) return _cachedOrgId;
     const profile = await getUserProfile();
     return profile?.organization_id || null;
@@ -99,7 +100,7 @@ export async function getOrganizationId() {
 /**
  * Reset local application context memory limits[cite: 4].
  */
-export function clearProfileCache() {
+function clearProfileCache() {
     _cachedProfile = null;
     _cachedOrgId = null;
 }
@@ -107,7 +108,7 @@ export function clearProfileCache() {
 /**
  * Terminate sessions cleanly and clean up tracking memory vectors[cite: 4].
  */
-export async function signOut() {
+async function signOut() {
     clearProfileCache();
     if (supabase) {
         await supabase.auth.signOut();
@@ -128,4 +129,12 @@ if (supabase && supabase.auth) {
     });
 }
 
-export default supabase;
+// Expose helpers globally
+if (typeof window !== 'undefined') {
+    window.getSession = getSession;
+    window.getUser = getUser;
+    window.getUserProfile = getUserProfile;
+    window.getOrganizationId = getOrganizationId;
+    window.clearProfileCache = clearProfileCache;
+    window.signOut = signOut;
+}

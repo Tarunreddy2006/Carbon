@@ -228,3 +228,7 @@ const ProjectsModule = {
         }
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.ProjectsModule = ProjectsModule;
+}

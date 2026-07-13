@@ -314,3 +314,7 @@ const PyrolysisModule = {
         }
     }
 };
+
+if (typeof window !== 'undefined') {
+    window.PyrolysisModule = PyrolysisModule;
+}

@@ -109,3 +109,7 @@ const FormValidator = {
         return data;
     },
 };
+
+if (typeof window !== 'undefined') {
+    window.Form = Form;
+}
