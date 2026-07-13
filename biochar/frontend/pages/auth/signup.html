@@ -756,8 +756,8 @@
 
         let supabaseClient = null;
         try {
-            if (window.supabaseClient && window.supabaseClient.createClient) {
-                supabaseClient = window.supabaseClient.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            if (window.supabase && window.supabase.createClient) {
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             }
         } catch (e) {
             console.error("Supabase init error:", e);
@@ -856,7 +856,7 @@
         async function handleSignupSubmit(e) {
             if (e) e.preventDefault();
             hideToast();
-            if (!supabase) {
+            if (!supabaseClient) {
                 showToast('Database SDK failed to load. Please check your network.');
                 return false;
             }
