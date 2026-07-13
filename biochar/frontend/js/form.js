@@ -111,5 +111,5 @@ const FormValidator = {
 };
 
 if (typeof window !== 'undefined') {
-    window.Form = Form;
+    window.Form = FormValidator;
 }

@@ -222,5 +222,5 @@ const DataTable = {
 };
 
 if (typeof window !== 'undefined') {
-    window.Table = Table;
+    window.Table = DataTable;
 }

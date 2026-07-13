@@ -35,7 +35,6 @@ const supabase = (typeof window !== 'undefined' && window.supabase && window.sup
 
 if (typeof window !== 'undefined' && supabase) {
     window.supabaseClient = supabase;
-    window.supabase = supabase;
 }
 
 /**
