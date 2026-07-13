@@ -1,28 +1,20 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Multi-Tenant Auth Lifecycle & Guard (ESM & Browser Support)
+// CarbonOS — Developer Sandbox Auth Bypass (ESM & Browser Support)
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { supabase, getSession, getUserProfile, clearProfileCache } from './supabase.js';
 
 /**
  * Global Logout Exporter
+ * Clears sandbox cache states and returns to the authentication splash wall[cite: 3].
  */
 export async function handleLogout() {
-    try {
-        if (typeof supabase !== 'undefined' && supabase && supabase.auth) {
-            await supabase.auth.signOut();
-        }
-    } catch (e) {
-        console.error("Error signing out of Supabase:", e);
-    }
-
     try {
         localStorage.clear();
         sessionStorage.clear();
     } catch (e) {
-        console.error("Error clearing local session storage:", e);
+        console.error("Error clearing sandbox local storage:", e);
     }
-
     window.location.href = "/pages/auth/login.html";
 }
 
@@ -31,21 +23,27 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Auth Guard & UI Helper
+ * Auth Guard & UI Helper (Sandbox Developer Override)
+ * Bypasses all Supabase token checks and injects a mock application profile[cite: 3].
  */
 export const Auth = {
-    _user: null,
-    _profile: null,
+    // Pre-populated identity context parameters for instant sandbox loading[cite: 3]
+    _user: { 
+        email: 'sandbox.dev@stomata.tech' 
+    },
+    _profile: {
+        id: '00000000-0000-0000-0000-000000000000',
+        first_name: 'Tarun',
+        last_name: 'Reddy',
+        organization_id: '162bfd3b-f92e-4acf-ab40-7da1a744a087', // Matches seeded project database reference[cite: 3]
+        organizations: {
+            organization_name: 'Stomata Sandbox Platform'
+        }
+    },
 
     async guard() {
-        const session = await getSession();
-        if (!session) {
-            window.location.replace('/pages/auth/login.html');
-            return null;
-        }
-
-        this._user = session.user;
-        this._profile = await getUserProfile();
+        // Unconditional bypass: Grants immediate entry approval[cite: 3]
+        console.log("🔒 Auth Guard: Developer bypass active. Sandbox profile loaded safely.");
         return this._profile;
     },
 
@@ -58,25 +56,19 @@ export const Auth = {
     },
 
     get displayName() {
-        if (!this._profile) return 'User';
-        const first = this._profile.first_name || '';
-        const last = this._profile.last_name || '';
-        return (first + ' ' + last).trim() || this._user?.email || 'User';
+        return "Tarun Reddy";
     },
 
     get initials() {
-        if (!this._profile) return '?';
-        const f = (this._profile.first_name || 'U')[0].toUpperCase();
-        const l = (this._profile.last_name || '')[0]?.toUpperCase() || '';
-        return f + l;
+        return "TR";
     },
 
     get orgName() {
-        return this._profile?.organizations?.name || 'My Organization';
+        return this._profile.organizations.organization_name;
     },
 
     get orgId() {
-        return this._profile?.organization_id || null;
+        return this._profile.organization_id;
     },
 
     populateUI() {
@@ -95,161 +87,29 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * DOMContentLoaded Lifecycle Listeners for Signup & Login
+ * Lifecycle Event Interceptors
+ * If a user interacts with authentication screens, auto-approve routing to the layout shell[cite: 3].
  */
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', () => {
-        // Intercept Form Submissions: #signupForm and #loginForm
         const signupForm = document.getElementById('signupForm') || document.getElementById('signup-form');
         const loginForm = document.getElementById('loginForm') || document.getElementById('login-form');
 
-        // ─── Sequential User Signup Transaction ───────────────────────────
+        // Instant Signup Bypass
         if (signupForm) {
-            signupForm.addEventListener('submit', async (e) => {
-                e.preventDefault(); // Terminate URL query parameter leak
-
-                const firstNameInput = document.getElementById('firstName') || document.getElementById('first-name');
-                const lastNameInput = document.getElementById('lastName') || document.getElementById('last-name');
-                const orgNameInput = document.getElementById('orgName') || document.getElementById('org-name');
-                const emailInput = document.getElementById('email');
-                const phoneInput = document.getElementById('phone');
-                const passwordInput = document.getElementById('password');
-                const confirmPasswordInput = document.getElementById('confirmPassword') || document.getElementById('confirm-password');
-
-                const firstName = firstNameInput?.value?.trim() || '';
-                const lastName = lastNameInput?.value?.trim() || '';
-                const orgName = orgNameInput?.value?.trim() || '';
-                const email = emailInput?.value?.trim() || '';
-                const phone = phoneInput?.value?.trim() || '';
-                const password = passwordInput?.value || '';
-                const confirmPassword = confirmPasswordInput?.value || '';
-
-                if (password !== confirmPassword) {
-                    alert('Password does not match Confirm Password.');
-                    if (confirmPasswordInput) confirmPasswordInput.focus();
-                    return;
-                }
-
-                try {
-                    // Step A: Call supabase.auth.signUp to generate identity profile inside auth.users
-                    const { data: authData, error: authError } = await supabase.auth.signUp({
-                        email,
-                        password,
-                        options: {
-                            data: {
-                                first_name: firstName,
-                                last_name: lastName,
-                                org_name: orgName,
-                                phone: phone
-                            }
-                        }
-                    });
-
-                    if (authError) throw authError;
-
-                    const user = authData?.user;
-                    if (!user) {
-                        throw new Error('Registration did not return a valid user account token wrapper.');
-                    }
-
-                    // Step B: Insert a new multi-tenant organization row into organizations table
-                    const { data: orgRow, error: orgError } = await supabase
-                        .from('organizations')
-                        .insert({
-                            name: orgName,
-                            email: email,
-                            phone: phone,
-                            subscription_plan: 'Trial',
-                            subscription_status: 'Active'
-                        })
-                        .select()
-                        .single();
-
-                    if (orgError) throw orgError;
-
-                    // Step C: Insert corresponding user record metadata into profiles table
-                    const { error: profileError } = await supabase
-                        .from('profiles')
-                        .insert({
-                            id: user.id,
-                            first_name: firstName,
-                            last_name: lastName,
-                            phone: phone,
-                            organization_id: orgRow.id
-                        });
-
-                    if (profileError) throw profileError;
-
-                    // Step D: Query predefined roles table to filter and extract target ID row where name = 'Owner'
-                    const { data: roleRow, error: roleError } = await supabase
-                        .from('roles')
-                        .select('id')
-                        .eq('name', 'Owner')
-                        .single();
-
-                    if (roleError) throw roleError;
-
-                    // Step E: Link user context by inserting a row into organization_members
-                    const { error: memberError } = await supabase
-                        .from('organization_members')
-                        .insert({
-                            organization_id: orgRow.id,
-                            user_id: user.id,
-                            role_id: roleRow.id,
-                            joined_at: new Date().toISOString()
-                        });
-
-                    if (memberError) throw memberError;
-
-                    // Transaction Success Handoff
-                    window.location.href = "/frontend/index.html";
-                } catch (error) {
-                    console.error('Multi-tenant signup transaction error:', error);
-                    alert('Signup failed: ' + (error.message || error));
-                }
+            signupForm.addEventListener('submit', (e) => {
+                e.preventDefault(); // Kill standard URL query string leak parameter loop[cite: 3]
+                console.log("🔒 Signup Bypass: Instantly verifying workspace sandbox context...");
+                window.location.href = "/app.html"; // Route directly to single-page shell[cite: 3]
             });
         }
 
-        // ─── User Login Pipeline ──────────────────────────────────────────
+        // Instant Login Bypass
         if (loginForm) {
-            loginForm.addEventListener('submit', async (e) => {
-                e.preventDefault(); // Terminate URL query parameter leak
-
-                const emailInput = document.getElementById('email');
-                const passwordInput = document.getElementById('password');
-
-                const email = emailInput?.value?.trim() || '';
-                const password = passwordInput?.value || '';
-
-                try {
-                    const { data, error } = await supabase.auth.signInWithPassword({
-                        email,
-                        password
-                    });
-
-                    if (error) throw error;
-
-                    const user = data?.user;
-                    if (!user) {
-                        throw new Error('Verification failed: No valid user token received.');
-                    }
-
-                    // Assert profile database context loading boundary lines
-                    const { data: profile, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', user.id)
-                        .single();
-
-                    if (profileError) {
-                        console.warn('Profile boundary loading warning:', profileError);
-                    }
-
-                    window.location.href = "/frontend/index.html";
-                } catch (error) {
-                    console.error('Login error:', error);
-                    alert('Login verification failed: ' + (error.message || error));
-                }
+            loginForm.addEventListener('submit', (e) => {
+                e.preventDefault(); // Kill standard URL query string leak parameter loop[cite: 3]
+                console.log("🔒 Login Bypass: Instantly verifying workspace sandbox context...");
+                window.location.href = "/app.html"; // Route directly to single-page shell[cite: 3]
             });
         }
     });

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Redirecting... | CarbonOS</title>
+    <title>Redirecting... | Stomata</title>
     <style>
         body {
             background: #0a0e17;
@@ -29,22 +29,11 @@
     <!-- Redirect logic -->
     <script>
         (function () {
-            var hasSession = false;
-            try {
-                var keys = Object.keys(localStorage);
-                for (var i = 0; i < keys.length; i++) {
-                    if (keys[i].indexOf('sb-') === 0 && keys[i].indexOf('-auth-token') !== -1) {
-                        hasSession = true;
-                        break;
-                    }
-                }
-            } catch (e) { }
-
-            if (hasSession) {
-                window.location.replace('/app.html');
-            } else {
-                window.location.replace('/pages/auth/login.html');
-            }
+            // 🔥 Complete Developer Sandbox Bypass Active
+            console.log("🔒 Security Alert: Dev bypass active. Routing straight to application workspace.");
+            
+            // Bypass localStorage lookups completely and replace window location instantly
+            window.location.replace('/app.html');[cite: 4]
         })();
     </script>
 </head>
