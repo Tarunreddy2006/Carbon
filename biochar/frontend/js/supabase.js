@@ -75,15 +75,16 @@ async function getUserProfile() {
         .from('profiles')
         .select('*, organizations(*)')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
     if (error) {
         console.error('getUserProfile error:', error);
         return null;
     }
-
-    _cachedProfile = data;
-    _cachedOrgId = data?.organization_id;
+    if (data) {
+        _cachedProfile = data;
+        _cachedOrgId = data.organization_id;
+    }
     return data;
 }
 
