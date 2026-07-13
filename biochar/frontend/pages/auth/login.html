@@ -651,10 +651,10 @@
         const SUPABASE_URL = 'https://yrjiiacdxknesvpaxdjr.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlyamlpYWNkeGtuZXN2cGF4ZGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjIwODMsImV4cCI6MjA5NTA5ODA4M30.ieQV-H7HPFj6ihBkWDoZv68klpvwT4iUCD6O7R2h6Lg';
 
-        let supabase = null;
+        let supabaseClient = null;
         try {
             if (window.supabase && window.supabase.createClient) {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             }
         } catch (e) {
             console.error("Supabase init error:", e);
@@ -686,8 +686,8 @@
         }
 
         // ─── Check existing session ─────────────────────────────
-        if (supabase) {
-            supabase.auth.getSession().then(({ data: { session } }) => {
+        if (supabaseClient) {
+            supabaseClient.auth.getSession().then(({ data: { session } }) => {
                 if (session) {
                     window.location.replace('/app.html');
                 }
@@ -708,7 +708,7 @@
             if (e) e.preventDefault();
             hideToast();
 
-            if (!supabase) {
+            if (!supabaseClient) {
                 showToast('Database SDK failed to load. Please check your network.');
                 return false;
             }
@@ -725,7 +725,7 @@
             loginBtn.disabled = true;
 
             try {
-                const { data, error } = await supabase.auth.signInWithPassword({
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email,
                     password,
                 });
@@ -754,8 +754,8 @@
 
         // ─── OAuth Handlers ─────────────────────────────────────
         document.getElementById('google-login').addEventListener('click', async () => {
-            if (!supabase) return showToast('Supabase SDK not loaded.');
-            const { error } = await supabase.auth.signInWithOAuth({
+            if (!supabaseClient) return showToast('Supabase SDK not loaded.');
+            const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
                 options: { redirectTo: window.location.origin + '/app.html' }
             });
@@ -763,8 +763,8 @@
         });
 
         document.getElementById('github-login').addEventListener('click', async () => {
-            if (!supabase) return showToast('Supabase SDK not loaded.');
-            const { error } = await supabase.auth.signInWithOAuth({
+            if (!supabaseClient) return showToast('Supabase SDK not loaded.');
+            const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'github',
                 options: { redirectTo: window.location.origin + '/app.html' }
             });
@@ -781,10 +781,10 @@
                 return;
             }
 
-            if (!supabase) return showToast('Supabase SDK not loaded.');
+            if (!supabaseClient) return showToast('Supabase SDK not loaded.');
 
             try {
-                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
                     redirectTo: window.location.origin + '/pages/auth/login.html',
                 });
                 if (error) {

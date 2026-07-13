@@ -754,10 +754,10 @@
         const SUPABASE_URL = 'https://yrjiiacdxknesvpaxdjr.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlyamlpYWNkeGtuZXN2cGF4ZGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjIwODMsImV4cCI6MjA5NTA5ODA4M30.ieQV-H7HPFj6ihBkWDoZv68klpvwT4iUCD6O7R2h6Lg';
 
-        let supabase = null;
+        let supabaseClient = null;
         try {
-            if (window.supabase && window.supabase.createClient) {
-                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            if (window.supabaseClient && window.supabaseClient.createClient) {
+                supabaseClient = window.supabaseClient.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             }
         } catch (e) {
             console.error("Supabase init error:", e);
@@ -798,8 +798,8 @@
         }
 
         // ─── Check existing session ─────────────────────────────
-        if (supabase) {
-            supabase.auth.getSession().then(({ data: { session } }) => {
+        if (supabaseClient) {
+            supabaseClient.auth.getSession().then(({ data: { session } }) => {
                 if (session) {
                     window.location.replace('/app.html');
                 }
@@ -893,7 +893,7 @@
 
             try {
                 // Step A: Create identity profile inside auth.users
-                const { data, error } = await supabase.auth.signUp({
+                const { data, error } = await supabaseClient.auth.signUp({
                     email,
                     password,
                     options: {
@@ -916,7 +916,7 @@
 
                     try {
                         // Step B: Insert row into organizations using the correct schema column name
-                        const { data: org, error: orgError } = await supabase
+                        const { data: org, error: orgError } = await supabaseClient
                             .from('organizations')
                             .insert({
                                 name: orgName, // Fixed from 'name'
@@ -932,7 +932,7 @@
 
                         if (org) {
                             // Step C: Insert profile details referencing user.id UUID
-                            const { error: profileError } = await supabase.from('profiles').insert({
+                            const { error: profileError } = await supabaseClient.from('profiles').insert({
                                 id: data.user.id,
                                 first_name: firstName,
                                 last_name: lastName,
@@ -943,7 +943,7 @@
                             if (profileError) throw profileError;
 
                             // Step D: Query predefined roles table to filter out 'Owner'
-                            const { data: roleRow, error: roleError } = await supabase
+                            const { data: roleRow, error: roleError } = await supabaseClient
                                 .from('roles')
                                 .select('id')
                                 .eq('name', 'Owner')
@@ -952,7 +952,7 @@
                             if (roleError) throw new Error("Role 'Owner' could not be resolved.");
 
                             // Step E: Link user context inside organization_members
-                            const { error: memberError } = await supabase.from('organization_members').insert({
+                            const { error: memberError } = await supabaseClient.from('organization_members').insert({
                                 organization_id: org.id,
                                 user_id: data.user.id,
                                 role_id: roleRow.id // Dynamically assigned Owner ID
@@ -991,8 +991,8 @@
 
         // ─── OAuth Handlers ─────────────────────────────────────
         document.getElementById('google-signup').addEventListener('click', async () => {
-            if (!supabase) return showToast('Supabase SDK not loaded.');
-            const { error } = await supabase.auth.signInWithOAuth({
+            if (!supabaseClient) return showToast('Supabase SDK not loaded.');
+            const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
                 options: { redirectTo: window.location.origin + '/app.html' }
             });
@@ -1000,8 +1000,8 @@
         });
 
         document.getElementById('github-signup').addEventListener('click', async () => {
-            if (!supabase) return showToast('Supabase SDK not loaded.');
-            const { error } = await supabase.auth.signInWithOAuth({
+            if (!supabaseClient) return showToast('Supabase SDK not loaded.');
+            const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'github',
                 options: { redirectTo: window.location.origin + '/app.html' }
             });
