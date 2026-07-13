@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CarbonOS | Biochar dMRV Platform</title>
+    <title>Stomata | Biochar dMRV Platform</title>
     <meta name="description"
         content="Enterprise biochar carbon-removal monitoring, reporting and verification platform by Stomata.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -48,7 +48,7 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-brand">
                 <div class="sidebar-brand-icon">🔥</div>
-                <span class="sidebar-brand-text" id="sidebar-org-name">CarbonOS</span>
+                <span class="sidebar-brand-text" id="sidebar-org-name">Stomata</span>
             </div>
 
             <nav class="sidebar-nav">
@@ -244,13 +244,13 @@
             </main>
         </div>
     </div>
+
     <!-- ═══ Scripts ═══════════════════════════════════════════════════════ -->
-    <!-- Supabase SDK -->
+    <!-- 1. External Global Asset Engines -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 
-    <!-- Core JS (order matters) -->
+    <!-- 2. Application Shared Parameters -->
     <script src="/js/config.js"></script>
     <script src="/js/utils.js"></script>
     <script src="/js/supabase.js"></script>
@@ -262,7 +262,7 @@
     <script src="/js/auth.js"></script>
     <script src="/js/router.js"></script>
 
-    <!-- Module JS -->
+    <!-- 3. SPA Feature Interface Targets -->
     <script src="/js/modules/dashboard.js"></script>
     <script src="/js/modules/projects.js"></script>
     <script src="/js/modules/feedstock.js"></script>
@@ -272,60 +272,35 @@
     <script src="/js/modules/distribution.js"></script>
     <script src="/js/modules/settings.js"></script>
 
-    <!-- App Bootstrap -->
+    <!-- 4. Master Application Runtime Initialization Engine -->
     <script>
         (async function bootstrap() {
-            // 1. Initialize theme
+            // Initialize appearance themes
             Theme.init();
 
-            // 2. Auth guard — redirects to login if no valid session
+            // Intercept unauthenticated users before laying routing metrics
             const profile = await Auth.guard();
-            if (!profile) return; // Redirect already happened
+            if (!profile) return; 
 
-            // 3. Populate UI with user data
+            // Sync verified account layouts
             Auth.populateUI();
             document.getElementById('dropdown-user-name').textContent = Auth.displayName;
             document.getElementById('dropdown-user-email').textContent = Auth.user?.email || '';
 
-            // 4. Register routes
-            Router.register('/dashboard', {
-                title: 'Dashboard',
-                render: DashboardModule.render,
-            });
-            Router.register('/projects', {
-                title: 'Projects',
-                render: ProjectsModule.render,
-            });
-            Router.register('/feedstock', {
-                title: 'Feedstock',
-                render: FeedstockModule.render,
-            });
-            Router.register('/batches', {
-                title: 'Biochar Batches',
-                render: BatchesModule.render,
-            });
-            Router.register('/pyrolysis', {
-                title: 'Pyrolysis Telemetry',
-                render: PyrolysisModule.render,
-            });
-            Router.register('/laboratory', {
-                title: 'Laboratory',
-                render: LaboratoryModule.render,
-            });
-            Router.register('/distribution', {
-                title: 'Distribution',
-                render: DistributionModule.render,
-            });
-            Router.register('/settings', {
-                title: 'Settings',
-                render: SettingsModule.render,
-            });
+            // Register single-page navigation components
+            Router.register('/dashboard', { title: 'Dashboard', render: DashboardModule.render });
+            Router.register('/projects', { title: 'Projects', render: ProjectsModule.render });
+            Router.register('/feedstock', { title: 'Feedstock', render: FeedstockModule.render });
+            Router.register('/batches', { title: 'Biochar Batches', render: BatchesModule.render });
+            Router.register('/pyrolysis', { title: 'Pyrolysis Telemetry', render: PyrolysisModule.render });
+            Router.register('/laboratory', { title: 'Laboratory', render: LaboratoryModule.render });
+            Router.register('/distribution', { title: 'Distribution', render: DistributionModule.render });
+            Router.register('/settings', { title: 'Settings', render: SettingsModule.render });
 
-            // 5. Start the router
+            // Fire routing listener
             Router.init('content');
 
-            // ── Sidebar ──────────────────────────────────────────────
-            // Toggle collapse
+            // ── Sidebar Interceptors ─────────────────────────────────
             const sidebar = document.getElementById('sidebar');
             const appShell = document.getElementById('app-shell');
 
@@ -335,25 +310,21 @@
                 localStorage.setItem('carbonos-sidebar', sidebar.classList.contains('collapsed') ? 'collapsed' : 'expanded');
             });
 
-            // Restore sidebar state
             if (localStorage.getItem('carbonos-sidebar') === 'collapsed') {
                 sidebar.classList.add('collapsed');
                 appShell.classList.add('sidebar-collapsed');
             }
 
-            // Sidebar nav click
             document.querySelectorAll('.sidebar-link').forEach(link => {
                 link.addEventListener('click', (e) => {
                     e.preventDefault();
                     const route = link.dataset.route;
                     if (route) Router.navigate(route);
-                    // Close mobile sidebar
                     sidebar.classList.remove('mobile-open');
                     document.getElementById('sidebar-overlay').classList.remove('visible');
                 });
             });
 
-            // Mobile menu
             document.getElementById('mobile-menu-btn').addEventListener('click', () => {
                 sidebar.classList.add('mobile-open');
                 document.getElementById('sidebar-overlay').classList.add('visible');
@@ -364,12 +335,12 @@
                 document.getElementById('sidebar-overlay').classList.remove('visible');
             });
 
-            // ── Theme toggle ─────────────────────────────────────────
+            // ── Theme Adjuster ───────────────────────────────────────
             document.getElementById('theme-toggle-btn').addEventListener('click', () => {
                 Theme.toggle();
             });
 
-            // ── User dropdown ────────────────────────────────────────
+            // ── User Identity Dropdown ──────────────────────────────
             const userBtn = document.getElementById('topbar-user-btn');
             const userDropdown = document.getElementById('user-dropdown');
 
@@ -382,9 +353,14 @@
                 userDropdown.classList.remove('open');
             });
 
-            // ── Logout ───────────────────────────────────────────────
+            // ── Safe Corporate Logout Action ────────────────────────
             document.getElementById('logout-btn').addEventListener('click', async () => {
-                await signOut();
+                // Safely references our classic object wrapper to flush session states cleanly
+                if (window.SupabaseAuthHelpers) {
+                    await window.SupabaseAuthHelpers.signOut();
+                } else {
+                    window.location.replace('/pages/auth/login.html');
+                }
             });
 
         })();

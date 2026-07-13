@@ -41,8 +41,8 @@ if (typeof window !== 'undefined' && supabase) {
  * Get the current session. Returns null if not authenticated.[cite: 4]
  */
 async function getSession() {
-    if (!supabase) return null;
-    const { data: { session }, error } = await supabase.auth.getSession();
+    if (!supabaseClient) return null;
+    const { data: { session }, error } = await supabaseClient.auth.getSession();
     if (error) {
         console.error('getSession error:', error);
         return null;
@@ -69,9 +69,9 @@ async function getUserProfile() {
     if (_cachedProfile) return _cachedProfile;
 
     const user = await getUser();
-    if (!user || !supabase) return null;
+    if (!user || !supabaseClient) return null;
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
         .from('profiles')
         .select('*, organizations(*)')
         .eq('id', user.id)
