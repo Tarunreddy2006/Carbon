@@ -893,6 +893,7 @@
 
             try {
                 // Step A: Create identity profile inside auth.users
+                console.log("Attempting to sign up user with email:", email);
                 const { data, error } = await supabaseClient.auth.signUp({
                     email,
                     password,
@@ -907,17 +908,35 @@
                     }
                 });
 
+                console.log("signUp data result:", data);
                 if (error) {
+                    console.error("signUp error result:", error);
                     showToast(error.message || 'Registration failed.');
                 } else if (data && data.user && data.user.identities && data.user.identities.length === 0) {
                     showToast('An account with this email address already exists.');
-                } else if (data && data.user) { // 🔥 Fix: Check for data.user instead of data.session
-                    showToast('Account created!Please check your email for verification', 'success');
-                    signupForm.reset();
-                    strengthContainer.classList.remove('visible');
+                } else if (data && data.user) {
+                    console.log("User created successfully. Checking if session is active...");
+                    const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+                    console.log("getSession data result:", session);
+                    if (sessionError) {
+                        console.error("getSession error result:", sessionError);
+                    }
+
+                    if (session) {
+                        console.log("Authenticated session confirmed. Redirecting to onboarding/dashboard...");
+                        showToast('Signup successful! Redirecting...', 'success');
+                        setTimeout(() => {
+                            window.location.replace('/app.html');
+                        }, 1000);
+                    } else {
+                        console.log("Email confirmation is required. Stopping onboarding flow.");
+                        showToast('Account created! Please check your email for verification', 'success');
+                        signupForm.reset();
+                        strengthContainer.classList.remove('visible');
+                    }
                 }
             } catch (err) {
-                console.error(err);
+                console.error("Unexpected signup error:", err);
                 showToast('Registration failed: ' + (err.message || err));
             } finally {
                 signupBtn.classList.remove('loading');

@@ -276,8 +276,8 @@
     <script>
         // ── Helper to execute database onboarding ──
         async function completeLazyOnboarding(sessionUser) {
-            const supabase = window.supabaseClient;
-            if (!supabase) return;
+            const supabaseClient = window.supabaseClient;
+            if (!supabaseClient) return;
 
             console.log("🚀 Running post-verification onboarding...");
             
@@ -289,7 +289,8 @@
 
             try {
                 // Step B: Insert Organization
-                const { data: org, error: orgError } = await supabase
+                console.log("Onboarding org insert input parameters:", { name: orgName, email: sessionUser.email, phone: phone });
+                const { data: org, error: orgError } = await supabaseClient
                     .from('organizations')
                     .insert({
                         name: orgName,
@@ -301,33 +302,61 @@
                     .select()
                     .single();
 
-                if (orgError) throw orgError;
+                console.log("organizations insert data result:", org);
+                if (orgError) {
+                    console.error("organizations insert error result:", orgError);
+                    throw orgError;
+                }
 
                 // Step C: Insert Profile
-                const { error: profileError } = await supabase.from('profiles').insert({
-                    id: sessionUser.id,
-                    first_name: firstName,
-                    last_name: lastName,
-                    phone: phone,
-                    organization_id: org.id
-                });
-                if (profileError) throw profileError;
+                console.log("Onboarding profile insert input parameters:", { id: sessionUser.id, first_name: firstName, last_name: lastName, phone: phone, organization_id: org.id });
+                const { data: profileData, error: profileError } = await supabaseClient
+                    .from('profiles')
+                    .insert({
+                        id: sessionUser.id,
+                        first_name: firstName,
+                        last_name: lastName,
+                        phone: phone,
+                        organization_id: org.id
+                    })
+                    .select();
+
+                console.log("profiles insert data result:", profileData);
+                if (profileError) {
+                    console.error("profiles insert error result:", profileError);
+                    throw profileError;
+                }
 
                 // Step D: Get Role ID
-                const { data: roleRow, error: roleError } = await supabase
+                console.log("Onboarding role lookup name parameters: 'Owner'");
+                const { data: roleRow, error: roleError } = await supabaseClient
                     .from('roles')
                     .select('id')
                     .eq('name', 'Owner')
                     .single();
-                if (roleError) throw new Error("Role 'Owner' could not be resolved.");
+
+                console.log("roles select data result:", roleRow);
+                if (roleError) {
+                    console.error("roles select error result:", roleError);
+                    throw new Error("Role 'Owner' could not be resolved.");
+                }
 
                 // Step E: Insert Membership
-                const { error: memberError } = await supabase.from('organization_members').insert({
-                    organization_id: org.id,
-                    user_id: sessionUser.id,
-                    role_id: roleRow.id
-                });
-                if (memberError) throw memberError;
+                console.log("Onboarding membership insert input parameters:", { organization_id: org.id, user_id: sessionUser.id, role_id: roleRow.id });
+                const { data: memberData, error: memberError } = await supabaseClient
+                    .from('organization_members')
+                    .insert({
+                        organization_id: org.id,
+                        user_id: sessionUser.id,
+                        role_id: roleRow.id
+                    })
+                    .select();
+
+                console.log("organization_members insert data result:", memberData);
+                if (memberError) {
+                    console.error("organization_members insert error result:", memberError);
+                    throw memberError;
+                }
 
                 console.log("✅ Onboarding successful.");
                 window.location.reload(); // Refresh to load new context
@@ -353,61 +382,85 @@
                 const lastName = meta?.last_name || '';
                 const phone = meta?.phone || '';
                 try {
+                    console.log("Bootstrap: Profile not found. Executing inline database onboarding...");
+                    console.log("Onboarding org insert input parameters:", { name: orgName, email: sessionUser.email, phone: phone });
                     const { data: org, error: orgError } = await window.supabaseClient
-                    .from('organizations')
+                        .from('organizations')
                         .insert({
-                        name: orgName,
-                        email: sessionUser.email,
-                        phone: phone,
-                        subscription_plan: 'Trial',
-                        subscription_status: 'Active'
-                    })
-                    .select()
-                    .single(); 
-                if (orgError) throw orgError;
-                if (org) {
-                    const { error: profileError } = await window.supabaseClient
-                        .from('profiles')
-                        .insert({
-                            id: sessionUser.id,
-                            first_name: firstName,
-                            last_name: lastName,
+                            name: orgName,
+                            email: sessionUser.email,
                             phone: phone,
-                            organization_id: org.id
-                        });
+                            subscription_plan: 'Trial',
+                            subscription_status: 'Active'
+                        })
+                        .select()
+                        .single(); 
+                    
+                    console.log("organizations insert data result:", org);
+                    if (orgError) {
+                        console.error("organizations insert error result:", orgError);
+                        throw orgError;
+                    }
+                    if (org) {
+                        console.log("Onboarding profile insert input parameters:", { id: sessionUser.id, first_name: firstName, last_name: lastName, phone: phone, organization_id: org.id });
+                        const { data: profileData, error: profileError } = await window.supabaseClient
+                            .from('profiles')
+                            .insert({
+                                id: sessionUser.id,
+                                first_name: firstName,
+                                last_name: lastName,
+                                phone: phone,
+                                organization_id: org.id
+                            })
+                            .select();
 
-                    if (profileError) throw profileError;
+                        console.log("profiles insert data result:", profileData);
+                        if (profileError) {
+                            console.error("profiles insert error result:", profileError);
+                            throw profileError;
+                        }
 
-                    // Step D: Query predefined roles table to pull 'Owner' ID[cite: 6]
-                    const { data: roleRow, error: roleError } = await window.supabaseClient
-                        .from('roles')
-                        .select('id')
-                        .eq('name', 'Owner')
-                        .single();
+                        // Step D: Query predefined roles table to pull 'Owner' ID
+                        console.log("Onboarding role lookup name parameters: 'Owner'");
+                        const { data: roleRow, error: roleError } = await window.supabaseClient
+                            .from('roles')
+                            .select('id')
+                            .eq('name', 'Owner')
+                            .single();
 
-                    if (roleError) throw new Error("Role 'Owner' could not be resolved.");
+                        console.log("roles select data result:", roleRow);
+                        if (roleError) {
+                            console.error("roles select error result:", roleError);
+                            throw new Error("Role 'Owner' could not be resolved.");
+                        }
 
-                    // Step E: Link user context inside organization_members[cite: 6]
-                    const { error: memberError } = await window.supabaseClient
-                        .from('organization_members')
-                        .insert({
-                            organization_id: org.id,
-                            user_id: sessionUser.id,
-                            role_id: roleRow.id
-                        });
+                        // Step E: Link user context inside organization_members
+                        console.log("Onboarding membership insert input parameters:", { organization_id: org.id, user_id: sessionUser.id, role_id: roleRow.id });
+                        const { data: memberData, error: memberError } = await window.supabaseClient
+                            .from('organization_members')
+                            .insert({
+                                organization_id: org.id,
+                                user_id: sessionUser.id,
+                                role_id: roleRow.id
+                            })
+                            .select();
 
-                    if (memberError) throw memberError;
+                        console.log("organization_members insert data result:", memberData);
+                        if (memberError) {
+                            console.error("organization_members insert error result:", memberError);
+                            throw memberError;
+                        }
 
-                    // Clear local cache layers and force-refresh the profile memory context
-                    window.clearProfileCache();
-                    profile = await window.getUserProfile();
-                    console.log("🎉 Onboarding transaction completed successfully.");
+                        // Clear local cache layers and force-refresh the profile memory context
+                        window.clearProfileCache();
+                        profile = await window.getUserProfile();
+                        console.log("🎉 Onboarding transaction completed successfully.");
+                    }
+                } catch (setupErr) {
+                    console.error("Critical organization onboarding transaction failed:", setupErr);
+                    alert('Account verified, but database organization setup failed: ' + setupErr.message);
+                    return;
                 }
-            } catch (setupErr) {
-                console.error("Critical organization onboarding transaction failed:", setupErr);
-                alert('Account verified, but database organization setup failed: ' + setupErr.message);
-                return;
-            }
         }
             Auth._user=session.user;
             Auth._profile=profile;

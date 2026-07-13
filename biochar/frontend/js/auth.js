@@ -5,254 +5,298 @@
 // supabase, getSession, getUserProfile, and clearProfileCache are resolved from global scope (supabase.js)
 
 /**
- * Global Logout Exporter
- */
+ * Global Logout Exporter
+ */
 async function handleLogout() {
-    try {
-        if (typeof supabase !== 'undefined' && supabase && supabase.auth) {
-            await supabase.auth.signOut();
-        }
-    } catch (e) {
-        console.error("Error signing out of Supabase:", e);
-    }
+    try {
+        if (typeof supabase !== 'undefined' && supabase && supabase.auth) {
+            await supabase.auth.signOut();
+        }
+    } catch (e) {
+        console.error("Error signing out of Supabase:", e);
+    }
 
-    try {
-        localStorage.clear();
-        sessionStorage.clear();
-    } catch (e) {
-        console.error("Error clearing local session storage:", e);
-    }
+    try {
+        localStorage.clear();
+        sessionStorage.clear();
+    } catch (e) {
+        console.error("Error clearing local session storage:", e);
+    }
 
-    window.location.href = "/pages/auth/login.html";
+    window.location.href = "/pages/auth/login.html";
 }
 
 if (typeof window !== 'undefined') {
-    window.handleLogout = handleLogout;
+    window.handleLogout = handleLogout;
 }
 
 /**
- * Auth Guard & UI Helper
- */
+ * Auth Guard & UI Helper
+ */
 const Auth = {
-    _user: null,
-    _profile: null,
+    _user: null,
+    _profile: null,
 
-    async guard() {
-        const session = await getSession();
-        if (!session) {
-            window.location.replace('/pages/auth/login.html');
-            return null;
-        }
+    async guard() {
+        const session = await getSession();
+        if (!session) {
+            window.location.replace('/pages/auth/login.html');
+            return null;
+        }
 
-        this._user = session.user;
-        this._profile = await getUserProfile();
-        return this._profile;
-    },
+        this._user = session.user;
+        this._profile = await getUserProfile();
+        return this._profile;
+    },
 
-    get user() {
-        return this._user;
-    },
+    get user() {
+        return this._user;
+    },
 
-    get profile() {
-        return this._profile;
-    },
+    get profile() {
+        return this._profile;
+    },
 
-    get displayName() {
-        if (!this._profile) return 'User';
-        const first = this._profile.first_name || '';
-        const last = this._profile.last_name || '';
-        return (first + ' ' + last).trim() || this._user?.email || 'User';
-    },
+    get displayName() {
+        if (!this._profile) return 'User';
+        const first = this._profile.first_name || '';
+        const last = this._profile.last_name || '';
+        return (first + ' ' + last).trim() || this._user?.email || 'User';
+    },
 
-    get initials() {
-        if (!this._profile) return '?';
-        const f = (this._profile.first_name || 'U')[0].toUpperCase();
-        const l = (this._profile.last_name || '')[0]?.toUpperCase() || '';
-        return f + l;
-    },
+    get initials() {
+        if (!this._profile) return '?';
+        const f = (this._profile.first_name || 'U')[0].toUpperCase();
+        const l = (this._profile.last_name || '')[0]?.toUpperCase() || '';
+        return f + l;
+    },
 
-    get orgName() {
-        return this._profile?.organizations?.name || 'My Organization';
-    },
+    get orgName() {
+        return this._profile?.organizations?.name || 'My Organization';
+    },
 
-    get orgId() {
-        return this._profile?.organization_id || null;
-    },
+    get orgId() {
+        return this._profile?.organization_id || null;
+    },
 
-    populateUI() {
-        const avatarEl = document.getElementById('topbar-avatar');
-        const nameEl = document.getElementById('topbar-user-name');
-        const orgNameEl = document.getElementById('sidebar-org-name');
+    populateUI() {
+        const avatarEl = document.getElementById('topbar-avatar');
+        const nameEl = document.getElementById('topbar-user-name');
+        const orgNameEl = document.getElementById('sidebar-org-name');
 
-        if (avatarEl) avatarEl.textContent = this.initials;
-        if (nameEl) nameEl.textContent = this.displayName;
-        if (orgNameEl) orgNameEl.textContent = this.orgName;
-    },
+        if (avatarEl) avatarEl.textContent = this.initials;
+        if (nameEl) nameEl.textContent = this.displayName;
+        if (orgNameEl) orgNameEl.textContent = this.orgName;
+    },
 };
 
 if (typeof window !== 'undefined') {
-    window.Auth = Auth;
+    window.Auth = Auth;
 }
 
 /**
- * DOMContentLoaded Lifecycle Listeners for Signup & Login
- */
+ * DOMContentLoaded Lifecycle Listeners for Signup & Login
+ */
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    document.addEventListener('DOMContentLoaded', () => {
-        // Intercept Form Submissions: #signupForm and #loginForm
-        const signupForm = document.getElementById('signupForm') || document.getElementById('signup-form');
-        const loginForm = document.getElementById('loginForm') || document.getElementById('login-form');
+    document.addEventListener('DOMContentLoaded', () => {
+        // Intercept Form Submissions: #signupForm and #loginForm
+        const signupForm = document.getElementById('signupForm') || document.getElementById('signup-form');
+        const loginForm = document.getElementById('loginForm') || document.getElementById('login-form');
 
-        // ─── Sequential User Signup Transaction ───────────────────────────
-        if (signupForm) {
-            signupForm.addEventListener('submit', async (e) => {
-                e.preventDefault(); // Terminate URL query parameter leak
+        // ─── Sequential User Signup Transaction ───────────────────────────
+        if (signupForm) {
+            signupForm.addEventListener('submit', async (e) => {
+                e.preventDefault(); // Terminate URL query parameter leak
 
-                const firstNameInput = document.getElementById('firstName') || document.getElementById('first-name');
-                const lastNameInput = document.getElementById('lastName') || document.getElementById('last-name');
-                const orgNameInput = document.getElementById('orgName') || document.getElementById('org-name');
-                const emailInput = document.getElementById('email');
-                const phoneInput = document.getElementById('phone');
-                const passwordInput = document.getElementById('password');
-                const confirmPasswordInput = document.getElementById('confirmPassword') || document.getElementById('confirm-password');
+                const firstNameInput = document.getElementById('firstName') || document.getElementById('first-name');
+                const lastNameInput = document.getElementById('lastName') || document.getElementById('last-name');
+                const orgNameInput = document.getElementById('orgName') || document.getElementById('org-name');
+                const emailInput = document.getElementById('email');
+                const phoneInput = document.getElementById('phone');
+                const passwordInput = document.getElementById('password');
+                const confirmPasswordInput = document.getElementById('confirmPassword') || document.getElementById('confirm-password');
 
-                const firstName = firstNameInput?.value?.trim() || '';
-                const lastName = lastNameInput?.value?.trim() || '';
-                const orgName = orgNameInput?.value?.trim() || '';
-                const email = emailInput?.value?.trim() || '';
-                const phone = phoneInput?.value?.trim() || '';
-                const password = passwordInput?.value || '';
-                const confirmPassword = confirmPasswordInput?.value || '';
+                const firstName = firstNameInput?.value?.trim() || '';
+                const lastName = lastNameInput?.value?.trim() || '';
+                const orgName = orgNameInput?.value?.trim() || '';
+                const email = emailInput?.value?.trim() || '';
+                const phone = phoneInput?.value?.trim() || '';
+                const password = passwordInput?.value || '';
+                const confirmPassword = confirmPasswordInput?.value || '';
 
-                if (password !== confirmPassword) {
-                    alert('Password does not match Confirm Password.');
-                    if (confirmPasswordInput) confirmPasswordInput.focus();
-                    return;
-                }
+                if (password !== confirmPassword) {
+                    alert('Password does not match Confirm Password.');
+                    if (confirmPasswordInput) confirmPasswordInput.focus();
+                    return;
+                }
 
-                try {
-                    // Step A: Call supabase.auth.signUp to generate identity profile inside auth.users
-                    const { data: authData, error: authError } = await supabase.auth.signUp({
-                        email,
-                        password,
-                        options: {
-                            data: {
-                                first_name: firstName,
-                                last_name: lastName,
-                                org_name: orgName,
-                                phone: phone
-                            }
-                        }
-                    });
+                try {
+                    // Step A: Call supabaseClient.auth.signUp to generate identity profile inside auth.users
+                    console.log("Attempting sign up with email:", email);
+                    const { data: authData, error: authError } = await supabaseClient.auth.signUp({
+                        email,
+                        password,
+                        options: {
+                            data: {
+                                first_name: firstName,
+                                last_name: lastName,
+                                org_name: orgName,
+                                phone: phone
+                            }
+                        }
+                    });
 
-                    if (authError) throw authError;
+                    console.log("signUp data result:", authData);
+                    if (authError) {
+                        console.error("signUp error result:", authError);
+                        throw authError;
+                    }
 
-                    const user = authData?.user;
-                    if (!user) {
-                        throw new Error('Registration did not return a valid user account token wrapper.');
-                    }
+                    const user = authData?.user;
+                    if (!user) {
+                        throw new Error('Registration did not return a valid user account token wrapper.');
+                    }
 
-                    // Step B: Insert a new multi-tenant organization row into organizations table
-                    const { data: orgRow, error: orgError } = await supabase
-                        .from('organizations')
-                        .insert({
-                            name: orgName,
-                            email: email,
-                            phone: phone,
-                            subscription_plan: 'Trial',
-                            subscription_status: 'Active'
-                        })
-                        .select()
-                        .single();
+                    // Step A.1: Verify if an authenticated session exists before attempting onboarding
+                    console.log("Checking if active session exists after signup...");
+                    const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+                    console.log("getSession data result:", session);
+                    if (sessionError) {
+                        console.error("getSession error result:", sessionError);
+                    }
 
-                    if (orgError) throw orgError;
+                    if (!session) {
+                        // Email confirmation flow: Do NOT execute onboarding yet
+                        console.log("No active session found (email verification required). Stopping onboarding and showing message.");
+                        alert('Account created! Please check your email for a verification link to activate your account.');
+                        window.location.href = "/pages/auth/login.html";
+                        return;
+                    }
 
-                    // Step C: Insert corresponding user record metadata into profiles table
-                    const { error: profileError } = await supabase
-                        .from('profiles')
-                        .insert({
-                            id: user.id,
-                            first_name: firstName,
-                            last_name: lastName,
-                            phone: phone,
-                            organization_id: orgRow.id
-                        });
+                    // Step B: Insert a new multi-tenant organization row into organizations table
+                    console.log("Inserting organization:", orgName, email, phone);
+                    const { data: orgRow, error: orgError } = await supabaseClient
+                        .from('organizations')
+                        .insert({
+                            name: orgName,
+                            email: email,
+                            phone: phone,
+                            subscription_plan: 'Trial',
+                            subscription_status: 'Active'
+                        })
+                        .select()
+                        .single();
 
-                    if (profileError) throw profileError;
+                    console.log("organizations insert data result:", orgRow);
+                    if (orgError) {
+                        console.error("organizations insert error result:", orgError);
+                        throw orgError;
+                    }
 
-                    // Step D: Query predefined roles table to filter and extract target ID row where name = 'Owner'
-                    const { data: roleRow, error: roleError } = await supabase
-                        .from('roles')
-                        .select('id')
-                        .eq('name', 'Owner')
-                        .single();
+                    // Step C: Insert corresponding user record metadata into profiles table
+                    console.log("Inserting profile:", user.id, firstName, lastName, phone, orgRow.id);
+                    const { data: profileData, error: profileError } = await supabaseClient
+                        .from('profiles')
+                        .insert({
+                            id: user.id,
+                            first_name: firstName,
+                            last_name: lastName,
+                            phone: phone,
+                            organization_id: orgRow.id
+                        })
+                        .select();
 
-                    if (roleError) throw roleError;
+                    console.log("profiles insert data result:", profileData);
+                    if (profileError) {
+                        console.error("profiles insert error result:", profileError);
+                        throw profileError;
+                    }
 
-                    // Step E: Link user context by inserting a row into organization_members
-                    const { error: memberError } = await supabase
-                        .from('organization_members')
-                        .insert({
-                            organization_id: orgRow.id,
-                            user_id: user.id,
-                            role_id: roleRow.id,
-                            joined_at: new Date().toISOString()
-                        });
+                    // Step D: Query predefined roles table to filter and extract target ID row where name = 'Owner'
+                    console.log("Looking up 'Owner' role");
+                    const { data: roleRow, error: roleError } = await supabaseClient
+                        .from('roles')
+                        .select('id')
+                        .eq('name', 'Owner')
+                        .single();
 
-                    if (memberError) throw memberError;
+                    console.log("roles select data result:", roleRow);
+                    if (roleError) {
+                        console.error("roles select error result:", roleError);
+                        throw roleError;
+                    }
 
-                    // Transaction Success Handoff
-                    window.location.href = "/index.html";
-                } catch (error) {
-                    console.error('Multi-tenant signup transaction error:', error);
-                    alert('Signup failed: ' + (error.message || error));
-                }
-            });
-        }
+                    // Step E: Link user context by inserting a row into organization_members
+                    console.log("Inserting organization member:", orgRow.id, user.id, roleRow.id);
+                    const { data: memberData, error: memberError } = await supabaseClient
+                        .from('organization_members')
+                        .insert({
+                            organization_id: orgRow.id,
+                            user_id: user.id,
+                            role_id: roleRow.id,
+                            joined_at: new Date().toISOString()
+                        })
+                        .select();
 
-        // ─── User Login Pipeline ──────────────────────────────────────────
-        if (loginForm) {
-            loginForm.addEventListener('submit', async (e) => {
-                e.preventDefault(); // Terminate URL query parameter leak
+                    console.log("organization_members insert data result:", memberData);
+                    if (memberError) {
+                        console.error("organization_members insert error result:", memberError);
+                        throw memberError;
+                    }
 
-                const emailInput = document.getElementById('email');
-                const passwordInput = document.getElementById('password');
+                    console.log("🎉 Onboarding transaction completed successfully.");
+                    // Transaction Success Handoff
+                    window.location.href = "/index.html";
+                } catch (error) {
+                    console.error('Multi-tenant signup transaction error:', error);
+                    alert('Signup failed: ' + (error.message || error));
+                }
+            });
+        }
 
-                const email = emailInput?.value?.trim() || '';
-                const password = passwordInput?.value || '';
+        // ─── User Login Pipeline ──────────────────────────────────────────
+        if (loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault(); // Terminate URL query parameter leak
 
-                try {
-                    const { data, error } = await supabase.auth.signInWithPassword({
-                        email,
-                        password
-                    });
+                const emailInput = document.getElementById('email');
+                const passwordInput = document.getElementById('password');
 
-                    if (error) throw error;
+                const email = emailInput?.value?.trim() || '';
+                const password = passwordInput?.value || '';
 
-                    const user = data?.user;
-                    if (!user) {
-                        throw new Error('Verification failed: No valid user token received.');
-                    }
+                try {
+                    const { data, error } = await supabaseClient.auth.signInWithPassword({
+                        email,
+                        password
+                    });
 
-                    // Assert profile database context loading boundary lines
-                    const { data: profile, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', user.id)
-                        .single();
+                    if (error) throw error;
 
-                    if (profileError) {
-                        console.warn('Profile boundary loading warning:', profileError);
-                    }
+                    const user = data?.user;
+                    if (!user) {
+                        throw new Error('Verification failed: No valid user token received.');
+                    }
 
-                    window.location.href = "/index.html";
-                } catch (error) {
-                    console.error('Login error:', error);
-                    alert('Login verification failed: ' + (error.message || error));
-                }
-            });
-        }
-    });
+                    // Assert profile database context loading boundary lines
+                    const { data: profile, error: profileError } = await supabaseClient
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', user.id)
+                        .single();
+
+                    if (profileError) {
+                        console.warn('Profile boundary loading warning:', profileError);
+                    }
+
+                    window.location.href = "/index.html";
+                } catch (error) {
+                    console.error('Login error:', error);
+                    alert('Login verification failed: ' + (error.message || error));
+                }
+            });
+        }
+    });
 }
 
 // Expose Auth globally

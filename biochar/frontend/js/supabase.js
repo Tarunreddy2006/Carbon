@@ -35,6 +35,7 @@ let supabaseClient = (typeof window !== 'undefined' && window.supabase && window
 
 if (typeof window !== 'undefined' && supabaseClient) {
     window.supabaseClient = supabaseClient;
+    window.supabase = supabaseClient;
 }
 
 /**
