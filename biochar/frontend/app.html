@@ -274,13 +274,82 @@
 
     <!-- 4. Master Application Runtime Initialization Engine -->
     <script>
+        // ── Helper to execute database onboarding ──
+        async function completeLazyOnboarding(sessionUser) {
+            const supabase = window.supabaseClient;
+            if (!supabase) return;
+
+            console.log("🚀 Running post-verification onboarding...");
+            
+            const meta = sessionUser.user_metadata;
+            const orgName = meta?.org_name || 'My Organization';
+            const firstName = meta?.first_name || '';
+            const lastName = meta?.last_name || '';
+            const phone = meta?.phone || '';
+
+            try {
+                // Step B: Insert Organization
+                const { data: org, error: orgError } = await supabase
+                    .from('organizations')
+                    .insert({
+                        name: orgName,
+                        email: sessionUser.email,
+                        phone: phone,
+                        subscription_plan: 'Trial',
+                        subscription_status: 'Active'
+                    })
+                    .select()
+                    .single();
+
+                if (orgError) throw orgError;
+
+                // Step C: Insert Profile
+                const { error: profileError } = await supabase.from('profiles').insert({
+                    id: sessionUser.id,
+                    first_name: firstName,
+                    last_name: lastName,
+                    phone: phone,
+                    organization_id: org.id
+                });
+                if (profileError) throw profileError;
+
+                // Step D: Get Role ID
+                const { data: roleRow, error: roleError } = await supabase
+                    .from('roles')
+                    .select('id')
+                    .eq('name', 'Owner')
+                    .single();
+                if (roleError) throw new Error("Role 'Owner' could not be resolved.");
+
+                // Step E: Insert Membership
+                const { error: memberError } = await supabase.from('organization_members').insert({
+                    organization_id: org.id,
+                    user_id: sessionUser.id,
+                    role_id: roleRow.id
+                });
+                if (memberError) throw memberError;
+
+                console.log("✅ Onboarding successful.");
+                window.location.reload(); // Refresh to load new context
+            } catch (setupErr) {
+                console.error("Onboarding failed:", setupErr);
+            }
+        }
+
         (async function bootstrap() {
             // Initialize appearance themes
             Theme.init();
 
-            // Intercept unauthenticated users before laying routing metrics
+            // Intercept unauthenticated users
             const profile = await Auth.guard();
             if (!profile) return; 
+
+            // 🚀 LAZY ONBOARDING TRIGGER
+            // If Auth.guard() returned a placeholder (due to missing profile), run onboarding
+            if (!profile.organization_id) {
+                await completeLazyOnboarding(Auth.user);
+                return; // Stop and wait for reload
+            }
 
             // Sync verified account layouts
             Auth.populateUI();
@@ -299,7 +368,7 @@
 
             // Fire routing listener
             Router.init('content');
-
+            
             // ── Sidebar Interceptors ─────────────────────────────────
             const sidebar = document.getElementById('sidebar');
             const appShell = document.getElementById('app-shell');

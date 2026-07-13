@@ -912,71 +912,11 @@
                 } else if (data && data.user && data.user.identities && data.user.identities.length === 0) {
                     showToast('An account with this email address already exists.');
                 } else if (data && data.user) { // 🔥 Fix: Check for data.user instead of data.session
-                    showToast('Account created! Setting up your organization...', 'success');
-
-                    try {
-                        // Step B: Insert row into organizations using the correct schema column name
-                        const { data: org, error: orgError } = await supabaseClient
-                            .from('organizations')
-                            .insert({
-                                name: orgName, // Fixed from 'name'
-                                email: email,
-                                phone: phone,
-                                subscription_plan: 'Trial',
-                                subscription_status: 'Active'
-                            })
-                            .select()
-                            .single();
-
-                        if (orgError) throw orgError;
-
-                        if (org) {
-                            // Step C: Insert profile details referencing user.id UUID
-                            const { error: profileError } = await supabaseClient.from('profiles').insert({
-                                id: data.user.id,
-                                first_name: firstName,
-                                last_name: lastName,
-                                phone: phone,
-                                organization_id: org.id
-                            });
-
-                            if (profileError) throw profileError;
-
-                            // Step D: Query predefined roles table to filter out 'Owner'
-                            const { data: roleRow, error: roleError } = await supabaseClient
-                                .from('roles')
-                                .select('id')
-                                .eq('name', 'Owner')
-                                .single();
-
-                            if (roleError) throw new Error("Role 'Owner' could not be resolved.");
-
-                            // Step E: Link user context inside organization_members
-                            const { error: memberError } = await supabaseClient.from('organization_members').insert({
-                                organization_id: org.id,
-                                user_id: data.user.id,
-                                role_id: roleRow.id // Dynamically assigned Owner ID
-                            });
-
-                            if (memberError) throw memberError;
-                        }
-                    } catch (setupErr) {
-                        console.error("Organization onboarding transaction setup failed:", setupErr);
-                        showToast('Account created, but database onboarding failed: ' + setupErr.message);
-                        return false;
-                    }
-
-                    // Step F: Route out to dashboard or verification notification depending on session state
-                    if (data.session) {
-                        showToast('Account setup complete! Redirecting...', 'success');
-                        setTimeout(() => {
-                            window.location.replace('/app.html');
-                        }, 800);
-                    } else {
-                        showToast('Account created! Please check your email to confirm your account.', 'success');
-                        signupForm.reset();
-                        strengthContainer.classList.remove('visible');
-                    }
+                    showToast('Account created!Please check your email for verification', 'success');
+                    signupForm.reset();
+                    strengthContainer.classList.remove('visible');
+                    return False;
+                    
                 }
             } catch (err) {
                 console.error(err);
