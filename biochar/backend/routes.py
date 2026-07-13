@@ -19,9 +19,13 @@ from biochar.backend.models import (
     BatchStatus,
     BiocharBatch,
     BiocharApplication,
+    BiocharSample,
+    LaboratoryTest,
+    LaboratoryResult,
     LaboratoryCertificate,
     ReactorSensorLog,
     PyrolysisRun,
+    Shipment,
     VerificationTier,
 )
 from biochar.backend.validation import (
@@ -123,7 +127,6 @@ def save_evidence_image(file_data: bytes, filename: str) -> str:
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
     with open(file_path, "wb") as f:
         f.write(file_data)
-    # Return absolute URL
     return f"https://biochar.stomata.tech/evidence/sinks/{unique_filename}"
 
 
@@ -147,10 +150,8 @@ async def stream_telemetry(
         )
 
     try:
-        # Extract unique batch IDs to validate afterwards
         unique_batch_ids = list({item.batch_id for item in payload})
 
-        # Verify that batches exist
         existing_batches = {
             str(b.id) for b in db.query(BiocharBatch.id).filter(BiocharBatch.id.in_(unique_batch_ids)).all()
         }
@@ -168,13 +169,11 @@ async def stream_telemetry(
             if not batch or not batch.pyrolysis_run_id:
                 continue
 
-            # Update utility emissions on pyrolysis run directly
             run = db.query(PyrolysisRun).filter(PyrolysisRun.id == batch.pyrolysis_run_id).first()
             if run:
                 run.electricity_kwh = item.electricity_consumption_kwh
                 run.fuel_used_liters = item.fossil_fuel_consumption_liters
 
-            # Insert temperature reading log
             log = ReactorSensorLog(
                 pyrolysis_run_id=batch.pyrolysis_run_id,
                 sensor_name='kiln_temperature',
@@ -186,7 +185,6 @@ async def stream_telemetry(
         db.add_all(db_telemetry_records)
         db.commit()
 
-        # Trigger thermal stability check asynchronously for each unique batch
         for batch_id in unique_batch_ids:
             background_tasks.add_task(validate_thermal_stability, batch_id)
 
@@ -227,31 +225,83 @@ async def submit_lab_assay(
                 detail=f"BiocharBatch with ID {payload.batch_id} does not exist."
             )
 
-        # Insert or overwrite LaboratoryCertificate
-        assay = db.query(LaboratoryCertificate).filter(LaboratoryCertificate.batch_id == payload.batch_id).first()
-        if assay:
-            logger.info("Overwriting existing LaboratoryCertificate for batch %s.", payload.batch_id)
-            assay.organic_carbon_percentage = payload.organic_carbon_percentage
-            assay.molar_hc_ratio = payload.molar_hc_ratio
-            assay.certificate_hash = payload.certificate_hash
-            assay.uploaded_at = datetime.now(timezone.utc)
-        else:
-            logger.info("Inserting new LaboratoryCertificate for batch %s.", payload.batch_id)
-            assay = LaboratoryCertificate(
-                batch_id=payload.batch_id,
-                organic_carbon_percentage=payload.organic_carbon_percentage,
-                molar_hc_ratio=payload.molar_hc_ratio,
-                certificate_hash=payload.certificate_hash,
-                verification_tier=VerificationTier.pending.value
+        # 1. Ensure BiocharSample exists
+        sample = db.query(BiocharSample).filter(BiocharSample.biochar_batch_id == payload.batch_id).first()
+        if not sample:
+            sample = BiocharSample(
+                biochar_batch_id=payload.batch_id,
+                sample_code=f"SMP-{uuid.uuid4().hex[:8].upper()}",
+                sampling_date=datetime.now(timezone.utc).date()
             )
-            db.add(assay)
+            db.add(sample)
+            db.flush()
+
+        # 2. Ensure LaboratoryTest exists
+        test = db.query(LaboratoryTest).filter(LaboratoryTest.sample_id == sample.id).first()
+        if not test:
+            test = LaboratoryTest(
+                sample_id=sample.id,
+                test_date=datetime.now(timezone.utc).date(),
+                status='Completed'
+            )
+            db.add(test)
+            db.flush()
+
+        # 3. Ensure LaboratoryCertificate exists
+        cert = db.query(LaboratoryCertificate).filter(LaboratoryCertificate.laboratory_test_id == test.id).first()
+        if not cert:
+            cert = LaboratoryCertificate(
+                laboratory_test_id=test.id,
+                certificate_number=payload.certificate_hash,
+                certificate_url=f"https://biochar.stomata.tech/evidence/lab/{payload.certificate_hash[:10]}",
+                issue_date=datetime.now(timezone.utc).date()
+            )
+            db.add(cert)
+        else:
+            cert.certificate_number = payload.certificate_hash
+            cert.certificate_url = f"https://biochar.stomata.tech/evidence/lab/{payload.certificate_hash[:10]}"
+            cert.issue_date = datetime.now(timezone.utc).date()
+
+        # 4. Insert or update Results in laboratory_results linked via parameter_id
+        # Organic Carbon parameter_id: '7af73dff-26e6-4c98-abee-251cb4261c62'
+        oc_res = db.query(LaboratoryResult).filter(
+            LaboratoryResult.laboratory_test_id == test.id,
+            LaboratoryResult.parameter_id == '7af73dff-26e6-4c98-abee-251cb4261c62'
+        ).first()
+        if not oc_res:
+            oc_res = LaboratoryResult(
+                laboratory_test_id=test.id,
+                parameter_id='7af73dff-26e6-4c98-abee-251cb4261c62',
+                measured_value=payload.organic_carbon_percentage,
+                pass_=True
+            )
+            db.add(oc_res)
+        else:
+            oc_res.measured_value = payload.organic_carbon_percentage
+
+        # H/C Ratio parameter_id: 'ed868532-af4e-4f76-a13b-aca871694df1'
+        hc_res = db.query(LaboratoryResult).filter(
+            LaboratoryResult.laboratory_test_id == test.id,
+            LaboratoryResult.parameter_id == 'ed868532-af4e-4f76-a13b-aca871694df1'
+        ).first()
+        if not hc_res:
+            hc_res = LaboratoryResult(
+                laboratory_test_id=test.id,
+                parameter_id='ed868532-af4e-4f76-a13b-aca871694df1',
+                measured_value=payload.molar_hc_ratio,
+                pass_=(payload.molar_hc_ratio <= 0.7)
+            )
+            db.add(hc_res)
+        else:
+            hc_res.measured_value = payload.molar_hc_ratio
+            hc_res.pass_ = (payload.molar_hc_ratio <= 0.7)
 
         db.commit()
 
         # Immediately trigger chemical permanence evaluation
         tier = evaluate_chemical_permanence(payload.batch_id, db=db)
 
-        # Refresh objects to get updated statuses
+        # Refresh batch status
         db.refresh(batch)
 
         return LabSubmitResponse(
@@ -282,7 +332,6 @@ async def run_sequestration_calculation(
     saves it to the database, and returns the result.
     """
     try:
-        # Check if the batch exists
         batch = db.query(BiocharBatch).filter(BiocharBatch.id == batch_id).first()
         if not batch:
             raise HTTPException(
@@ -313,11 +362,10 @@ async def get_public_sink_details(
     db: Session = Depends(get_db)
 ) -> PublicSinkDetailsResponse:
     """
-    Public endpoint to fetch non-sensitive shipment information for validation
-    prior to attestation form submission.
+    Public endpoint to fetch shipment information for attestation.
     """
     try:
-        sink_id = verify_attestation_token(token)
+        shipment_id = verify_attestation_token(token)
     except AttestationTokenExpiredError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except AttestationTokenInvalidError as exc:
@@ -325,24 +373,29 @@ async def get_public_sink_details(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Token verification failed: {exc}")
 
-    sink = db.query(BiocharApplication).filter(BiocharApplication.id == sink_id).first()
-    if not sink:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Distribution sink record not found.")
+    shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    if not shipment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment record not found.")
 
-    # Get producer name from batch -> project
     producer_name = "Green Biochar Producer"
-    if sink.biochar_batch and sink.biochar_batch.pyrolysis_run:
-        run = sink.biochar_batch.pyrolysis_run
+    if shipment.biochar_batch and shipment.biochar_batch.pyrolysis_run:
+        run = shipment.biochar_batch.pyrolysis_run
         if run.feedstock_batch and run.feedstock_batch.project:
             producer_name = run.feedstock_batch.project.name
 
+    # Retrieve photo evidence from application details if already submitted
+    photo_url = ""
+    app = db.query(BiocharApplication).filter(BiocharApplication.biochar_batch_id == shipment.biochar_batch_id).first()
+    if app:
+        photo_url = app.remarks or ""
+
     return PublicSinkDetailsResponse(
         producer_name=producer_name,
-        delivery_ticket_id=sink.delivery_ticket_id or "",
-        shipped_mass_tons=sink.shipped_mass_tons or 0.0,
-        already_attested=sink.attestation_timestamp is not None,
-        sink_id=str(sink.id),
-        photo_evidence_url=sink.photo_evidence_url or ""
+        delivery_ticket_id=shipment.shipment_number or "",
+        shipped_mass_tons=float((shipment.shipped_weight_kg or 0.0) / 1000.0),
+        already_attested=shipment.status == 'delivered',
+        sink_id=str(shipment.id),
+        photo_evidence_url=photo_url
     )
 
 
@@ -382,7 +435,7 @@ async def public_attest_delivery(
 
     # 3. Token verification
     try:
-        sink_id = verify_attestation_token(token)
+        shipment_id = verify_attestation_token(token)
     except AttestationTokenExpiredError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except AttestationTokenInvalidError as exc:
@@ -390,18 +443,17 @@ async def public_attest_delivery(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Token verification failed: {exc}")
 
-    # 4. Query BiocharApplication
-    sink = db.query(BiocharApplication).filter(BiocharApplication.id == sink_id).first()
-    if not sink:
-        logger.error("BiocharApplication %s not found for attestation.", sink_id)
+    # 4. Query Shipment
+    shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    if not shipment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Distribution sink record not found."
+            detail="Shipment record not found."
         )
 
     # Duplicate check
-    if sink.attestation_timestamp is not None:
-        logger.warning("Attestation already submitted for sink %s.", sink_id)
+    if shipment.status == 'delivered':
+        logger.warning("Attestation already submitted for shipment %s.", shipment_id)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Attestation has already been submitted for this delivery."
@@ -418,29 +470,50 @@ async def public_attest_delivery(
             detail="Failed to store evidence image."
         )
 
-    # 6. Update BiocharApplication
+    # 6. Update Shipment and BiocharApplication
     try:
-        sink.latitude = latitude
-        sink.longitude = longitude
-        sink.photo_evidence_url = photo_url
-        sink.attestation_timestamp = datetime.now(timezone.utc)
+        shipment.status = 'delivered'
+        
+        # Save application details in biochar_applications
+        app = db.query(BiocharApplication).filter(BiocharApplication.biochar_batch_id == shipment.biochar_batch_id).first()
+        if not app:
+            app = BiocharApplication(
+                biochar_batch_id=shipment.biochar_batch_id,
+                latitude=latitude,
+                longitude=longitude,
+                application_site=shipment.shipment_number,
+                remarks=photo_url,
+                applied_by=shipment.destination or "Farmer",
+                application_date=datetime.now(timezone.utc).date(),
+                application_rate_kg_ha=1500.0,
+                area_hectares=2.0
+            )
+            db.add(app)
+        else:
+            app.latitude = latitude
+            app.longitude = longitude
+            app.remarks = photo_url
+            app.application_site = shipment.shipment_number
+            app.applied_by = shipment.destination or "Farmer"
+            app.application_date = datetime.now(timezone.utc).date()
+
         db.commit()
-        logger.info("Successfully updated BiocharApplication %s.", sink_id)
+        logger.info("Successfully updated Shipment %s and BiocharApplication.", shipment_id)
     except Exception as exc:
         db.rollback()
-        logger.error("Failed to update BiocharApplication %s: %s", sink_id, exc, exc_info=True)
+        logger.error("Failed to attest shipment %s: %s", shipment_id, exc, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update database record."
         )
 
     # 7. Check batch delivery completion in background
-    if sink.biochar_batch_id:
-        background_tasks.add_task(check_batch_delivery_completion, str(sink.biochar_batch_id))
+    if shipment.biochar_batch_id:
+        background_tasks.add_task(check_batch_delivery_completion, str(shipment.biochar_batch_id))
 
     return PublicAttestResponse(
         message="Attestation successfully submitted and verified.",
-        sink_id=str(sink_id),
+        sink_id=str(shipment_id),
         photo_evidence_url=photo_url
     )
 

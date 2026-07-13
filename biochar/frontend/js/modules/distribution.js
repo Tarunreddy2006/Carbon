@@ -11,7 +11,7 @@ const DistributionModule = {
         container.innerHTML = `
             <div class="page-header animate-fade-in">
                 <div class="page-header-left">
-                    <h1 class="page-title">Distribution Sinks</h1>
+                    <h1 class="page-title">Distribution & Shipments</h1>
                     <p class="page-subtitle">Manage deliveries of certified biochar to end-users (farmers) to verify carbon application and sequestration.</p>
                 </div>
                 <div class="page-header-actions">
@@ -38,55 +38,86 @@ const DistributionModule = {
 
     async loadDeliveries() {
         try {
-            const { data, error } = await supabase
-                .from('biochar_applications')
+            // Query shipments
+            const { data: shipments, error: shipErr } = await supabase
+                .from('shipments')
                 .select('*, biochar_batches(batch_code)')
-                .order('attestation_timestamp', { ascending: false });
+                .order('shipment_number', { ascending: false });
 
-            if (error) throw error;
+            if (shipErr) throw shipErr;
+
+            // Query applications to map coordinates
+            const { data: apps, error: appErr } = await supabase
+                .from('biochar_applications')
+                .select('*');
+
+            if (appErr) throw appErr;
+
+            const appMap = {};
+            apps.forEach(a => {
+                if (a.biochar_batch_id) {
+                    appMap[a.biochar_batch_id] = a;
+                }
+            });
+
+            const mappedData = shipments.map(s => {
+                const app = appMap[s.biochar_batch_id] || {};
+                return {
+                    id: s.id,
+                    shipment_number: s.shipment_number || '—',
+                    batch_code: s.biochar_batches?.batch_code || '—',
+                    destination: s.destination || '—',
+                    shipped_weight_kg: s.shipped_weight_kg || 0,
+                    latitude: app.latitude,
+                    longitude: app.longitude,
+                    status: s.status || 'pending',
+                    biochar_batch_id: s.biochar_batch_id
+                };
+            });
 
             const container = document.getElementById('distribution-table-container');
             if (!container) return;
 
             this._table = DataTable.render(container, {
                 columns: [
-                    { key: 'delivery_ticket_id', label: 'Ticket ID', sortable: true, render: (val) => `<strong>#${Utils.escapeHtml(val)}</strong>` },
+                    { key: 'shipment_number', label: 'Shipment ID', sortable: true, render: (val) => `<strong>#${Utils.escapeHtml(val)}</strong>` },
                     { 
-                        key: 'biochar_batches', 
+                        key: 'batch_code', 
                         label: 'Associated Batch', 
                         sortable: true, 
-                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_code)}` : '—' 
+                        render: (val) => `Lot #${Utils.escapeHtml(val)}` 
                     },
-                    { key: 'farmer_id', label: 'Farmer / End User ID', sortable: true },
-                    { key: 'shipped_mass_tons', label: 'Shipped Mass (t)', sortable: true, render: (val) => Utils.formatTons(val) },
+                    { key: 'destination', label: 'Farmer / Destination', sortable: true },
+                    { key: 'shipped_weight_kg', label: 'Shipped Mass (t)', sortable: true, render: (val) => Utils.formatTons((val || 0) / 1000.0) },
                     { 
                         key: 'latitude', 
-                        label: 'Sink Location', 
+                        label: 'GPS Location', 
                         sortable: false, 
                         render: (val, row) => row.latitude 
                             ? `<a href="https://maps.google.com/?q=${row.latitude},${row.longitude}" target="_blank" class="text-accent">${Number(row.latitude).toFixed(5)}, ${Number(row.longitude).toFixed(5)} ↗</a>` 
                             : '<span class="text-muted">Ungeotagged</span>'
                     },
                     { 
-                        key: 'attestation_timestamp', 
-                        label: 'Attestation Time', 
+                        key: 'status', 
+                        label: 'Status', 
                         sortable: true, 
-                        render: (val) => val ? Utils.formatDateTime(val) : '<span class="badge badge-warning">Pending Sign-off</span>' 
+                        render: (val) => {
+                            let badgeClass = 'badge-warning';
+                            if (val === 'delivered') badgeClass = 'badge-success';
+                            if (val === 'shipped') badgeClass = 'badge-primary';
+                            return `<span class="badge ${badgeClass}"><span class="badge-dot"></span>${Utils.capitalize(val)}</span>`;
+                        }
                     },
                 ],
-                data: data,
-                emptyTitle: 'No distribution tickets logged',
+                data: mappedData,
+                emptyTitle: 'No shipments logged',
                 emptyText: 'Record farmer shipments to lock coordinates, collect photos, and attest final biochar application.',
-                exportFilename: 'distribution_delivery_tickets.csv',
+                exportFilename: 'shipments_export.csv',
                 actions: (row) => `
                     <div class="action-menu">
                         <button class="action-menu-btn" onclick="DistributionModule.toggleMenu(event, '${row.id}')">•••</button>
                         <div class="action-menu-dropdown" id="dropdown-${row.id}">
-                            <button class="action-menu-item" onclick="DistributionModule.openDeliveryModal('${row.id}')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                Edit Ticket
-                            </button>
-                            <button class="action-menu-item danger" onclick="DistributionModule.deleteDelivery('${row.id}', '${Utils.escapeHtml(row.delivery_ticket_id)}')">
+                            <button class="action-menu-item danger" onclick="DistributionModule.deleteDelivery('${row.id}', '${row.biochar_batch_id}')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                 Delete
                             </button>
@@ -96,7 +127,7 @@ const DistributionModule = {
             });
         } catch (err) {
             console.error(err);
-            Toast.error('Failed to load delivery logs: ' + err.message);
+            Toast.error('Failed to load shipments: ' + err.message);
         }
     },
 
@@ -116,10 +147,10 @@ const DistributionModule = {
         }
     },
 
-    async openDeliveryModal(deliveryId = null) {
+    async openDeliveryModal() {
         let title = 'Log Distribution Ticket';
         let batchIdValue = '';
-        let ticketId = '';
+        let ticketId = `TKT-${Math.floor(100000 + Math.random() * 900000)}`;
         let farmerId = '';
         let mass = '';
         let lat = '';
@@ -132,26 +163,6 @@ const DistributionModule = {
                 .order('batch_code', { ascending: true });
 
             if (batchesErr) throw batchesErr;
-
-            if (deliveryId) {
-                title = 'Edit Distribution Ticket';
-                const { data, error } = await supabase
-                    .from('biochar_applications')
-                    .select('*')
-                    .eq('id', deliveryId)
-                    .single();
-
-                if (error) throw error;
-
-                batchIdValue = data.biochar_batch_id;
-                ticketId = data.delivery_ticket_id;
-                farmerId = data.farmer_id;
-                mass = data.shipped_mass_tons;
-                lat = data.latitude || '';
-                lng = data.longitude || '';
-            } else {
-                ticketId = `TKT-${Math.floor(100000 + Math.random() * 900000)}`;
-            }
 
             let batchOptions = '<option value="">-- Select Batch --</option>';
             batches.forEach(b => {
@@ -225,47 +236,49 @@ const DistributionModule = {
                 const rawLat = document.getElementById('delivery-lat').value;
                 const rawLng = document.getElementById('delivery-lng').value;
 
-                const payload = {
-                    biochar_batch_id,
-                    delivery_ticket_id,
-                    farmer_id,
-                    shipped_mass_tons,
-                    latitude: rawLat ? parseFloat(rawLat) : null,
-                    longitude: rawLng ? parseFloat(rawLng) : null,
-                    attestation_timestamp: new Date().toISOString(),
-                    application_rate_kg_ha: 1500, // Default constants to avoid nullable issues
-                    area_hectares: 2.0,
-                    application_date: new Date().toISOString().split('T')[0]
-                };
-
                 try {
-                    let error;
-                    if (deliveryId) {
-                        const { error: err } = await supabase
-                            .from('biochar_applications')
-                            .update(payload)
-                            .eq('id', deliveryId);
-                        error = err;
-                    } else {
-                        const { error: err } = await supabase
-                            .from('biochar_applications')
-                            .insert(payload);
-                        error = err;
-                    }
+                    // 1. Insert into shipments table mapping shipment_number, shipped_weight_kg, status
+                    const { error: shipError } = await supabase
+                        .from('shipments')
+                        .insert({
+                            biochar_batch_id,
+                            shipment_number: delivery_ticket_id,
+                            shipped_weight_kg: shipped_mass_tons * 1000.0,
+                            destination: farmer_id,
+                            status: 'delivered',
+                            shipped_date: new Date().toISOString().split('T')[0]
+                        });
 
-                    if (error) throw error;
+                    if (shipError) throw shipError;
 
+                    // 2. Insert into biochar_applications table with application_site, latitude, longitude
+                    const { error: appError } = await supabase
+                        .from('biochar_applications')
+                        .insert({
+                            biochar_batch_id,
+                            application_site: delivery_ticket_id,
+                            latitude: rawLat ? parseFloat(rawLat) : null,
+                            longitude: rawLng ? parseFloat(rawLng) : null,
+                            application_rate_kg_ha: 1500,
+                            area_hectares: 2.0,
+                            application_date: new Date().toISOString().split('T')[0],
+                            applied_by: farmer_id
+                        });
+
+                    if (appError) throw appError;
+
+                    // Automatically update batch status to completed
                     await supabase
                         .from('biochar_batches')
                         .update({ status: 'completed' })
                         .eq('id', biochar_batch_id);
 
-                    Toast.success('Distribution delivery ticket logged successfully');
+                    Toast.success('Shipment and attestation logged successfully');
                     Modal.close();
                     await this.loadDeliveries();
                 } catch (err) {
                     console.error(err);
-                    Toast.error('Failed to log distribution ticket: ' + err.message);
+                    Toast.error('Failed to log shipment: ' + err.message);
                 } finally {
                     saveBtn.classList.remove('loading');
                     saveBtn.disabled = false;
@@ -277,28 +290,37 @@ const DistributionModule = {
         }
     },
 
-    async deleteDelivery(id, ticketId) {
+    async deleteDelivery(shipmentId, batchId) {
         const confirmed = await Modal.confirm(
-            'Delete Distribution Ticket',
-            `Are you sure you want to delete delivery ticket #${ticketId}? This will remove the recorded sink application coordinate trails.`,
-            { confirmText: 'Delete Ticket', danger: true }
+            'Delete Shipment Record',
+            'Are you sure you want to delete this shipment? This will remove the attestation coordinates and delivery details.',
+            { confirmText: 'Delete Shipment', danger: true }
         );
 
         if (!confirmed) return;
 
         try {
-            const { error } = await supabase
-                .from('biochar_applications')
+            // Delete shipment from shipments
+            const { error: shipErr } = await supabase
+                .from('shipments')
                 .delete()
-                .eq('id', id);
+                .eq('id', shipmentId);
 
-            if (error) throw error;
+            if (shipErr) throw shipErr;
 
-            Toast.success('Distribution ticket deleted successfully');
+            // Delete associated application for the batch
+            if (batchId) {
+                await supabase
+                    .from('biochar_applications')
+                    .delete()
+                    .eq('biochar_batch_id', batchId);
+            }
+
+            Toast.success('Shipment deleted successfully');
             await this.loadDeliveries();
         } catch (err) {
             console.error(err);
-            Toast.error('Failed to delete ticket: ' + err.message);
+            Toast.error('Failed to delete shipment: ' + err.message);
         }
     }
 };

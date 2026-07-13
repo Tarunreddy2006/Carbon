@@ -38,9 +38,10 @@ const BatchesModule = {
 
     async loadBatches() {
         try {
+            // Query specific columns of biochar_batches to explicitly exclude net_sequestration_tco2e
             const { data, error } = await supabase
                 .from('biochar_batches')
-                .select('*, pyrolysis_runs(run_number, feedstock_batches(projects(name)))')
+                .select('id, pyrolysis_run_id, batch_code, weight_kg, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(projects(name)))')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -81,7 +82,6 @@ const BatchesModule = {
                             return `<span class="badge ${badgeClass}"><span class="badge-dot"></span>${Utils.formatEnum(val)}</span>`;
                         } 
                     },
-                    { key: 'net_sequestration_tco2e', label: 'Carbon Removal (tCO2e)', sortable: true, render: (val) => Utils.formatCO2(val) },
                     { key: 'created_at', label: 'Created At', sortable: true, render: (val) => Utils.formatDateTime(val) },
                 ],
                 data: data,
@@ -133,7 +133,6 @@ const BatchesModule = {
         let weightValue = '1000';
         let storageValue = 'Warehouse-1';
         let statusValue = 'sourcing_purgatory';
-        let carbonValue = '0.0';
 
         try {
             // Load pyrolysis runs dropdown
@@ -148,7 +147,7 @@ const BatchesModule = {
                 title = 'Edit Production Batch';
                 const { data, error } = await supabase
                     .from('biochar_batches')
-                    .select('*')
+                    .select('id, pyrolysis_run_id, batch_code, weight_kg, storage_location, status')
                     .eq('id', batchId)
                     .single();
 
@@ -159,7 +158,6 @@ const BatchesModule = {
                 weightValue = data.weight_kg;
                 storageValue = data.storage_location || 'Warehouse-1';
                 statusValue = data.status;
-                carbonValue = data.net_sequestration_tco2e;
             } else {
                 const now = new Date();
                 const d = now.toISOString().slice(0,10).replace(/-/g,'');
@@ -209,10 +207,6 @@ const BatchesModule = {
                                 <option value="ineligible" ${statusValue === 'ineligible' ? 'selected' : ''}>Ineligible</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label" for="batch-carbon">Calculated Sequestration (tCO2e)</label>
-                            <input type="text" class="form-input" id="batch-carbon" name="net_sequestration_tco2e" value="${carbonValue}" data-validate="number" data-label="Net Sequestration" placeholder="e.g. 0.0" />
-                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
@@ -241,8 +235,7 @@ const BatchesModule = {
                     pyrolysis_run_id: document.getElementById('batch-run-id').value,
                     weight_kg: parseFloat(document.getElementById('batch-weight').value || 0),
                     storage_location: document.getElementById('batch-storage').value.trim(),
-                    status: document.getElementById('batch-status').value,
-                    net_sequestration_tco2e: parseFloat(document.getElementById('batch-carbon').value || 0)
+                    status: document.getElementById('batch-status').value
                 };
 
                 try {

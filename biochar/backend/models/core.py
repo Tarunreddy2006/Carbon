@@ -212,12 +212,12 @@ class BiocharBatch(Base):
     weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     storage_location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(50), server_default=text("'In Storage'"), nullable=False)
-    net_sequestration_tco2e: Mapped[float] = mapped_column(Float, server_default=text("0.0"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
 
     pyrolysis_run: Mapped["PyrolysisRun"] = relationship(back_populates="biochar_batches")
     applications: Mapped[list["BiocharApplication"]] = relationship(back_populates="biochar_batch")
-    certificates: Mapped[list["LaboratoryCertificate"]] = relationship(back_populates="biochar_batch")
+    shipments: Mapped[list["Shipment"]] = relationship(back_populates="biochar_batch")
+    samples: Mapped[list["BiocharSample"]] = relationship(back_populates="biochar_batch")
 
 
 class ReactorSensorLog(Base):
@@ -237,8 +237,78 @@ class ReactorSensorLog(Base):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Laboratory & Compliance
+# Laboratory & Quality Check Systems
 # ──────────────────────────────────────────────────────────────────────────────
+
+class BiocharSample(Base):
+    __tablename__ = "biochar_samples"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    biochar_batch_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("biochar_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    sample_code: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    collection_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    sampling_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    biochar_batch: Mapped["BiocharBatch"] = relationship(back_populates="samples")
+    tests: Mapped[list["LaboratoryTest"]] = relationship(back_populates="sample")
+
+
+class LaboratoryTest(Base):
+    __tablename__ = "laboratory_tests"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    sample_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("biochar_samples.id", ondelete="CASCADE"), nullable=False
+    )
+    laboratory_id: Mapped[Optional[uuid.UUID]] = mapped_column(pgUUID(as_uuid=True), nullable=True)
+    test_reference: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    received_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    completed_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    analyst_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    sample: Mapped["BiocharSample"] = relationship(back_populates="tests")
+    certificates: Mapped[list["LaboratoryCertificate"]] = relationship(back_populates="laboratory_test")
+    results: Mapped[list["LaboratoryResult"]] = relationship(back_populates="laboratory_test")
+
+
+class LaboratoryParameter(Base):
+    __tablename__ = "laboratory_parameters"
+
+    id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True)
+    parameter_name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    unit: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    min_limit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_limit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+
+class LaboratoryResult(Base):
+    __tablename__ = "laboratory_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    laboratory_test_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("laboratory_tests.id", ondelete="CASCADE"), nullable=False
+    )
+    parameter_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("laboratory_parameters.id", ondelete="CASCADE"), nullable=False
+    )
+    measured_value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pass_: Mapped[bool] = mapped_column("pass", Boolean, server_default=text("true"), nullable=False)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    laboratory_test: Mapped["LaboratoryTest"] = relationship(back_populates="results")
+    parameter: Mapped["LaboratoryParameter"] = relationship()
+
 
 class LaboratoryCertificate(Base):
     __tablename__ = "laboratory_certificates"
@@ -246,27 +316,40 @@ class LaboratoryCertificate(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    laboratory_test_id: Mapped[Optional[uuid.UUID]] = mapped_column(pgUUID(as_uuid=True), nullable=True)
+    laboratory_test_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("laboratory_tests.id", ondelete="CASCADE"), nullable=True
+    )
     certificate_number: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     certificate_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     issue_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     expiry_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    
-    batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+
+    laboratory_test: Mapped[Optional["LaboratoryTest"]] = relationship(back_populates="certificates")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Shipments & Applications
+# ──────────────────────────────────────────────────────────────────────────────
+
+class Shipment(Base):
+    __tablename__ = "shipments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    biochar_batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         pgUUID(as_uuid=True), ForeignKey("biochar_batches.id", ondelete="CASCADE"), nullable=True
     )
-    organic_carbon_percentage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    molar_hc_ratio: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    verification_tier: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    certificate_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    uploaded_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
+    shipment_number: Mapped[Optional[str]] = mapped_column(String(128), unique=True, nullable=True)
+    destination: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    transport_company: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vehicle_number: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    shipped_weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    shipped_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
-    biochar_batch: Mapped[Optional["BiocharBatch"]] = relationship(back_populates="certificates")
+    biochar_batch: Mapped[Optional["BiocharBatch"]] = relationship(back_populates="shipments")
 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Downstream Application / Sink Attestation
-# ──────────────────────────────────────────────────────────────────────────────
 
 class BiocharApplication(Base):
     __tablename__ = "biochar_applications"
@@ -285,12 +368,6 @@ class BiocharApplication(Base):
     application_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     applied_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-
-    delivery_ticket_id: Mapped[Optional[str]] = mapped_column(String(128), unique=True, nullable=True)
-    farmer_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    shipped_mass_tons: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    photo_evidence_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
-    attestation_timestamp: Mapped[Optional[datetime]] = mapped_column(nullable=True)
 
     biochar_batch: Mapped[Optional["BiocharBatch"]] = relationship(back_populates="applications")
 
@@ -368,33 +445,10 @@ class InventoryMovement(Base):
     __tablename__ = "inventory_movements"
     id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
 
-class Shipment(Base):
-    __tablename__ = "shipments"
-    id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-
 class Laboratory(Base):
     __tablename__ = "laboratories"
     id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     organization_id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True))
-
-class BiocharSample(Base):
-    __tablename__ = "biochar_samples"
-    id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    biochar_batch_id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True))
-    sample_code: Mapped[str] = mapped_column(String(128))
-
-class LaboratoryTest(Base):
-    __tablename__ = "laboratory_tests"
-    id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    sample_id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True))
-
-class LaboratoryParameter(Base):
-    __tablename__ = "laboratory_parameters"
-    id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-
-class LaboratoryResult(Base):
-    __tablename__ = "laboratory_results"
-    id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
 
 class LaboratoryApproval(Base):
     __tablename__ = "laboratory_approvals"

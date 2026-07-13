@@ -38,12 +38,62 @@ const LaboratoryModule = {
 
     async loadAssays() {
         try {
-            const { data, error } = await supabase
+            // Fetch certificates and join through tests, samples, and batches
+            const { data: certs, error: certErr } = await supabase
                 .from('laboratory_certificates')
-                .select('*, biochar_batches(batch_code)')
-                .order('uploaded_at', { ascending: false });
+                .select('*, laboratory_tests(*, biochar_samples(*, biochar_batches(id, batch_code)))')
+                .order('issue_date', { ascending: false });
 
-            if (error) throw error;
+            if (certErr) throw certErr;
+
+            // Fetch all results to map parameters
+            const { data: results, error: resErr } = await supabase
+                .from('laboratory_results')
+                .select('*');
+
+            if (resErr) throw resErr;
+
+            // Map results by test ID
+            const resultsMap = {};
+            results.forEach(r => {
+                if (!resultsMap[r.laboratory_test_id]) {
+                    resultsMap[r.laboratory_test_id] = {};
+                }
+                // Predefined Parameter UUIDs:
+                // '7af73dff-26e6-4c98-abee-251cb4261c62' -> Organic Carbon
+                // 'ed868532-af4e-4f76-a13b-aca871694df1' -> H/C Ratio
+                if (r.parameter_id === '7af73dff-26e6-4c98-abee-251cb4261c62') {
+                    resultsMap[r.laboratory_test_id].carbon = r.measured_value;
+                } else if (r.parameter_id === 'ed868532-af4e-4f76-a13b-aca871694df1') {
+                    resultsMap[r.laboratory_test_id].hc = r.measured_value;
+                }
+            });
+
+            const mappedData = certs.map(c => {
+                const test = c.laboratory_tests;
+                const sample = test?.biochar_samples;
+                const batch = sample?.biochar_batches;
+                const res = resultsMap[c.laboratory_test_id] || {};
+                
+                // Auto-calculate verification tier
+                let verification_tier = 'standard_200yr';
+                if (res.hc <= 0.4) {
+                    verification_tier = 'high_permanence_1000yr';
+                } else if (res.hc > 0.7) {
+                    verification_tier = 'pending';
+                }
+                
+                return {
+                    id: c.id,
+                    test_id: c.laboratory_test_id,
+                    batch_code: batch?.batch_code || '—',
+                    organic_carbon_percentage: res.carbon || 0,
+                    molar_hc_ratio: res.hc || 0,
+                    verification_tier: verification_tier,
+                    certificate_hash: c.certificate_number || '—',
+                    uploaded_at: c.issue_date || test?.test_date || '—',
+                };
+            });
 
             const container = document.getElementById('assays-table-container');
             if (!container) return;
@@ -51,10 +101,10 @@ const LaboratoryModule = {
             this._table = DataTable.render(container, {
                 columns: [
                     { 
-                        key: 'biochar_batches', 
+                        key: 'batch_code', 
                         label: 'Associated Batch', 
                         sortable: true, 
-                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_code)}` : '—' 
+                        render: (val) => `Lot #${Utils.escapeHtml(val)}` 
                     },
                     { key: 'organic_carbon_percentage', label: 'Organic Carbon (%)', sortable: true, render: (val) => `${Utils.formatNumber(val, 2)}%` },
                     { key: 'molar_hc_ratio', label: 'Molar H:C Ratio', sortable: true, render: (val) => Utils.formatNumber(val, 3) },
@@ -74,7 +124,7 @@ const LaboratoryModule = {
                     { key: 'certificate_hash', label: 'Certificate SHA-256', sortable: false, render: (val) => val ? `<code style="font-size: 11px;">${val.slice(0, 10)}...</code>` : '—' },
                     { key: 'uploaded_at', label: 'Uploaded At', sortable: true, render: (val) => Utils.formatDateTime(val) },
                 ],
-                data: data,
+                data: mappedData,
                 emptyTitle: 'No lab certificates logged',
                 emptyText: 'Upload certified laboratory testing logs to calculate and unlock carbon credits.',
                 exportFilename: 'laboratory_assays.csv',
@@ -82,11 +132,7 @@ const LaboratoryModule = {
                     <div class="action-menu">
                         <button class="action-menu-btn" onclick="LaboratoryModule.toggleMenu(event, '${row.id}')">•••</button>
                         <div class="action-menu-dropdown" id="dropdown-${row.id}">
-                            <button class="action-menu-item" onclick="LaboratoryModule.openAssayModal('${row.id}')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                Edit Assay
-                            </button>
-                            <button class="action-menu-item danger" onclick="LaboratoryModule.deleteAssay('${row.id}')">
+                            <button class="action-menu-item danger" onclick="LaboratoryModule.deleteAssay('${row.test_id}')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                 Delete
                             </button>
@@ -116,7 +162,7 @@ const LaboratoryModule = {
         }
     },
 
-    async openAssayModal(assayId = null) {
+    async openAssayModal() {
         let title = 'Upload Laboratory Assay';
         let batchIdValue = '';
         let carbonPercent = '';
@@ -131,26 +177,9 @@ const LaboratoryModule = {
 
             if (batchesErr) throw batchesErr;
 
-            if (assayId) {
-                title = 'Edit Laboratory Assay';
-                const { data, error } = await supabase
-                    .from('laboratory_certificates')
-                    .select('*')
-                    .eq('id', assayId)
-                    .single();
-
-                if (error) throw error;
-
-                batchIdValue = data.batch_id;
-                carbonPercent = data.organic_carbon_percentage;
-                hcRatio = data.molar_hc_ratio;
-                certHash = data.certificate_hash;
-            }
-
             let batchOptions = '<option value="">-- Select Batch Lot --</option>';
             batches.forEach(b => {
-                const selected = b.id === batchIdValue ? 'selected' : '';
-                batchOptions += `<option value="${b.id}" ${selected}>Lot #${Utils.escapeHtml(b.batch_code)}</option>`;
+                batchOptions += `<option value="${b.id}">Lot #${Utils.escapeHtml(b.batch_code)}</option>`;
             });
 
             const html = `
@@ -168,16 +197,16 @@ const LaboratoryModule = {
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label" for="assay-carbon">Organic Carbon % <span class="required">*</span></label>
-                                <input type="text" class="form-input" id="assay-carbon" name="organic_carbon_percentage" value="${carbonPercent}" placeholder="e.g. 78.5" data-validate="required|number" data-label="Organic Carbon" />
+                                <input type="text" class="form-input" id="assay-carbon" name="organic_carbon_percentage" placeholder="e.g. 78.5" data-validate="required|number" data-label="Organic Carbon" />
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="assay-hc">Molar H:C Ratio <span class="required">*</span></label>
-                                <input type="text" class="form-input" id="assay-hc" name="molar_hc_ratio" value="${hcRatio}" placeholder="e.g. 0.35" data-validate="required|number" data-label="H:C Ratio" />
+                                <input type="text" class="form-input" id="assay-hc" name="molar_hc_ratio" placeholder="e.g. 0.35" data-validate="required|number" data-label="H:C Ratio" />
                             </div>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="assay-hash">Certificate Cryptographic Hash (SHA-256) <span class="required">*</span></label>
-                            <input type="text" class="form-input" id="assay-hash" name="certificate_hash" value="${certHash}" placeholder="Paste SHA-256 certificate digest" data-validate="required|min:64|max:64" data-label="Certificate Hash" />
+                            <input type="text" class="form-input" id="assay-hash" name="certificate_hash" placeholder="Paste SHA-256 certificate digest" data-validate="required|min:64|max:64" data-label="Certificate Hash" />
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -207,48 +236,74 @@ const LaboratoryModule = {
                 const molar_hc_ratio = parseFloat(document.getElementById('assay-hc').value);
                 const certificate_hash = document.getElementById('assay-hash').value.trim();
 
-                let verification_tier = 'standard_200yr';
-                if (molar_hc_ratio <= 0.4) {
-                    verification_tier = 'high_permanence_1000yr';
-                } else if (molar_hc_ratio > 0.7) {
-                    verification_tier = 'pending';
-                }
-
-                const payload = {
-                    batch_id,
-                    organic_carbon_percentage,
-                    molar_hc_ratio,
-                    verification_tier,
-                    certificate_hash,
-                    uploaded_at: new Date().toISOString()
-                };
-
                 try {
-                    let error;
-                    if (assayId) {
-                        const { error: err } = await supabase
-                            .from('laboratory_certificates')
-                            .update(payload)
-                            .eq('id', assayId);
-                        error = err;
-                    } else {
-                        const { data: existing } = await supabase
-                            .from('laboratory_certificates')
-                            .select('id')
-                            .eq('batch_id', batch_id);
-                        
-                        if (existing && existing.length > 0) {
-                            throw new Error('An assay certificate has already been uploaded for this production batch.');
-                        }
+                    const now = new Date().toISOString().split('T')[0];
 
-                        const { error: err } = await supabase
-                            .from('laboratory_certificates')
-                            .insert(payload);
-                        error = err;
-                    }
+                    // 1. Insert a sample in biochar_samples
+                    const { data: sampleData, error: sampleError } = await supabase
+                        .from('biochar_samples')
+                        .insert({
+                            biochar_batch_id: batch_id,
+                            sample_code: `SMP-${Math.floor(100000 + Math.random() * 900000)}`,
+                            sampling_date: now
+                        })
+                        .select()
+                        .single();
 
-                    if (error) throw error;
+                    if (sampleError) throw sampleError;
 
+                    // 2. Insert a test in laboratory_tests
+                    const { data: testData, error: testError } = await supabase
+                        .from('laboratory_tests')
+                        .insert({
+                            sample_id: sampleData.id,
+                            test_date: now,
+                            status: 'Completed'
+                        })
+                        .select()
+                        .single();
+
+                    if (testError) throw testError;
+
+                    // 3. Insert a certificate in laboratory_certificates (strictly matches SQL structure)
+                    const { error: certError } = await supabase
+                        .from('laboratory_certificates')
+                        .insert({
+                            laboratory_test_id: testData.id,
+                            certificate_number: certificate_hash,
+                            certificate_url: 'https://biochar.stomata.tech/evidence/lab/' + certificate_hash.slice(0, 10),
+                            issue_date: now,
+                            expiry_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0]
+                        });
+
+                    if (certError) throw certError;
+
+                    // 4. Insert results into laboratory_results linked via parameter_id
+                    // Organic Carbon parameter_id: '7af73dff-26e6-4c98-abee-251cb4261c62'
+                    const { error: resError1 } = await supabase
+                        .from('laboratory_results')
+                        .insert({
+                            laboratory_test_id: testData.id,
+                            parameter_id: '7af73dff-26e6-4c98-abee-251cb4261c62',
+                            measured_value: organic_carbon_percentage,
+                            pass: true
+                        });
+
+                    if (resError1) throw resError1;
+
+                    // H/C Ratio parameter_id: 'ed868532-af4e-4f76-a13b-aca871694df1'
+                    const { error: resError2 } = await supabase
+                        .from('laboratory_results')
+                        .insert({
+                            laboratory_test_id: testData.id,
+                            parameter_id: 'ed868532-af4e-4f76-a13b-aca871694df1',
+                            measured_value: molar_hc_ratio,
+                            pass: molar_hc_ratio <= 0.7
+                        });
+
+                    if (resError2) throw resError2;
+
+                    // Update associated batch status to 'lab_certified'
                     await supabase
                         .from('biochar_batches')
                         .update({ status: 'lab_certified' })
@@ -271,7 +326,7 @@ const LaboratoryModule = {
         }
     },
 
-    async deleteAssay(id) {
+    async deleteAssay(testId) {
         const confirmed = await Modal.confirm(
             'Delete Assay Record',
             'Are you sure you want to delete this lab certificate log? This will remove the permanence verification tier rating.',
@@ -281,10 +336,11 @@ const LaboratoryModule = {
         if (!confirmed) return;
 
         try {
+            // Deleting the laboratory_tests row will cascade delete certificates and results
             const { error } = await supabase
-                .from('laboratory_certificates')
+                .from('laboratory_tests')
                 .delete()
-                .eq('id', id);
+                .eq('id', testId);
 
             if (error) throw error;
 
