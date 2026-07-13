@@ -903,7 +903,7 @@
                             phone: phone,
                             org_name: orgName,
                         },
-                        emailRedirectTo: window.location.origin + '/pages/auth/login.html',
+                        emailRedirectTo: 'https://biochar.stomata.tech/pages/auth/login.html',
                     }
                 });
 
@@ -994,7 +994,7 @@
             if (!supabaseClient) return showToast('Supabase SDK not loaded.');
             const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
-                options: { redirectTo: window.location.origin + '/app.html' }
+                options: { redirectTo: 'https://biochar.stomata.tech/pages/auth/login.html' }
             });
             if (error) showToast(error.message);
         });
@@ -1003,7 +1003,7 @@
             if (!supabaseClient) return showToast('Supabase SDK not loaded.');
             const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'github',
-                options: { redirectTo: window.location.origin + '/app.html' }
+                options: { redirectTo: 'https://biochar.stomata.tech/pages/auth/login.html' }
             });
             if (error) showToast(error.message);
         });
