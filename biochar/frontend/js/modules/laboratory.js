@@ -39,8 +39,8 @@ const LaboratoryModule = {
     async loadAssays() {
         try {
             const { data, error } = await supabase
-                .from('lab_assays')
-                .select('*, biochar_batches(batch_lot_number)')
+                .from('laboratory_certificates')
+                .select('*, biochar_batches(batch_code)')
                 .order('uploaded_at', { ascending: false });
 
             if (error) throw error;
@@ -54,7 +54,7 @@ const LaboratoryModule = {
                         key: 'biochar_batches', 
                         label: 'Associated Batch', 
                         sortable: true, 
-                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_lot_number)}` : '—' 
+                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_code)}` : '—' 
                     },
                     { key: 'organic_carbon_percentage', label: 'Organic Carbon (%)', sortable: true, render: (val) => `${Utils.formatNumber(val, 2)}%` },
                     { key: 'molar_hc_ratio', label: 'Molar H:C Ratio', sortable: true, render: (val) => Utils.formatNumber(val, 3) },
@@ -71,7 +71,7 @@ const LaboratoryModule = {
                             return `<span class="badge ${badgeClass}"><span class="badge-dot"></span>${Utils.formatEnum(val)}</span>`;
                         } 
                     },
-                    { key: 'certificate_hash', label: 'Certificate SHA-256', sortable: false, render: (val) => `<code style="font-size: 11px;">${val.slice(0, 10)}...</code>` },
+                    { key: 'certificate_hash', label: 'Certificate SHA-256', sortable: false, render: (val) => val ? `<code style="font-size: 11px;">${val.slice(0, 10)}...</code>` : '—' },
                     { key: 'uploaded_at', label: 'Uploaded At', sortable: true, render: (val) => Utils.formatDateTime(val) },
                 ],
                 data: data,
@@ -124,18 +124,17 @@ const LaboratoryModule = {
         let certHash = '';
 
         try {
-            // Fetch batches
             const { data: batches, error: batchesErr } = await supabase
                 .from('biochar_batches')
-                .select('id, batch_lot_number')
-                .order('batch_lot_number', { ascending: true });
+                .select('id, batch_code')
+                .order('batch_code', { ascending: true });
 
             if (batchesErr) throw batchesErr;
 
             if (assayId) {
                 title = 'Edit Laboratory Assay';
                 const { data, error } = await supabase
-                    .from('lab_assays')
+                    .from('laboratory_certificates')
                     .select('*')
                     .eq('id', assayId)
                     .single();
@@ -151,7 +150,7 @@ const LaboratoryModule = {
             let batchOptions = '<option value="">-- Select Batch Lot --</option>';
             batches.forEach(b => {
                 const selected = b.id === batchIdValue ? 'selected' : '';
-                batchOptions += `<option value="${b.id}" ${selected}>Lot #${Utils.escapeHtml(b.batch_lot_number)}</option>`;
+                batchOptions += `<option value="${b.id}" ${selected}>Lot #${Utils.escapeHtml(b.batch_code)}</option>`;
             });
 
             const html = `
@@ -208,12 +207,10 @@ const LaboratoryModule = {
                 const molar_hc_ratio = parseFloat(document.getElementById('assay-hc').value);
                 const certificate_hash = document.getElementById('assay-hash').value.trim();
 
-                // Auto-evaluate verification tier based on H:C ratio
-                // standard rules: H:C < 0.4 => high_permanence_1000yr, < 0.7 => standard_200yr, else ineligible/pending
                 let verification_tier = 'standard_200yr';
-                if (molar_hc_ratio < 0.4) {
+                if (molar_hc_ratio <= 0.4) {
                     verification_tier = 'high_permanence_1000yr';
-                } else if (molar_hc_ratio >= 0.7) {
+                } else if (molar_hc_ratio > 0.7) {
                     verification_tier = 'pending';
                 }
 
@@ -230,14 +227,13 @@ const LaboratoryModule = {
                     let error;
                     if (assayId) {
                         const { error: err } = await supabase
-                            .from('lab_assays')
+                            .from('laboratory_certificates')
                             .update(payload)
                             .eq('id', assayId);
                         error = err;
                     } else {
-                        // Check if assay already exists for batch (Unique constraint)
                         const { data: existing } = await supabase
-                            .from('lab_assays')
+                            .from('laboratory_certificates')
                             .select('id')
                             .eq('batch_id', batch_id);
                         
@@ -246,14 +242,13 @@ const LaboratoryModule = {
                         }
 
                         const { error: err } = await supabase
-                            .from('lab_assays')
+                            .from('laboratory_certificates')
                             .insert(payload);
                         error = err;
                     }
 
                     if (error) throw error;
 
-                    // Automatically update associated batch status to 'lab_certified'
                     await supabase
                         .from('biochar_batches')
                         .update({ status: 'lab_certified' })
@@ -287,7 +282,7 @@ const LaboratoryModule = {
 
         try {
             const { error } = await supabase
-                .from('lab_assays')
+                .from('laboratory_certificates')
                 .delete()
                 .eq('id', id);
 

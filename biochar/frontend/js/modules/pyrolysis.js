@@ -13,13 +13,13 @@ const PyrolysisModule = {
             <div class="page-header animate-fade-in">
                 <div class="page-header-left">
                     <h1 class="page-title">Pyrolysis Telemetry</h1>
-                    <p class="page-subtitle">Monitor SCADA/PLC telemetry including kiln internal temperatures and energy consumption.</p>
+                    <p class="page-subtitle">Monitor SCADA/PLC telemetry including kiln operating temperatures, electricity, and fossil fuel consumption.</p>
                 </div>
                 <div class="page-header-actions">
                     <button class="btn btn-ghost" id="refresh-telemetry-btn">Refresh</button>
                     <button class="btn btn-primary" id="log-telemetry-btn">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                        Log Reading
+                        Log Pyrolysis Run
                     </button>
                 </div>
             </div>
@@ -27,7 +27,7 @@ const PyrolysisModule = {
             <!-- SCADA Temp Chart -->
             <div class="card animate-fade-up" style="margin-bottom: var(--space-6);">
                 <div class="card-header">
-                    <h3 class="card-title">SCADA Kiln Temperature Curve (°C)</h3>
+                    <h3 class="card-title">SCADA Kiln Run Average Temperature curve (°C)</h3>
                 </div>
                 <div class="chart-container" style="height: 220px;">
                     <canvas id="scada-temp-chart"></canvas>
@@ -58,9 +58,9 @@ const PyrolysisModule = {
     async loadTelemetry() {
         try {
             const { data, error } = await supabase
-                .from('pyrolysis_telemetry')
-                .select('*, biochar_batches(batch_lot_number)')
-                .order('timestamp', { ascending: false });
+                .from('pyrolysis_runs')
+                .select('*, feedstock_batches(batch_code)')
+                .order('created_at', { ascending: false });
 
             if (error) throw error;
 
@@ -69,29 +69,30 @@ const PyrolysisModule = {
 
             this._table = DataTable.render(container, {
                 columns: [
+                    { key: 'run_number', label: 'Run Number', sortable: true },
                     { 
-                        key: 'biochar_batches', 
-                        label: 'Batch Lot', 
+                        key: 'feedstock_batches', 
+                        label: 'Feedstock Batch', 
                         sortable: true, 
-                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_lot_number)}` : '—' 
+                        render: (val) => val ? Utils.escapeHtml(val.batch_code) : '—' 
                     },
-                    { key: 'timestamp', label: 'Sensor Time', sortable: true, render: (val) => Utils.formatDateTime(val) },
-                    { key: 'kiln_temperature_celsius', label: 'Kiln Temp (°C)', sortable: true, render: (val) => `${Utils.formatNumber(val, 1)} °C` },
-                    { key: 'electricity_consumption_kwh', label: 'Electricity (kWh)', sortable: true, render: (val) => `${Utils.formatNumber(val, 2)} kWh` },
-                    { key: 'fossil_fuel_consumption_liters', label: 'Fossil Fuel (L)', sortable: true, render: (val) => `${Utils.formatNumber(val, 2)} L` },
+                    { key: 'reactor_name', label: 'Reactor', sortable: true },
+                    { key: 'average_temperature', label: 'Average Temp (°C)', sortable: true, render: (val) => `${Utils.formatNumber(val, 1)} °C` },
+                    { key: 'electricity_kwh', label: 'Electricity (kWh)', sortable: true, render: (val) => `${Utils.formatNumber(val, 2)} kWh` },
+                    { key: 'fuel_used_liters', label: 'Fossil Fuel (L)', sortable: true, render: (val) => `${Utils.formatNumber(val, 2)} L` },
+                    { key: 'created_at', label: 'Created At', sortable: true, render: (val) => Utils.formatDateTime(val) },
                 ],
                 data: data,
-                emptyTitle: 'No telemetry logged',
-                emptyText: 'Push telemetry records or log readings manually to build the carbon permanence audit trail.',
-                exportFilename: 'kiln_telemetry_export.csv',
+                emptyTitle: 'No pyrolysis runs logged',
+                emptyText: 'Record kiln runs and utility consumption to calculate processing emissions.',
+                exportFilename: 'pyrolysis_runs_export.csv',
                 actions: (row) => `
-                    <button class="btn btn-ghost btn-sm" onclick="PyrolysisModule.deleteReading('${row.id}')" title="Delete reading">
+                    <button class="btn btn-ghost btn-sm" onclick="PyrolysisModule.deleteReading('${row.id}')" title="Delete run">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
                 `
             });
 
-            // Render telemetry chart curve
             this.renderChart(data);
 
         } catch (err) {
@@ -100,14 +101,13 @@ const PyrolysisModule = {
         }
     },
 
-    renderChart(telemetry) {
+    renderChart(runs) {
         const ctx = document.getElementById('scada-temp-chart').getContext('2d');
         
-        // Sort chronologically for the curve
-        const sorted = [...telemetry].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).slice(-20); // last 20 ticks
+        const sorted = [...runs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at)).slice(-20);
 
-        const labels = sorted.map(t => new Date(t.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        const temps = sorted.map(t => t.kiln_temperature_celsius);
+        const labels = sorted.map(t => t.run_number || 'Run');
+        const temps = sorted.map(t => t.average_temperature || 0);
 
         if (this._chart) this._chart.destroy();
 
@@ -117,9 +117,9 @@ const PyrolysisModule = {
         this._chart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: labels.length ? labels : ['No readings'],
+                labels: labels.length ? labels : ['No runs'],
                 datasets: [{
-                    label: 'Kiln Temp',
+                    label: 'Average Temp (°C)',
                     data: temps.length ? temps : [0],
                     borderColor: '#38bdf8',
                     backgroundColor: 'rgba(56, 189, 248, 0.05)',
@@ -144,50 +144,71 @@ const PyrolysisModule = {
 
     async openTelemetryModal() {
         try {
-            // Load batches
-            const { data: batches, error: batchesErr } = await supabase
-                .from('biochar_batches')
-                .select('id, batch_lot_number')
-                .order('batch_lot_number', { ascending: true });
+            const { data: feedstocks, error: fsErr } = await supabase
+                .from('feedstock_batches')
+                .select('id, batch_code')
+                .order('batch_code', { ascending: true });
 
-            if (batchesErr) throw batchesErr;
+            if (fsErr) throw fsErr;
 
-            let batchOptions = '<option value="">-- Select Batch --</option>';
-            batches.forEach(b => {
-                batchOptions += `<option value="${b.id}">Lot #${Utils.escapeHtml(b.batch_lot_number)}</option>`;
+            let fsOptions = '<option value="">-- Select Feedstock Batch --</option>';
+            feedstocks.forEach(fs => {
+                fsOptions += `<option value="${fs.id}">${Utils.escapeHtml(fs.batch_code)}</option>`;
             });
+
+            const defaultRunNumber = `RUN-${Math.floor(100000 + Math.random() * 900000)}`;
 
             const html = `
                 <div class="modal-header">
-                    <h3 class="modal-title">Log Pyrolysis SCADA Metric</h3>
+                    <h3 class="modal-title">Log Pyrolysis SCADA Run</h3>
                 </div>
                 <form id="telemetry-form">
                     <div class="modal-body">
                         <div class="form-group">
-                            <label class="form-label" for="telemetry-batch-id">Batch Lot <span class="required">*</span></label>
-                            <select class="form-select" id="telemetry-batch-id" name="batch_id" data-validate="required" data-label="Batch">
-                                ${batchOptions}
+                            <label class="form-label" for="run-feedstock-id">Feedstock Batch <span class="required">*</span></label>
+                            <select class="form-select" id="run-feedstock-id" name="feedstock_batch_id" data-validate="required" data-label="Feedstock Batch">
+                                ${fsOptions}
                             </select>
                         </div>
                         <div class="form-group">
-                            <label class="form-label" for="telemetry-temp">Kiln Temperature (°C) <span class="required">*</span></label>
-                            <input type="text" class="form-input" id="telemetry-temp" name="kiln_temperature_celsius" placeholder="e.g. 550" data-validate="required|number|positive" data-label="Kiln Temperature" />
+                            <label class="form-label" for="run-number">Run Number <span class="required">*</span></label>
+                            <input type="text" class="form-input" id="run-number" name="run_number" value="${defaultRunNumber}" data-validate="required" data-label="Run Number" />
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="reactor-name">Reactor Name <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="reactor-name" name="reactor_name" value="Reactor-A" data-validate="required" data-label="Reactor Name" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="operator-name">Operator Name <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="operator-name" name="operator_name" value="Operator-1" data-validate="required" data-label="Operator Name" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="average-temp">Average Temp (°C) <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="average-temp" name="average_temperature" placeholder="e.g. 520" data-validate="required|number|positive" data-label="Average Temperature" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="max-temp">Maximum Temp (°C) <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="max-temp" name="maximum_temperature" placeholder="e.g. 580" data-validate="required|number|positive" data-label="Maximum Temperature" />
+                            </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label" for="telemetry-elec">Electricity Draw (kWh) <span class="required">*</span></label>
-                                <input type="text" class="form-input" id="telemetry-elec" name="electricity_consumption_kwh" placeholder="e.g. 4.2" data-validate="required|number" data-label="Electricity Draw" />
+                                <input type="text" class="form-input" id="telemetry-elec" name="electricity_kwh" placeholder="e.g. 4.2" data-validate="required|number" data-label="Electricity Draw" />
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="telemetry-fuel">Fossil Fuel (Liters) <span class="required">*</span></label>
-                                <input type="text" class="form-input" id="telemetry-fuel" name="fossil_fuel_consumption_liters" placeholder="e.g. 0" data-validate="required|number" data-label="Fossil Fuel" />
+                                <input type="text" class="form-input" id="telemetry-fuel" name="fuel_used_liters" placeholder="e.g. 0.5" data-validate="required|number" data-label="Fossil Fuel" />
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-ghost" onclick="Modal.close()">Cancel</button>
                         <button type="submit" class="btn btn-primary" id="save-telemetry-btn">
-                            <span class="btn-text">Log Reading</span>
+                            <span class="btn-text">Log Run</span>
                             <span class="btn-spinner"></span>
                         </button>
                     </div>
@@ -206,27 +227,57 @@ const PyrolysisModule = {
                 saveBtn.classList.add('loading');
                 saveBtn.disabled = true;
 
-                const payload = {
-                    batch_id: document.getElementById('telemetry-batch-id').value,
-                    kiln_temperature_celsius: parseFloat(document.getElementById('telemetry-temp').value),
-                    electricity_consumption_kwh: parseFloat(document.getElementById('electricity-elec').value),
-                    fossil_fuel_consumption_liters: parseFloat(document.getElementById('telemetry-fuel').value),
-                    timestamp: new Date().toISOString()
-                };
+                const feedstock_batch_id = document.getElementById('run-feedstock-id').value;
+                const run_number = document.getElementById('run-number').value.trim();
+                const reactor_name = document.getElementById('reactor-name').value.trim();
+                const operator_name = document.getElementById('operator-name').value.trim();
+                const average_temperature = parseFloat(document.getElementById('average-temp').value);
+                const maximum_temperature = parseFloat(document.getElementById('max-temp').value);
+                const electricity_kwh = parseFloat(document.getElementById('telemetry-elec').value);
+                const fuel_used_liters = parseFloat(document.getElementById('telemetry-fuel').value);
 
                 try {
-                    const { error } = await supabase
-                        .from('pyrolysis_telemetry')
-                        .insert(payload);
+                    const now = new Date().toISOString();
+                    // 1. Insert into pyrolysis_runs
+                    const { data: runData, error: runError } = await supabase
+                        .from('pyrolysis_runs')
+                        .insert({
+                            feedstock_batch_id,
+                            run_number,
+                            reactor_name,
+                            operator_name,
+                            average_temperature,
+                            maximum_temperature,
+                            electricity_kwh,
+                            fuel_used_liters,
+                            start_time: now,
+                            end_time: now,
+                            residence_time_minutes: 60
+                        })
+                        .select()
+                        .single();
 
-                    if (error) throw error;
+                    if (runError) throw runError;
 
-                    Toast.success('Telemetry logged successfully');
+                    // 2. Insert corresponding temperature reading into reactor_sensor_logs for compliance checks
+                    const { error: logError } = await supabase
+                        .from('reactor_sensor_logs')
+                        .insert({
+                            pyrolysis_run_id: runData.id,
+                            sensor_name: 'kiln_temperature',
+                            sensor_value: average_temperature,
+                            unit: 'C',
+                            recorded_at: now
+                        });
+
+                    if (logError) throw logError;
+
+                    Toast.success('Pyrolysis run logged successfully');
                     Modal.close();
                     await this.loadTelemetry();
                 } catch (err) {
                     console.error(err);
-                    Toast.error('Failed to log telemetry: ' + err.message);
+                    Toast.error('Failed to log pyrolysis run: ' + err.message);
                 } finally {
                     saveBtn.classList.remove('loading');
                     saveBtn.disabled = false;
@@ -240,26 +291,26 @@ const PyrolysisModule = {
 
     async deleteReading(id) {
         const confirmed = await Modal.confirm(
-            'Delete Reading',
-            'Are you sure you want to delete this telemetry point? This will alter the recorded manufacturing temperature profile history.',
-            { confirmText: 'Delete Reading', danger: true }
+            'Delete Run Record',
+            'Are you sure you want to delete this pyrolysis run? This will remove all temperature profile logs associated with it.',
+            { confirmText: 'Delete Run', danger: true }
         );
 
         if (!confirmed) return;
 
         try {
             const { error } = await supabase
-                .from('pyrolysis_telemetry')
+                .from('pyrolysis_runs')
                 .delete()
                 .eq('id', id);
 
             if (error) throw error;
 
-            Toast.success('Telemetry point deleted');
+            Toast.success('Pyrolysis run deleted');
             await this.loadTelemetry();
         } catch (err) {
             console.error(err);
-            Toast.error('Failed to delete reading: ' + err.message);
+            Toast.error('Failed to delete run: ' + err.message);
         }
     }
 };

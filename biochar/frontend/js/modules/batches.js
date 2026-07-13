@@ -40,7 +40,7 @@ const BatchesModule = {
         try {
             const { data, error } = await supabase
                 .from('biochar_batches')
-                .select('*, projects(name)')
+                .select('*, pyrolysis_runs(run_number, feedstock_batches(projects(name)))')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -50,8 +50,22 @@ const BatchesModule = {
 
             this._table = DataTable.render(container, {
                 columns: [
-                    { key: 'batch_lot_number', label: 'Lot Number', sortable: true, render: (val) => `<strong>Lot #${Utils.escapeHtml(val)}</strong>` },
-                    { key: 'projects', label: 'Project Site', sortable: true, render: (val) => val ? Utils.escapeHtml(val.name) : '—' },
+                    { key: 'batch_code', label: 'Batch Code', sortable: true, render: (val) => `<strong>Lot #${Utils.escapeHtml(val)}</strong>` },
+                    { 
+                        key: 'pyrolysis_runs', 
+                        label: 'Project Site', 
+                        sortable: false, 
+                        render: (val) => {
+                            const project = val?.feedstock_batches?.projects;
+                            return project ? Utils.escapeHtml(project.name) : '—';
+                        }
+                    },
+                    { 
+                        key: 'pyrolysis_runs', 
+                        label: 'Pyrolysis Run', 
+                        sortable: false, 
+                        render: (val) => val ? Utils.escapeHtml(val.run_number) : '—'
+                    },
                     { 
                         key: 'status', 
                         label: 'Lifecycle Status', 
@@ -60,7 +74,7 @@ const BatchesModule = {
                             let badgeClass = 'badge-default';
                             if (val === 'completed') badgeClass = 'badge-success';
                             if (val === 'processing_active') badgeClass = 'badge-primary';
-                            if (val === 'lab_certified') badgeClass = 'badge-primary'; // purple equivalent
+                            if (val === 'lab_certified') badgeClass = 'badge-primary';
                             if (val === 'sourcing_purgatory') badgeClass = 'badge-warning';
                             if (val === 'ineligible') badgeClass = 'badge-danger';
                             
@@ -82,7 +96,7 @@ const BatchesModule = {
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                                 Edit Batch
                             </button>
-                            <button class="action-menu-item danger" onclick="BatchesModule.deleteBatch('${row.id}', '${Utils.escapeHtml(row.batch_lot_number)}')">
+                            <button class="action-menu-item danger" onclick="BatchesModule.deleteBatch('${row.id}', '${Utils.escapeHtml(row.batch_code)}')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                 Delete
                             </button>
@@ -114,19 +128,21 @@ const BatchesModule = {
 
     async openBatchModal(batchId = null) {
         let title = 'Create Production Batch';
-        let lotValue = '';
-        let projectIdValue = '';
+        let codeValue = '';
+        let runIdValue = '';
+        let weightValue = '1000';
+        let storageValue = 'Warehouse-1';
         let statusValue = 'sourcing_purgatory';
         let carbonValue = '0.0';
 
         try {
-            // Load projects dropdown
-            const { data: projects, error: projErr } = await supabase
-                .from('projects')
-                .select('id, name')
-                .order('name', { ascending: true });
+            // Load pyrolysis runs dropdown
+            const { data: runs, error: runErr } = await supabase
+                .from('pyrolysis_runs')
+                .select('id, run_number')
+                .order('run_number', { ascending: true });
 
-            if (projErr) throw projErr;
+            if (runErr) throw runErr;
 
             if (batchId) {
                 title = 'Edit Production Batch';
@@ -138,22 +154,23 @@ const BatchesModule = {
 
                 if (error) throw error;
 
-                lotValue = data.batch_lot_number;
-                projectIdValue = data.project_id;
+                codeValue = data.batch_code;
+                runIdValue = data.pyrolysis_run_id;
+                weightValue = data.weight_kg;
+                storageValue = data.storage_location || 'Warehouse-1';
                 statusValue = data.status;
                 carbonValue = data.net_sequestration_tco2e;
             } else {
-                // Pre-generate standard lot number (e.g. BC-YYYYMMDD-XXXX)
                 const now = new Date();
                 const d = now.toISOString().slice(0,10).replace(/-/g,'');
                 const rand = Math.floor(1000 + Math.random() * 9000);
-                lotValue = `BC-${d}-${rand}`;
+                codeValue = `BC-${d}-${rand}`;
             }
 
-            let projectOptions = '<option value="">-- Select Project Site --</option>';
-            projects.forEach(p => {
-                const selected = p.id === projectIdValue ? 'selected' : '';
-                projectOptions += `<option value="${p.id}" ${selected}>${Utils.escapeHtml(p.name)}</option>`;
+            let runOptions = '<option value="">-- Select Pyrolysis Run --</option>';
+            runs.forEach(r => {
+                const selected = r.id === runIdValue ? 'selected' : '';
+                runOptions += `<option value="${r.id}" ${selected}>Run #${Utils.escapeHtml(r.run_number)}</option>`;
             });
 
             const html = `
@@ -163,14 +180,24 @@ const BatchesModule = {
                 <form id="batch-form">
                     <div class="modal-body">
                         <div class="form-group">
-                            <label class="form-label" for="batch-lot">Batch Lot Number <span class="required">*</span></label>
-                            <input type="text" class="form-input" id="batch-lot" name="batch_lot_number" value="${Utils.escapeHtml(lotValue)}" data-validate="required" data-label="Lot Number" placeholder="e.g. BC-20260712-001" />
+                            <label class="form-label" for="batch-code">Batch Code <span class="required">*</span></label>
+                            <input type="text" class="form-input" id="batch-code" name="batch_code" value="${Utils.escapeHtml(codeValue)}" data-validate="required" data-label="Batch Code" placeholder="e.g. BC-20260712-001" />
                         </div>
                         <div class="form-group">
-                            <label class="form-label" for="batch-project-id">Project Site <span class="required">*</span></label>
-                            <select class="form-select" id="batch-project-id" name="project_id" data-validate="required" data-label="Project Site">
-                                ${projectOptions}
+                            <label class="form-label" for="batch-run-id">Pyrolysis Run <span class="required">*</span></label>
+                            <select class="form-select" id="batch-run-id" name="pyrolysis_run_id" data-validate="required" data-label="Pyrolysis Run">
+                                ${runOptions}
                             </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="batch-weight">Weight (kg)</label>
+                                <input type="text" class="form-input" id="batch-weight" name="weight_kg" value="${weightValue}" data-validate="required|number|positive" data-label="Weight" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="batch-storage">Storage Location</label>
+                                <input type="text" class="form-input" id="batch-storage" name="storage_location" value="${Utils.escapeHtml(storageValue)}" data-validate="required" data-label="Storage Location" />
+                            </div>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="batch-status">Lifecycle Status</label>
@@ -185,7 +212,6 @@ const BatchesModule = {
                         <div class="form-group">
                             <label class="form-label" for="batch-carbon">Calculated Sequestration (tCO2e)</label>
                             <input type="text" class="form-input" id="batch-carbon" name="net_sequestration_tco2e" value="${carbonValue}" data-validate="number" data-label="Net Sequestration" placeholder="e.g. 0.0" />
-                            <small class="form-hint">Updates automatically as telemetry is validated, but can be adjusted manually.</small>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -203,7 +229,7 @@ const BatchesModule = {
             const form = document.getElementById('batch-form');
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const { valid, errors } = FormValidator.validate(form);
+                const { valid } = FormValidator.validate(form);
                 if (!valid) return;
 
                 const saveBtn = document.getElementById('save-batch-btn');
@@ -211,11 +237,12 @@ const BatchesModule = {
                 saveBtn.disabled = true;
 
                 const payload = {
-                    batch_lot_number: document.getElementById('batch-lot').value.trim(),
-                    project_id: document.getElementById('batch-project-id').value,
+                    batch_code: document.getElementById('batch-code').value.trim(),
+                    pyrolysis_run_id: document.getElementById('batch-run-id').value,
+                    weight_kg: parseFloat(document.getElementById('batch-weight').value || 0),
+                    storage_location: document.getElementById('batch-storage').value.trim(),
                     status: document.getElementById('batch-status').value,
-                    net_sequestration_tco2e: parseFloat(document.getElementById('batch-carbon').value || 0),
-                    updated_at: new Date().toISOString()
+                    net_sequestration_tco2e: parseFloat(document.getElementById('batch-carbon').value || 0)
                 };
 
                 try {

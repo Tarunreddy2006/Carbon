@@ -275,8 +275,6 @@
             color: var(--text-secondary);
             cursor: pointer;
             -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
             user-select: none;
         }
 
@@ -735,16 +733,6 @@
                 if (error) {
                     showToast(error.message || 'Invalid login credentials.');
                 } else if (data && data.session) {
-                    const { data: profile, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('*, organizations(*)')
-                        .eq('id', data.user.id)
-                        .single();
-
-                    if (profileError) {
-                        console.warn('Profile fetch error:', profileError);
-                    }
-
                     showToast('Sign in successful! Redirecting…', 'success');
                     setTimeout(() => {
                         window.location.replace('/app.html');

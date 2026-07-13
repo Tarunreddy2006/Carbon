@@ -39,8 +39,8 @@ const DistributionModule = {
     async loadDeliveries() {
         try {
             const { data, error } = await supabase
-                .from('distribution_sinks')
-                .select('*, biochar_batches(batch_lot_number)')
+                .from('biochar_applications')
+                .select('*, biochar_batches(batch_code)')
                 .order('attestation_timestamp', { ascending: false });
 
             if (error) throw error;
@@ -55,16 +55,16 @@ const DistributionModule = {
                         key: 'biochar_batches', 
                         label: 'Associated Batch', 
                         sortable: true, 
-                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_lot_number)}` : '—' 
+                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_code)}` : '—' 
                     },
                     { key: 'farmer_id', label: 'Farmer / End User ID', sortable: true },
                     { key: 'shipped_mass_tons', label: 'Shipped Mass (t)', sortable: true, render: (val) => Utils.formatTons(val) },
                     { 
-                        key: 'sink_latitude', 
+                        key: 'latitude', 
                         label: 'Sink Location', 
                         sortable: false, 
-                        render: (val, row) => row.sink_latitude 
-                            ? `<a href="https://maps.google.com/?q=${row.sink_latitude},${row.sink_longitude}" target="_blank" class="text-accent">${Number(row.sink_latitude).toFixed(5)}, ${Number(row.sink_longitude).toFixed(5)} ↗</a>` 
+                        render: (val, row) => row.latitude 
+                            ? `<a href="https://maps.google.com/?q=${row.latitude},${row.longitude}" target="_blank" class="text-accent">${Number(row.latitude).toFixed(5)}, ${Number(row.longitude).toFixed(5)} ↗</a>` 
                             : '<span class="text-muted">Ungeotagged</span>'
                     },
                     { 
@@ -126,39 +126,37 @@ const DistributionModule = {
         let lng = '';
 
         try {
-            // Load batches
             const { data: batches, error: batchesErr } = await supabase
                 .from('biochar_batches')
-                .select('id, batch_lot_number')
-                .order('batch_lot_number', { ascending: true });
+                .select('id, batch_code')
+                .order('batch_code', { ascending: true });
 
             if (batchesErr) throw batchesErr;
 
             if (deliveryId) {
                 title = 'Edit Distribution Ticket';
                 const { data, error } = await supabase
-                    .from('distribution_sinks')
+                    .from('biochar_applications')
                     .select('*')
                     .eq('id', deliveryId)
                     .single();
 
                 if (error) throw error;
 
-                batchIdValue = data.batch_id;
+                batchIdValue = data.biochar_batch_id;
                 ticketId = data.delivery_ticket_id;
                 farmerId = data.farmer_id;
                 mass = data.shipped_mass_tons;
-                lat = data.sink_latitude || '';
-                lng = data.sink_longitude || '';
+                lat = data.latitude || '';
+                lng = data.longitude || '';
             } else {
-                // Generate a ticket ID BC-TKT-XXXXXX
                 ticketId = `TKT-${Math.floor(100000 + Math.random() * 900000)}`;
             }
 
             let batchOptions = '<option value="">-- Select Batch --</option>';
             batches.forEach(b => {
                 const selected = b.id === batchIdValue ? 'selected' : '';
-                batchOptions += `<option value="${b.id}" ${selected}>Lot #${Utils.escapeHtml(b.batch_lot_number)}</option>`;
+                batchOptions += `<option value="${b.id}" ${selected}>Lot #${Utils.escapeHtml(b.batch_code)}</option>`;
             });
 
             const html = `
@@ -169,7 +167,7 @@ const DistributionModule = {
                     <div class="modal-body">
                         <div class="form-group">
                             <label class="form-label" for="delivery-batch-id">Batch Lot <span class="required">*</span></label>
-                            <select class="form-select" id="delivery-batch-id" name="batch_id" data-validate="required" data-label="Associated Batch">
+                            <select class="form-select" id="delivery-batch-id" name="biochar_batch_id" data-validate="required" data-label="Associated Batch">
                                 ${batchOptions}
                             </select>
                         </div>
@@ -190,11 +188,11 @@ const DistributionModule = {
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label" for="delivery-lat">Sink GPS Latitude</label>
-                                <input type="text" class="form-input" id="delivery-lat" name="sink_latitude" value="${lat}" placeholder="e.g. 13.0827" data-validate="number" data-label="Latitude" />
+                                <input type="text" class="form-input" id="delivery-lat" name="latitude" value="${lat}" placeholder="e.g. 13.0827" data-validate="number" data-label="Latitude" />
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="delivery-lng">Sink GPS Longitude</label>
-                                <input type="text" class="form-input" id="delivery-lng" name="sink_longitude" value="${lng}" placeholder="e.g. 80.2707" data-validate="number" data-label="Longitude" />
+                                <input type="text" class="form-input" id="delivery-lng" name="longitude" value="${lng}" placeholder="e.g. 80.2707" data-validate="number" data-label="Longitude" />
                             </div>
                         </div>
                     </div>
@@ -220,7 +218,7 @@ const DistributionModule = {
                 saveBtn.classList.add('loading');
                 saveBtn.disabled = true;
 
-                const batch_id = document.getElementById('delivery-batch-id').value;
+                const biochar_batch_id = document.getElementById('delivery-batch-id').value;
                 const delivery_ticket_id = document.getElementById('delivery-ticket').value.trim();
                 const farmer_id = document.getElementById('delivery-farmer').value.trim();
                 const shipped_mass_tons = parseFloat(document.getElementById('delivery-mass').value);
@@ -228,37 +226,39 @@ const DistributionModule = {
                 const rawLng = document.getElementById('delivery-lng').value;
 
                 const payload = {
-                    batch_id,
+                    biochar_batch_id,
                     delivery_ticket_id,
                     farmer_id,
                     shipped_mass_tons,
-                    sink_latitude: rawLat ? parseFloat(rawLat) : null,
-                    sink_longitude: rawLng ? parseFloat(rawLng) : null,
-                    attestation_timestamp: new Date().toISOString()
+                    latitude: rawLat ? parseFloat(rawLat) : null,
+                    longitude: rawLng ? parseFloat(rawLng) : null,
+                    attestation_timestamp: new Date().toISOString(),
+                    application_rate_kg_ha: 1500, // Default constants to avoid nullable issues
+                    area_hectares: 2.0,
+                    application_date: new Date().toISOString().split('T')[0]
                 };
 
                 try {
                     let error;
                     if (deliveryId) {
                         const { error: err } = await supabase
-                            .from('distribution_sinks')
+                            .from('biochar_applications')
                             .update(payload)
                             .eq('id', deliveryId);
                         error = err;
                     } else {
                         const { error: err } = await supabase
-                            .from('distribution_sinks')
+                            .from('biochar_applications')
                             .insert(payload);
                         error = err;
                     }
 
                     if (error) throw error;
 
-                    // Automatically update batch status to 'completed' since biochar is applied to sink (sequestered)
                     await supabase
                         .from('biochar_batches')
                         .update({ status: 'completed' })
-                        .eq('id', batch_id);
+                        .eq('id', biochar_batch_id);
 
                     Toast.success('Distribution delivery ticket logged successfully');
                     Modal.close();
@@ -288,7 +288,7 @@ const DistributionModule = {
 
         try {
             const { error } = await supabase
-                .from('distribution_sinks')
+                .from('biochar_applications')
                 .delete()
                 .eq('id', id);
 

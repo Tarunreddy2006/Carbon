@@ -12,12 +12,12 @@ const FeedstockModule = {
             <div class="page-header animate-fade-in">
                 <div class="page-header-left">
                     <h1 class="page-title">Feedstock Management</h1>
-                    <p class="page-subtitle">Track biomass feedstock deliveries, GPS origin coordinates, and satellite deforestation screenings.</p>
+                    <p class="page-subtitle">Track biomass feedstock deliveries, GPS origin coordinates, and check project site associations.</p>
                 </div>
                 <div class="page-header-actions">
                     <button class="btn btn-primary" id="create-feedstock-btn">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-                        Log Delivery
+                        Log Feedstock Batch
                     </button>
                 </div>
             </div>
@@ -38,10 +38,9 @@ const FeedstockModule = {
 
     async loadFeedstock() {
         try {
-            // Join biochar_batches to show lot numbers
             const { data, error } = await supabase
-                .from('feedstock_ingests')
-                .select('*, biochar_batches(batch_lot_number)')
+                .from('feedstock_batches')
+                .select('*, projects(name)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -51,34 +50,36 @@ const FeedstockModule = {
 
             this._table = DataTable.render(container, {
                 columns: [
+                    { key: 'batch_code', label: 'Feedstock Batch Code', sortable: true },
                     { key: 'feedstock_type', label: 'Biomass Category', sortable: true, render: (val) => `<span class="badge badge-default">${Utils.formatEnum(val)}</span>` },
-                    { key: 'wet_mass_tons', label: 'Wet Mass (t)', sortable: true, render: (val) => Utils.formatTons(val) },
+                    { key: 'weight_kg', label: 'Wet Mass (t)', sortable: true, render: (val) => Utils.formatTons((val || 0) / 1000) },
                     { 
-                        key: 'source_latitude', 
+                        key: 'origin_location', 
                         label: 'Origin Coordinates', 
                         sortable: false, 
-                        render: (val, row) => `<a href="https://maps.google.com/?q=${row.source_latitude},${row.source_longitude}" target="_blank" class="text-accent">${Number(row.source_latitude).toFixed(5)}, ${Number(row.source_longitude).toFixed(5)} ↗</a>` 
+                        render: (val) => {
+                            if (!val) return '<span class="text-muted">—</span>';
+                            const parts = val.split(',');
+                            if (parts.length === 2) {
+                                const lat = Number(parts[0]).toFixed(5);
+                                const lng = Number(parts[1]).toFixed(5);
+                                return `<a href="https://maps.google.com/?q=${parts[0]},${parts[1]}" target="_blank" class="text-accent">${lat}, ${lng} ↗</a>`;
+                            }
+                            return Utils.escapeHtml(val);
+                        }
                     },
                     { 
-                        key: 'satellite_clearance_status', 
-                        label: 'Satellite Screening', 
+                        key: 'projects', 
+                        label: 'Project Site', 
                         sortable: true, 
-                        render: (val) => val 
-                            ? `<span class="badge badge-success"><span class="badge-dot"></span>Passed</span>` 
-                            : `<span class="badge badge-danger"><span class="badge-dot"></span>Failed / Pending</span>` 
-                    },
-                    { 
-                        key: 'biochar_batches', 
-                        label: 'Associated Batch', 
-                        sortable: true, 
-                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_lot_number)}` : '—' 
+                        render: (val) => val ? Utils.escapeHtml(val.name) : '—' 
                     },
                     { key: 'created_at', label: 'Timestamp', sortable: true, render: (val) => Utils.formatDateTime(val) },
                 ],
                 data: data,
                 emptyTitle: 'No feedstock logs',
                 emptyText: 'Record biomass arrivals to start matching against production batches.',
-                exportFilename: 'feedstock_deliveries_export.csv',
+                exportFilename: 'feedstock_batches_export.csv',
                 actions: (row) => `
                     <div class="action-menu">
                         <button class="action-menu-btn" onclick="FeedstockModule.toggleMenu(event, '${row.id}')">•••</button>
@@ -119,44 +120,52 @@ const FeedstockModule = {
 
     async openFeedstockModal(feedstockId = null) {
         let title = 'Log Feedstock Delivery';
-        let batchIdValue = '';
+        let projectIdValue = '';
+        let batchCodeValue = '';
         let typeValue = 'rice_husk';
         let latValue = '';
         let lngValue = '';
         let massValue = '';
-        let clearanceValue = false;
 
         try {
-            // Get active batches for select options
-            const { data: batches, error: batchesErr } = await supabase
-                .from('biochar_batches')
-                .select('id, batch_lot_number')
-                .order('batch_lot_number', { ascending: true });
+            // Get active projects for select options
+            const { data: projects, error: projectsErr } = await supabase
+                .from('projects')
+                .select('id, name')
+                .order('name', { ascending: true });
 
-            if (batchesErr) throw batchesErr;
+            if (projectsErr) throw projectsErr;
 
             if (feedstockId) {
                 title = 'Edit Feedstock Ingest';
                 const { data, error } = await supabase
-                    .from('feedstock_ingests')
+                    .from('feedstock_batches')
                     .select('*')
                     .eq('id', feedstockId)
                     .single();
 
                 if (error) throw error;
 
-                batchIdValue = data.batch_id;
+                projectIdValue = data.project_id;
+                batchCodeValue = data.batch_code;
                 typeValue = data.feedstock_type;
-                latValue = data.source_latitude;
-                lngValue = data.source_longitude;
-                massValue = data.wet_mass_tons;
-                clearanceValue = data.satellite_clearance_status;
+                massValue = (data.weight_kg || 0) / 1000;
+                
+                if (data.origin_location) {
+                    const parts = data.origin_location.split(',');
+                    if (parts.length === 2) {
+                        latValue = parts[0];
+                        lngValue = parts[1];
+                    }
+                }
+            } else {
+                batchCodeValue = `FS-${Math.floor(100000 + Math.random() * 900000)}`;
             }
 
-            let batchOptions = '<option value="">-- Select Batch Lot --</option>';
-            batches.forEach(b => {
-                const selected = b.id === batchIdValue ? 'selected' : '';
-                batchOptions += `<option value="${b.id}" ${selected}>Lot #${Utils.escapeHtml(b.batch_lot_number)}</option>`;
+            let projectOptions = '<option value="">-- Select Project Site --</option>';
+            projects.forEach(p => {
+                const selected = p.id === projectIdValue ? 'selected' : '';
+                projectOptions += `<option value="${p.id}" ${selected}>${Utils.escapeHtml(p.name)}</option>`;
             });
 
             const html = `
@@ -166,10 +175,14 @@ const FeedstockModule = {
                 <form id="feedstock-form">
                     <div class="modal-body">
                         <div class="form-group">
-                            <label class="form-label" for="feedstock-batch-id">Production Batch <span class="required">*</span></label>
-                            <select class="form-select" id="feedstock-batch-id" name="batch_id" data-validate="required" data-label="Production Batch">
-                                ${batchOptions}
+                            <label class="form-label" for="feedstock-project-id">Project Site <span class="required">*</span></label>
+                            <select class="form-select" id="feedstock-project-id" name="project_id" data-validate="required" data-label="Project Site">
+                                ${projectOptions}
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="feedstock-batch-code">Feedstock Batch Code <span class="required">*</span></label>
+                            <input type="text" class="form-input" id="feedstock-batch-code" name="batch_code" value="${Utils.escapeHtml(batchCodeValue)}" data-validate="required" data-label="Batch Code" placeholder="e.g. FS-12345" />
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="feedstock-type">Biomass Feedstock Category <span class="required">*</span></label>
@@ -192,10 +205,6 @@ const FeedstockModule = {
                         <div class="form-group">
                             <label class="form-label" for="feedstock-mass">Gross Wet Mass (Metric Tonnes) <span class="required">*</span></label>
                             <input type="text" class="form-input" id="feedstock-mass" name="wet_mass_tons" value="${massValue}" data-validate="required|number|positive" data-label="Wet Mass" placeholder="e.g. 12.5" />
-                        </div>
-                        <div class="form-group flex items-center gap-2 mt-3">
-                            <input type="checkbox" id="feedstock-clearance" name="satellite_clearance_status" ${clearanceValue ? 'checked' : ''} style="cursor:pointer;" />
-                            <label class="form-label mb-0" for="feedstock-clearance" style="cursor:pointer;">Satellite clearance verification passed</label>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -220,26 +229,30 @@ const FeedstockModule = {
                 saveBtn.classList.add('loading');
                 saveBtn.disabled = true;
 
+                const lat = document.getElementById('feedstock-lat').value.trim();
+                const lng = document.getElementById('feedstock-lng').value.trim();
+                const massTons = parseFloat(document.getElementById('feedstock-mass').value);
+
                 const payload = {
-                    batch_id: document.getElementById('feedstock-batch-id').value,
+                    project_id: document.getElementById('feedstock-project-id').value,
+                    batch_code: document.getElementById('feedstock-batch-code').value.trim(),
                     feedstock_type: document.getElementById('feedstock-type').value,
-                    source_latitude: parseFloat(document.getElementById('feedstock-lat').value),
-                    source_longitude: parseFloat(document.getElementById('feedstock-lng').value),
-                    wet_mass_tons: parseFloat(document.getElementById('feedstock-mass').value),
-                    satellite_clearance_status: document.getElementById('feedstock-clearance').checked
+                    origin_location: `${lat},${lng}`,
+                    weight_kg: massTons * 1000,
+                    received_date: new Date().toISOString().split('T')[0]
                 };
 
                 try {
                     let error;
                     if (feedstockId) {
                         const { error: err } = await supabase
-                            .from('feedstock_ingests')
+                            .from('feedstock_batches')
                             .update(payload)
                             .eq('id', feedstockId);
                         error = err;
                     } else {
                         const { error: err } = await supabase
-                            .from('feedstock_ingests')
+                            .from('feedstock_batches')
                             .insert(payload);
                         error = err;
                     }
@@ -265,8 +278,8 @@ const FeedstockModule = {
 
     async deleteFeedstock(id, type) {
         const confirmed = await Modal.confirm(
-            'Delete Feedstock Ingest Record',
-            `Are you sure you want to delete this feedstock ingest log for "${Utils.capitalize(type.replace(/_/g, ' '))}"? This operation is permanent.`,
+            'Delete Feedstock Record',
+            `Are you sure you want to delete this feedstock batch log for "${Utils.capitalize(type.replace(/_/g, ' '))}"? This operation is permanent.`,
             { confirmText: 'Delete Record', danger: true }
         );
 
@@ -274,13 +287,13 @@ const FeedstockModule = {
 
         try {
             const { error } = await supabase
-                .from('feedstock_ingests')
+                .from('feedstock_batches')
                 .delete()
                 .eq('id', id);
 
             if (error) throw error;
 
-            Toast.success('Feedstock ingest log deleted successfully');
+            Toast.success('Feedstock log deleted successfully');
             await this.loadFeedstock();
         } catch (err) {
             console.error(err);

@@ -15,7 +15,7 @@ export const SUPABASE_ANON_KEY = (typeof CARBONOS_CONFIG !== 'undefined' && CARB
  * Assert that project keys are loaded cleanly before initializing the pipeline client[cite: 4].
  */
 function assertSupabaseConfiguration() {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL.includes("yrjiiacdxknesvpaxdjr")) {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL.includes("YOUR_PROJECT_REF")) {
         throw new Error("Supabase initialization error: SUPABASE_URL and SUPABASE_ANON_KEY must be configured inside config.js.");
     }
     

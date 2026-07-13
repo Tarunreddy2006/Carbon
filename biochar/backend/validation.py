@@ -2,10 +2,6 @@
 carbon/biochar/backend/validation.py
 ──────────────────────────────────────────────────────────────────────────────
 Compliance Validation Engine
-
-Provides deterministic validation functions for:
-1. Thermal stability verification (PyrolysisTelemetry sensor analysis).
-2. Chemical permanence classification (LabAssay analysis).
 ──────────────────────────────────────────────────────────────────────────────
 """
 
@@ -19,9 +15,10 @@ from biochar.backend.database import SessionLocal
 from biochar.backend.models import (
     BatchStatus,
     BiocharBatch,
-    DistributionSink,
-    LabAssay,
-    PyrolysisTelemetry,
+    BiocharApplication,
+    LaboratoryCertificate,
+    ReactorSensorLog,
+    PyrolysisRun,
     VerificationTier,
 )
 
@@ -33,15 +30,9 @@ def validate_thermal_stability(batch_id: str, db: Session | None = None) -> bool
     Validate that the thermal stability parameters of the pyrolysis run were met.
 
     Requirements:
-    - Query PyrolysisTelemetry records for the given batch.
-    - Compute the running mean operating temperature.
+    - Query ReactorSensorLog (PyrolysisTelemetry) records for the given batch's pyrolysis run.
     - Verify operating temperature remained strictly greater than 350°C.
     - Detect any continuous period longer than 15 consecutive minutes where temperature fell below 350°C.
-    - If a violation is detected:
-      - Update BiocharBatch.status to ineligible
-      - Commit transaction
-      - Abort validation
-      - Return False
     """
     logger.info("Starting thermal stability validation for batch: %s", batch_id)
 
@@ -55,17 +46,26 @@ def validate_thermal_stability(batch_id: str, db: Session | None = None) -> bool
             logger.error("BiocharBatch %s not found for thermal stability validation.", batch_id)
             return False
 
-        # Query all PyrolysisTelemetry records sorted chronologically
+        if not batch.pyrolysis_run_id:
+            logger.warning("No PyrolysisRun associated with batch %s. Marking ineligible.", batch_id)
+            batch.status = BatchStatus.ineligible.value
+            session.commit()
+            return False
+
+        # Query all temperature sensor logs sorted chronologically
         telemetry = (
-            session.query(PyrolysisTelemetry)
-            .filter(PyrolysisTelemetry.batch_id == batch_id)
-            .order_by(PyrolysisTelemetry.timestamp.asc())
+            session.query(ReactorSensorLog)
+            .filter(
+                ReactorSensorLog.pyrolysis_run_id == batch.pyrolysis_run_id,
+                ReactorSensorLog.sensor_name == 'kiln_temperature'
+            )
+            .order_by(ReactorSensorLog.recorded_at.asc())
             .all()
         )
 
         if not telemetry:
-            logger.warning("No telemetry records found for batch %s. Marking ineligible.", batch_id)
-            batch.status = BatchStatus.ineligible
+            logger.warning("No telemetry records found for pyrolysis run %s of batch %s. Marking ineligible.", batch.pyrolysis_run_id, batch_id)
+            batch.status = BatchStatus.ineligible.value
             session.commit()
             return False
 
@@ -76,8 +76,11 @@ def validate_thermal_stability(batch_id: str, db: Session | None = None) -> bool
         ineligible_detected = False
 
         for record in telemetry:
-            temp = record.kiln_temperature_celsius
-            ts = record.timestamp
+            temp = record.sensor_value
+            ts = record.recorded_at
+
+            if temp is None:
+                continue
 
             running_sum += temp
             running_count += 1
@@ -105,16 +108,19 @@ def validate_thermal_stability(batch_id: str, db: Session | None = None) -> bool
                 low_temp_start = None
 
         # Verify running/overall mean operating temperature is strictly greater than 350°C
-        overall_mean = running_sum / running_count
-        if overall_mean <= 350.0:
-            logger.warning(
-                "Violation detected: overall mean operating temperature %.2f°C is not strictly greater than 350°C",
-                overall_mean
-            )
+        if running_count > 0:
+            overall_mean = running_sum / running_count
+            if overall_mean <= 350.0:
+                logger.warning(
+                    "Violation detected: overall mean operating temperature %.2f°C is not strictly greater than 350°C",
+                    overall_mean
+                )
+                ineligible_detected = True
+        else:
             ineligible_detected = True
 
         if ineligible_detected:
-            batch.status = BatchStatus.ineligible
+            batch.status = BatchStatus.ineligible.value
             session.commit()
             return False
 
@@ -127,10 +133,9 @@ def validate_thermal_stability(batch_id: str, db: Session | None = None) -> bool
             batch_id, exc, exc_info=True
         )
         try:
-            # On unexpected validation failures automatically mark the batch as ineligible.
             batch = session.query(BiocharBatch).filter(BiocharBatch.id == batch_id).first()
             if batch:
-                batch.status = BatchStatus.ineligible
+                batch.status = BatchStatus.ineligible.value
                 session.commit()
         except Exception as rollback_exc:
             logger.error("Failed to mark batch as ineligible after unexpected exception: %s", rollback_exc)
@@ -143,19 +148,7 @@ def validate_thermal_stability(batch_id: str, db: Session | None = None) -> bool
 
 def evaluate_chemical_permanence(batch_id: str, db: Session | None = None) -> str:
     """
-    Evaluate the chemical permanence of a biochar batch based on its LabAssay ratio.
-
-    Requirements:
-    - Read the unique LabAssay record.
-    - Rule A: If molar_hc_ratio > 0.7:
-      - Mark batch ineligible
-      - Commit transaction
-      - Return status ("ineligible")
-    - Rule B: If molar_hc_ratio <= 0.4:
-      - verification_tier = high_permanence_1000yr
-    - Rule C: If 0.4 < molar_hc_ratio <= 0.7:
-      - verification_tier = standard_200yr
-    - Update database and return the resulting verification tier.
+    Evaluate the chemical permanence of a biochar batch based on its LaboratoryCertificate H:C ratio.
     """
     logger.info("Starting chemical permanence evaluation for batch: %s", batch_id)
 
@@ -169,41 +162,45 @@ def evaluate_chemical_permanence(batch_id: str, db: Session | None = None) -> st
             logger.error("BiocharBatch %s not found for chemical permanence evaluation.", batch_id)
             return "ineligible"
 
-        if batch.status == BatchStatus.ineligible:
+        if batch.status == BatchStatus.ineligible.value:
             logger.warning("BiocharBatch %s is already marked ineligible. Aborting chemical permanence evaluation.", batch_id)
             return "ineligible"
 
-        # Read unique LabAssay record
-        assay = session.query(LabAssay).filter(LabAssay.batch_id == batch_id).first()
-        if not assay:
-            logger.warning("No LabAssay record found for batch %s. Marking ineligible.", batch_id)
-            batch.status = BatchStatus.ineligible
+        # Read unique LaboratoryCertificate record
+        cert = session.query(LaboratoryCertificate).filter(LaboratoryCertificate.batch_id == batch_id).first()
+        if not cert:
+            logger.warning("No LaboratoryCertificate record found for batch %s. Marking ineligible.", batch_id)
+            batch.status = BatchStatus.ineligible.value
             session.commit()
             return "ineligible"
 
-        ratio = assay.molar_hc_ratio
+        ratio = cert.molar_hc_ratio
+        if ratio is None:
+            logger.warning("Molar H:C ratio is missing on certificate for batch %s. Marking ineligible.", batch_id)
+            batch.status = BatchStatus.ineligible.value
+            session.commit()
+            return "ineligible"
+
         logger.info("Molar H:C ratio for batch %s: %.4f", batch_id, ratio)
 
         if ratio > 0.7:
             logger.warning("Rule A Violation: molar H:C ratio %.4f > 0.7. Marking ineligible.", ratio)
-            batch.status = BatchStatus.ineligible
-            assay.verification_tier = VerificationTier.pending
+            batch.status = BatchStatus.ineligible.value
+            cert.verification_tier = VerificationTier.pending.value
             session.commit()
             return "ineligible"
 
         elif ratio <= 0.4:
-            # Rule B
             tier = VerificationTier.high_permanence_1000yr
             logger.info("Rule B Met: molar H:C ratio %.4f <= 0.4. Tier: %s", ratio, tier.value)
 
         else:
-            # Rule C: 0.4 < ratio <= 0.7
             tier = VerificationTier.standard_200yr
             logger.info("Rule C Met: 0.4 < molar H:C ratio %.4f <= 0.7. Tier: %s", ratio, tier.value)
 
         # Update database with results
-        assay.verification_tier = tier
-        batch.status = BatchStatus.lab_certified
+        cert.verification_tier = tier.value
+        batch.status = BatchStatus.lab_certified.value
         session.commit()
         return tier.value
 
@@ -213,10 +210,9 @@ def evaluate_chemical_permanence(batch_id: str, db: Session | None = None) -> st
             batch_id, exc, exc_info=True
         )
         try:
-            # On unexpected validation failures automatically mark the batch as ineligible.
             batch = session.query(BiocharBatch).filter(BiocharBatch.id == batch_id).first()
             if batch:
-                batch.status = BatchStatus.ineligible
+                batch.status = BatchStatus.ineligible.value
                 session.commit()
         except Exception as rollback_exc:
             logger.error("Failed to mark batch as ineligible after unexpected exception: %s", rollback_exc)
@@ -230,13 +226,6 @@ def evaluate_chemical_permanence(batch_id: str, db: Session | None = None) -> st
 def calculate_net_sequestration(batch_id: str, db: Session | None = None) -> float:
     """
     Compute the net carbon sequestration in metric tonnes of CO2 equivalent (tCO2e).
-    Formula:
-        Net CO2e = Gross CO2e - Processing Utility Emissions
-
-    Where:
-        Gross CO2e = Dry Biochar Mass * (Organic Carbon % / 100) * (44 / 12)
-        Dry Biochar Mass = Total Shipped Mass * (1 - Moisture Fraction)
-        Processing Utility Emissions = (Total Electricity kWh * Grid Factor) + (Total Fossil Fuel Liters * Fuel Factor)
     """
     logger.info("Calculating net sequestration for batch: %s", batch_id)
 
@@ -257,22 +246,29 @@ def calculate_net_sequestration(batch_id: str, db: Session | None = None) -> flo
             return 0.0
 
         # Calculate Gross CO2e
-        # 1. Total shipped mass from distribution sinks
-        total_shipped_mass = sum(sink.shipped_mass_tons for sink in batch.distribution_sinks)
+        # 1. Total shipped mass from biochar applications
+        sinks = session.query(BiocharApplication).filter(BiocharApplication.biochar_batch_id == batch_id).all()
+        total_shipped_mass = sum(sink.shipped_mass_tons or 0.0 for sink in sinks)
         dry_biochar_mass = total_shipped_mass * (1.0 - MOISTURE_FRACTION)
 
-        # 2. Get organic carbon percentage from LabAssay
+        # 2. Get organic carbon percentage from LaboratoryCertificate
         organic_carbon_percentage = 0.0
-        if batch.lab_assay:
-            organic_carbon_percentage = batch.lab_assay.organic_carbon_percentage
+        cert = session.query(LaboratoryCertificate).filter(LaboratoryCertificate.batch_id == batch_id).first()
+        if cert:
+            organic_carbon_percentage = cert.organic_carbon_percentage or 0.0
         else:
-            logger.warning("No LabAssay found for batch %s. Assuming 0%% organic carbon.", batch_id)
+            logger.warning("No LaboratoryCertificate found for batch %s. Assuming 0%% organic carbon.", batch_id)
 
         gross_co2e = dry_biochar_mass * (organic_carbon_percentage / 100.0) * CO2_C_RATIO
 
-        # Calculate Processing Utility Emissions from Telemetry
-        total_electricity = sum(t.electricity_consumption_kwh for t in batch.pyrolysis_telemetry)
-        total_fossil_fuel = sum(t.fossil_fuel_consumption_liters for t in batch.pyrolysis_telemetry)
+        # 3. Calculate Processing Utility Emissions from PyrolysisRun
+        total_electricity = 0.0
+        total_fossil_fuel = 0.0
+        if batch.pyrolysis_run_id:
+            run = session.query(PyrolysisRun).filter(PyrolysisRun.id == batch.pyrolysis_run_id).first()
+            if run:
+                total_electricity = run.electricity_kwh or 0.0
+                total_fossil_fuel = run.fuel_used_liters or 0.0
 
         utility_emissions = (total_electricity * GRID_EMISSION_FACTOR) + (total_fossil_fuel * FUEL_EMISSION_FACTOR)
 
@@ -302,8 +298,7 @@ def calculate_net_sequestration(batch_id: str, db: Session | None = None) -> flo
 
 def check_batch_delivery_completion(batch_id: str, db: Session | None = None) -> bool:
     """
-    Query all DistributionSink records for the batch.
-    Verify every distribution record has a populated attestation_timestamp.
+    Query all BiocharApplication records for the batch.
     If 100% of deliveries are completed, update BiocharBatch.status to completed.
     """
     logger.info("Checking batch delivery completion for batch_id: %s", batch_id)
@@ -315,15 +310,15 @@ def check_batch_delivery_completion(batch_id: str, db: Session | None = None) ->
             logger.error("BiocharBatch %s not found for delivery completion check.", batch_id)
             return False
 
-        sinks = session.query(DistributionSink).filter(DistributionSink.batch_id == batch_id).all()
+        sinks = session.query(BiocharApplication).filter(BiocharApplication.biochar_batch_id == batch_id).all()
         if not sinks:
-            logger.warning("No distribution sinks found for batch %s.", batch_id)
+            logger.warning("No biochar applications found for batch %s.", batch_id)
             return False
 
         all_completed = all(s.attestation_timestamp is not None for s in sinks)
         if all_completed:
             logger.info("All deliveries (%d) for batch %s are completed. Updating status to completed.", len(sinks), batch_id)
-            batch.status = BatchStatus.completed
+            batch.status = BatchStatus.completed.value
             session.commit()
             return True
         else:
@@ -337,5 +332,3 @@ def check_batch_delivery_completion(batch_id: str, db: Session | None = None) ->
     finally:
         if own_session:
             session.close()
-
-

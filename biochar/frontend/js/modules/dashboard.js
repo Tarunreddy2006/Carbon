@@ -38,7 +38,7 @@ const DashboardModule = {
                         <span class="kpi-card-icon">🌾</span>
                     </div>
                     <div class="kpi-card-value" id="kpi-feedstock">—</div>
-                    <small>Wet mass biomass ingests</small>
+                    <small>Wet mass biomass feedstock</small>
                 </div>
                 <div class="kpi-card">
                     <div class="kpi-card-header">
@@ -115,21 +115,21 @@ const DashboardModule = {
             if (projectsErr) throw projectsErr;
             document.getElementById('kpi-projects').textContent = projects.length;
 
-            // 2. Query Feedstock Ingests
+            // 2. Query Feedstock Batches
             const { data: feedstock, error: feedstockErr } = await supabase
-                .from('feedstock_ingests')
-                .select('wet_mass_tons');
+                .from('feedstock_batches')
+                .select('weight_kg');
             if (feedstockErr) throw feedstockErr;
-            const totalFeedstock = feedstock.reduce((acc, row) => acc + (row.wet_mass_tons || 0), 0);
+            const totalFeedstock = feedstock.reduce((acc, row) => acc + ((row.weight_kg || 0) / 1000.0), 0);
             document.getElementById('kpi-feedstock').textContent = Utils.formatTons(totalFeedstock);
 
             // 3. Query Biochar Batches
             const { data: batches, error: batchesErr } = await supabase
                 .from('biochar_batches')
-                .select('id, status, net_sequestration_tco2e, created_at, batch_lot_number');
+                .select('id, status, net_sequestration_tco2e, created_at, batch_code, pyrolysis_runs(feedstock_batches(project_id))');
             if (batchesErr) throw batchesErr;
 
-            const totalBiochar = batches.filter(b => b.status === 'completed').length;
+            const totalBiochar = batches.filter(b => b.status === 'completed' || b.status === 'lab_certified').length;
             const totalCarbon = batches.reduce((acc, row) => acc + (row.net_sequestration_tco2e || 0), 0);
 
             document.getElementById('kpi-biochar').textContent = `${totalBiochar} batches`;
@@ -164,7 +164,6 @@ const DashboardModule = {
             }
         });
 
-        // Destroy previous chart if exists to prevent hover glitch
         if (window.myStatusChart) window.myStatusChart.destroy();
 
         const theme = Theme.current();
@@ -211,8 +210,7 @@ const DashboardModule = {
             monthlyData[key] = (monthlyData[key] || 0) + (b.net_sequestration_tco2e || 0);
         });
 
-        // Sort months chronologically
-        const sortedMonths = Object.keys(monthlyData).sort((a, b) => new Date(a) - new Date(b)).slice(-6); // last 6 months
+        const sortedMonths = Object.keys(monthlyData).sort((a, b) => new Date(a) - new Date(b)).slice(-6);
         const sortedValues = sortedMonths.map(m => monthlyData[m]);
 
         if (window.myMonthlyChart) window.myMonthlyChart.destroy();
@@ -222,7 +220,7 @@ const DashboardModule = {
             data: {
                 labels: sortedMonths.length ? sortedMonths : ['No Data'],
                 datasets: [{
-                    label: 'tCO2e Seestered',
+                    label: 'tCO2e Sequestered',
                     data: sortedValues.length ? sortedValues : [0],
                     backgroundColor: 'rgba(56, 189, 248, 0.45)',
                     borderColor: '#38bdf8',
@@ -248,7 +246,6 @@ const DashboardModule = {
         const container = document.getElementById('recent-activity-container');
         if (!container) return;
 
-        // Merge batches and sort by created_at desc
         const sortedActivities = [...batches]
             .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
             .slice(0, 5);
@@ -268,19 +265,22 @@ const DashboardModule = {
         let html = '<div class="flex flex-col gap-3">';
         sortedActivities.forEach(act => {
             const dateStr = Utils.timeAgo(act.created_at);
-            const projName = projectMap[act.project_id] || 'Unknown Project';
+            const projectId = act.pyrolysis_runs?.feedstock_batches?.project_id;
+            const projName = projectMap[projectId] || 'Unknown Project';
 
             let statusBadgeClass = 'badge-default';
             if (act.status === 'completed') statusBadgeClass = 'badge-success';
             if (act.status === 'processing_active') statusBadgeClass = 'badge-primary';
+            if (act.status === 'lab_certified') statusBadgeClass = 'badge-primary';
             if (act.status === 'sourcing_purgatory') statusBadgeClass = 'badge-warning';
+            if (act.status === 'ineligible') statusBadgeClass = 'badge-danger';
 
             html += `
                 <div class="flex items-center justify-between p-3 border rounded border-secondary bg-input">
                     <div class="flex items-center gap-3">
                         <span style="font-size: 1.2rem;">📦</span>
                         <div>
-                            <div class="font-medium text-primary">Batch Lot #${Utils.escapeHtml(act.batch_lot_number)}</div>
+                            <div class="font-medium text-primary">Batch Lot #${Utils.escapeHtml(act.batch_code)}</div>
                             <small>${Utils.escapeHtml(projName)} • ${dateStr}</small>
                         </div>
                     </div>
