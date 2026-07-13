@@ -29,11 +29,22 @@
     <!-- Redirect logic -->
     <script>
         (function () {
-            // 🔥 Complete Developer Sandbox Bypass Active
-            console.log("🔒 Security Alert: Dev bypass active. Routing straight to application workspace.");
+            var hasSession = false;
+            try {
+                var keys = Object.keys(localStorage);
+                for (var i = 0; i < keys.length; i++) {
+                    if (keys[i].indexOf('sb-') === 0 && keys[i].indexOf('-auth-token') !== -1) {
+                        hasSession = true;
+                        break;
+                    }
+                }
+            } catch (e) { }
             
-            // Bypass localStorage lookups completely and replace window location instantly
-            window.location.replace('/app.html');[cite: 4]
+            if (hasSession) {
+                window.location.replace('/app.html');
+            } else {
+                window.location.replace('/pages/auth/login.html');
+            }
         })();
     </script>
 </head>
