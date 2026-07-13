@@ -81,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(certificate.router)
     app.include_router(bulk.router)
 
+    # ── Global exception handler ──────────────────────────────────────────
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         if isinstance(exc, (StarletteHTTPException, RequestValidationError)):
