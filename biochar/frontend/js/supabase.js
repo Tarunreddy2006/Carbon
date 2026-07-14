@@ -72,21 +72,49 @@ async function getUserProfile() {
     const user = await getUser();
     if (!user || !supabaseClient) return null;
 
-    const { data, error } = await supabaseClient
+    // 1. Fetch user profile
+    const { data: profile, error: profileError } = await supabaseClient
         .from('profiles')
-        .select('*, organizations(*)')
+        .select('*')
         .eq('id', user.id)
         .maybeSingle();
 
-    if (error) {
-        console.error('getUserProfile error:', error);
+    if (profileError) {
+        console.error('getUserProfile profiles select error:', profileError);
         return null;
     }
-    if (data) {
-        _cachedProfile = data;
-        _cachedOrgId = data.organization_id;
+
+    if (!profile) return null;
+
+    // 2. Fetch organization_members membership details, joining organizations and roles
+    const { data: member, error: memberError } = await supabaseClient
+        .from('organization_members')
+        .select('*, organizations(*), roles(*)')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (memberError) {
+        console.error('getUserProfile organization_members select error:', memberError);
     }
-    return data;
+
+    // 3. Attach organization and role information resolved from organization_members
+    if (member) {
+        profile.organization_id = member.organization_id;
+        profile.organizations = member.organizations;
+        profile.role = member.roles;
+        profile.role_id = member.role_id;
+        profile.member_status = member.status;
+    } else {
+        profile.organization_id = null;
+        profile.organizations = null;
+        profile.role = null;
+        profile.role_id = null;
+        profile.member_status = null;
+    }
+
+    _cachedProfile = profile;
+    _cachedOrgId = profile.organization_id;
+    return profile;
 }
 
 /**

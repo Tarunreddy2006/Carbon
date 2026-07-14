@@ -85,7 +85,9 @@ class OrganizationMember(Base):
     invited_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
     )
+    status: Mapped[Optional[str]] = mapped_column(String(50), server_default=text("'Active'"), nullable=True)
     joined_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
+
 
 
 class Invitation(Base):

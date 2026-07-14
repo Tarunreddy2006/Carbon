@@ -277,7 +277,7 @@
         // ── Helper to execute database onboarding ──
         async function completeLazyOnboarding(sessionUser) {
             const supabaseClient = window.supabaseClient;
-            if (!supabaseClient) return;
+            if (!supabaseClient) return null;
 
             console.log("🚀 Running post-verification onboarding...");
             
@@ -295,6 +295,14 @@
                 }));
 
             try {
+                // Check if profile already exists (to avoid duplicate primary key violations)
+                const { data: existingProfile } = await supabaseClient
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', sessionUser.id)
+                    .maybeSingle();
+                const profileExists = !!existingProfile;
+
                 // Step B: Insert Organization
                 console.log("Onboarding org insert input parameters:", { id: orgId, name: orgName, email: sessionUser.email, phone: phone });
                 const { error: orgError } = await supabaseClient
@@ -314,22 +322,25 @@
                 }
 
                 // Step C: Insert Profile
-                console.log("Onboarding profile insert input parameters:", { id: sessionUser.id, first_name: firstName, last_name: lastName, phone: phone, organization_id: orgId });
-                const { data: profileData, error: profileError } = await supabaseClient
-                    .from('profiles')
-                    .insert({
-                        id: sessionUser.id,
-                        first_name: firstName,
-                        last_name: lastName,
-                        phone: phone,
-                        organization_id: orgId
-                    })
-                    .select();
+                if (!profileExists) {
+                    console.log("Onboarding profile insert input parameters:", { id: sessionUser.id, first_name: firstName, last_name: lastName, phone: phone });
+                    const { data: profileData, error: profileError } = await supabaseClient
+                        .from('profiles')
+                        .insert({
+                            id: sessionUser.id,
+                            first_name: firstName,
+                            last_name: lastName,
+                            phone: phone
+                        })
+                        .select();
 
-                console.log("profiles insert data result:", profileData);
-                if (profileError) {
-                    console.error("profiles insert error result:", profileError);
-                    throw profileError;
+                    console.log("profiles insert data result:", profileData);
+                    if (profileError) {
+                        console.error("profiles insert error result:", profileError);
+                        throw profileError;
+                    }
+                } else {
+                    console.log("Profile already exists. Skipping profile insertion.");
                 }
 
                 // Step D: Get Role ID
@@ -353,7 +364,9 @@
                     .insert({
                         organization_id: orgId,
                         user_id: sessionUser.id,
-                        role_id: roleRow.id
+                        role_id: roleRow.id,
+                        status: 'Active',
+                        joined_at: new Date().toISOString()
                     })
                     .select();
 
@@ -364,114 +377,31 @@
                 }
 
                 console.log("✅ Onboarding successful.");
-                window.location.reload(); // Refresh to load new context
+                window.clearProfileCache();
+                return await window.getUserProfile();
             } catch (setupErr) {
                 console.error("Onboarding failed:", setupErr);
+                alert('Account verified, but database organization setup failed: ' + setupErr.message);
+                return null;
             }
         }
 
         (async function bootstrap() {
             // Initialize appearance themes
             Theme.init();
-            const session = await window.getSession();
-            if(!session) {
-                window.location.replace('/pages/auth/login.html');
-                return;
+            
+            // Invoke Auth guard to load session, profile, organization, and role context
+            let profile = await Auth.guard();
+            if (!profile) return; // Auth.guard handles redirect to login if no session
+
+            // If profile does not have an organization resolved, execute onboarding
+            if (!profile.organization_id) {
+                profile = await completeLazyOnboarding(Auth.user);
+                if (!profile) return; // onboarding failed
+                // Re-initialize Auth with the new profile containing organization
+                Auth._profile = profile;
             }
-            let profile = await window.getUserProfile();
-            if (!profile) {
-                const sessionUser = session.user;
-                const meta = sessionUser.user_metadata;
-                const orgName = meta?.org_name || 'My Organization';
-                const firstName = meta?.first_name || '';
-                const lastName = meta?.last_name || '';
-                const phone = meta?.phone || '';
-                const orgId = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() : 
-                    ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-                        const r = Math.random() * 16 | 0;
-                        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-                        return v.toString(16);
-                    }));
-                try {
-                    console.log("Bootstrap: Profile not found. Executing inline database onboarding...");
-                    console.log("Onboarding org insert input parameters:", { id: orgId, name: orgName, email: sessionUser.email, phone: phone });
-                    const { error: orgError } = await window.supabaseClient
-                        .from('organizations')
-                        .insert({
-                            id: orgId,
-                            name: orgName,
-                            email: sessionUser.email,
-                            phone: phone,
-                            subscription_plan: 'Trial',
-                            subscription_status: 'Active'
-                        });
-                    
-                    if (orgError) {
-                        console.error("organizations insert error result:", orgError);
-                        throw orgError;
-                    }
 
-                    console.log("Onboarding profile insert input parameters:", { id: sessionUser.id, first_name: firstName, last_name: lastName, phone: phone, organization_id: orgId });
-                    const { data: profileData, error: profileError } = await window.supabaseClient
-                        .from('profiles')
-                        .insert({
-                            id: sessionUser.id,
-                            first_name: firstName,
-                            last_name: lastName,
-                            phone: phone,
-                            organization_id: orgId
-                        })
-                        .select();
-
-                    console.log("profiles insert data result:", profileData);
-                    if (profileError) {
-                        console.error("profiles insert error result:", profileError);
-                        throw profileError;
-                    }
-
-                    // Step D: Query predefined roles table to pull 'Owner' ID
-                    console.log("Onboarding role lookup name parameters: 'Owner'");
-                    const { data: roleRow, error: roleError } = await window.supabaseClient
-                        .from('roles')
-                        .select('id')
-                        .eq('name', 'Owner')
-                        .single();
-
-                    console.log("roles select data result:", roleRow);
-                    if (roleError) {
-                        console.error("roles select error result:", roleError);
-                        throw new Error("Role 'Owner' could not be resolved.");
-                    }
-
-                    // Step E: Link user context inside organization_members
-                    console.log("Onboarding membership insert input parameters:", { organization_id: orgId, user_id: sessionUser.id, role_id: roleRow.id });
-                    const { data: memberData, error: memberError } = await window.supabaseClient
-                        .from('organization_members')
-                        .insert({
-                            organization_id: orgId,
-                            user_id: sessionUser.id,
-                            role_id: roleRow.id
-                        })
-                        .select();
-
-                    console.log("organization_members insert data result:", memberData);
-                    if (memberError) {
-                        console.error("organization_members insert error result:", memberError);
-                        throw memberError;
-                    }
-
-                    // Clear local cache layers and force-refresh the profile memory context
-                    window.clearProfileCache();
-                    profile = await window.getUserProfile();
-                    console.log("🎉 Onboarding transaction completed successfully.");
-                } catch (setupErr) {
-                    console.error("Critical organization onboarding transaction failed:", setupErr);
-                    alert('Account verified, but database organization setup failed: ' + setupErr.message);
-                    return;
-                }
-        }
-            Auth._user=session.user;
-            Auth._profile=profile;
             // Sync verified account layouts
             Auth.populateUI();
             document.getElementById('dropdown-user-name').textContent = Auth.displayName;
@@ -545,9 +475,10 @@
 
             // ── Safe Corporate Logout Action ────────────────────────
             document.getElementById('logout-btn').addEventListener('click', async () => {
-                // Safely references our classic object wrapper to flush session states cleanly
-                if (window.SupabaseAuthHelpers) {
-                    await window.SupabaseAuthHelpers.signOut();
+                if (window.signOut) {
+                    await window.signOut();
+                } else if (window.handleLogout) {
+                    await window.handleLogout();
                 } else {
                     window.location.replace('/pages/auth/login.html');
                 }

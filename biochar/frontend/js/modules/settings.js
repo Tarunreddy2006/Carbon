@@ -20,7 +20,7 @@ const SettingsModule = {
             <div class="tabs animate-fade-up">
                 <button class="tab active" data-tab="profile">User Profile</button>
                 <button class="tab" data-tab="organization">Organization</button>
-                <button class="tab" data-tab="members">Team Members</button>
+                <button class="tab" data-tab="members">Users</button>
                 <button class="tab" data-tab="appearance">Preferences</button>
             </div>
 
@@ -116,11 +116,12 @@ const SettingsModule = {
             <!-- Team Members Tab -->
             <div class="tab-content animate-fade-up" id="tab-members">
                 <div class="card">
-                    <div class="card-header">
+                    <div class="card-header flex justify-between items-center" style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
-                            <h3 class="card-title">Team Workspace</h3>
-                            <p class="card-subtitle" style="margin-top:2px;">User memberships registered within this organization.</p>
+                            <h3 class="card-title">Users</h3>
+                            <p class="card-subtitle" style="margin-top:2px;">Manage user memberships and invitations for this organization.</p>
                         </div>
+                        <div id="add-user-btn-container"></div>
                     </div>
                     <div id="members-list-container" class="mt-4">
                         <div class="page-loading">
@@ -305,51 +306,310 @@ const SettingsModule = {
         }
     },
 
+    _roles: null,
+
     async loadMembers() {
         const orgId = Auth.orgId;
         if (!orgId) return;
 
         try {
-            // Read membership rows
-            const { data, error } = await supabase
+            // Load roles if not loaded
+            if (!this._roles) {
+                const { data: roles, error: rError } = await supabase
+                    .from('roles')
+                    .select('*');
+                if (rError) throw rError;
+                this._roles = roles;
+            }
+
+            const isOwner = Auth.profile?.role?.name === 'Owner' || Auth.profile?.role === 'Owner';
+            
+            // Populate Add User button container dynamically
+            const btnContainer = document.getElementById('add-user-btn-container');
+            if (btnContainer) {
+                if (isOwner) {
+                    btnContainer.innerHTML = `<button class="btn btn-primary btn-sm" id="add-user-btn">Add User</button>`;
+                    const addBtn = document.getElementById('add-user-btn');
+                    if (addBtn) addBtn.onclick = () => this.showAddUserModal();
+                } else {
+                    btnContainer.innerHTML = '';
+                }
+            }
+
+            // 1. Read active membership rows
+            const { data: members, error: mError } = await supabase
                 .from('organization_members')
                 .select('*, roles(name), user:profiles(*)')
                 .eq('organization_id', orgId);
 
-            if (error) throw error;
+            if (mError) throw mError;
+
+            // 2. Read pending invitations rows
+            const { data: invitations, error: iError } = await supabase
+                .from('invitations')
+                .select('*, roles(name)')
+                .eq('organization_id', orgId)
+                .eq('accepted', false);
+
+            if (iError) throw iError;
 
             const container = document.getElementById('members-list-container');
             if (!container) return;
 
             // Map list structure
-            const mappedData = data.map(m => {
+            const mappedData = [];
+
+            // Add active members
+            members.forEach(m => {
                 const name = m.user ? (m.user.first_name + ' ' + m.user.last_name).trim() : 'Unregistered User';
-                const phone = m.user ? m.user.phone || '—' : '—';
-                return {
+                const email = m.user?.email || (m.user_id === Auth.user.id ? Auth.user.email : '—');
+                mappedData.push({
+                    id: m.id,
+                    user_id: m.user_id,
                     name: name || '—',
-                    role: m.roles ? m.roles.name : '—',
+                    email: email,
+                    role_id: m.role_id,
+                    role_name: m.roles ? m.roles.name : '—',
+                    status: 'Active',
                     joined_at: m.joined_at,
-                    phone: phone
-                };
+                    is_active: true
+                });
             });
 
+            // Add pending invitations
+            invitations.forEach(inv => {
+                mappedData.push({
+                    id: inv.id,
+                    user_id: null,
+                    name: '—',
+                    email: inv.email,
+                    role_id: inv.role_id,
+                    role_name: inv.roles ? inv.roles.name : '—',
+                    status: 'Pending',
+                    joined_at: inv.created_at,
+                    is_active: false
+                });
+            });
+
+            const columns = [
+                { key: 'name', label: 'User Name', sortable: true },
+                { key: 'email', label: 'Email', sortable: true },
+                { 
+                    key: 'role_name', 
+                    label: 'Assigned Role', 
+                    sortable: true,
+                    render: (val, row) => {
+                        // Render dropdown if Owner, and not self
+                        if (isOwner && row.user_id !== Auth.user.id) {
+                            return `
+                                <select class="form-select select-sm role-change-select" style="padding: 2px 8px; font-size: 0.85rem; height: auto; width: auto;" data-id="${row.id}" data-is-active="${row.is_active}">
+                                    ${this._roles.map(r => `<option value="${r.id}" ${r.id === row.role_id ? 'selected' : ''}>${r.name}</option>`).join('')}
+                                </select>
+                            `;
+                        } else {
+                            return `<span class="badge badge-primary">${val}</span>`;
+                        }
+                    }
+                },
+                { 
+                    key: 'status', 
+                    label: 'Status', 
+                    sortable: true,
+                    render: (val) => {
+                        const badgeClass = val === 'Active' ? 'badge-success' : 'badge-warning';
+                        return `<span class="badge ${badgeClass}">${val}</span>`;
+                    }
+                }
+            ];
+
+            if (isOwner) {
+                columns.push({
+                    key: 'actions',
+                    label: 'Actions',
+                    sortable: false,
+                    render: (val, row) => {
+                        if (row.user_id === Auth.user.id) return '—';
+                        return `
+                            <button class="btn btn-danger btn-sm remove-member-btn" style="padding: 2px 8px; font-size: 0.8rem; height: auto;" data-id="${row.id}" data-is-active="${row.is_active}" data-email="${row.email}">
+                                Remove
+                            </button>
+                        `;
+                    }
+                });
+            }
+
             DataTable.render(container, {
-                columns: [
-                    { key: 'name', label: 'User Name', sortable: true },
-                    { key: 'phone', label: 'Phone', sortable: false },
-                    { key: 'role', label: 'Assigned Role', sortable: true, render: (val) => `<span class="badge badge-primary">${val}</span>` },
-                    { key: 'joined_at', label: 'Joined At', sortable: true, render: (val) => Utils.formatDate(val) },
-                ],
+                columns: columns,
                 data: mappedData,
                 searchable: false,
                 exportable: false,
             });
+
+            // Clean existing event listeners by replacing with fresh event handlers
+            container.onchange = null;
+            container.onchange = async (e) => {
+                if (e.target.classList.contains('role-change-select')) {
+                    const id = e.target.dataset.id;
+                    const isActive = e.target.dataset.isActive === 'true';
+                    const newRoleId = Number(e.target.value);
+                    await this.changeUserRole(id, isActive, newRoleId);
+                }
+            };
+
+            container.onclick = null;
+            container.onclick = async (e) => {
+                if (e.target.classList.contains('remove-member-btn')) {
+                    const id = e.target.dataset.id;
+                    const isActive = e.target.dataset.isActive === 'true';
+                    const email = e.target.dataset.email;
+                    await this.removeUser(id, isActive, email);
+                }
+            };
+
         } catch (err) {
             console.error('Failed to load members:', err);
             const container = document.getElementById('members-list-container');
             if (container) {
                 container.innerHTML = `<div class="text-danger py-4">Failed to load members: ${err.message}</div>`;
             }
+        }
+    },
+
+    showAddUserModal() {
+        if (!this._roles) return;
+
+        const html = `
+            <div class="modal-header">
+                <h3 class="modal-title">Add User</h3>
+            </div>
+            <form id="add-user-form">
+                <div class="modal-body">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label" for="add-first-name">First Name</label>
+                            <input type="text" class="form-input" id="add-first-name" placeholder="First Name" />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="add-last-name">Last Name</label>
+                            <input type="text" class="form-input" id="add-last-name" placeholder="Last Name" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="add-email">Email <span class="required">*</span></label>
+                        <input type="email" class="form-input" id="add-email" required placeholder="email@company.com" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="add-role">Role <span class="required">*</span></label>
+                        <select class="form-select" id="add-role" required>
+                            ${this._roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-ghost" id="add-user-cancel-btn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="save-user-btn">
+                        <span class="btn-text">Add User</span>
+                        <span class="btn-spinner"></span>
+                    </button>
+                </div>
+            </form>
+        `;
+
+        Modal.open(html, { width: '480px' });
+
+        document.getElementById('add-user-cancel-btn').addEventListener('click', () => Modal.close());
+
+        const form = document.getElementById('add-user-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('save-user-btn');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            const email = document.getElementById('add-email').value.trim();
+            const roleId = Number(document.getElementById('add-role').value);
+
+            try {
+                const orgId = Auth.orgId;
+                const token = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() : crypto.randomUUID();
+
+                // Store invitation record using invitations table
+                const { error } = await supabase
+                    .from('invitations')
+                    .insert({
+                        organization_id: orgId,
+                        email: email,
+                        role_id: roleId,
+                        invited_by: Auth.user.id,
+                        token: token,
+                        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                        accepted: false
+                    });
+
+                if (error) throw error;
+
+                Toast.success('User invited successfully');
+                Modal.close();
+                await this.loadMembers();
+            } catch (err) {
+                console.error('Failed to add user:', err);
+                Toast.error('Failed to add user: ' + err.message);
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        });
+    },
+
+    async changeUserRole(id, isActive, newRoleId) {
+        try {
+            if (isActive) {
+                const { error } = await supabase
+                    .from('organization_members')
+                    .update({ role_id: newRoleId })
+                    .eq('id', id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('invitations')
+                    .update({ role_id: newRoleId })
+                    .eq('id', id);
+                if (error) throw error;
+            }
+            Toast.success('User role updated successfully');
+            await this.loadMembers();
+        } catch (err) {
+            console.error('Failed to update role:', err);
+            Toast.error('Failed to update role: ' + err.message);
+        }
+    },
+
+    async removeUser(id, isActive, email) {
+        const confirm = await Modal.confirm(
+            'Remove User',
+            `Are you sure you want to remove ${email} from this organization?`
+        );
+        if (!confirm) return;
+
+        try {
+            if (isActive) {
+                const { error } = await supabase
+                    .from('organization_members')
+                    .delete()
+                    .eq('id', id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('invitations')
+                    .delete()
+                    .eq('id', id);
+                if (error) throw error;
+            }
+            Toast.success('User removed successfully');
+            await this.loadMembers();
+        } catch (err) {
+            console.error('Failed to remove user:', err);
+            Toast.error('Failed to remove user: ' + err.message);
         }
     },
 
