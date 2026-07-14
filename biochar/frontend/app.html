@@ -281,36 +281,38 @@
 
             console.log("🚀 Running post-verification onboarding...");
             
-            const meta = sessionUser.user_metadata;
-            const orgName = meta?.org_name || 'My Organization';
-            const firstName = meta?.first_name || '';
-            const lastName = meta?.last_name || '';
-            const phone = meta?.phone || '';
-
-            const orgId = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() : 
-                ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-                    const r = Math.random() * 16 | 0;
-                    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-                    return v.toString(16);
-                }));
-
             try {
-                // Check if profile already exists (to avoid duplicate primary key violations)
-                const { data: existingProfile } = await supabaseClient
-                    .from('profiles')
-                    .select('id')
-                    .eq('id', sessionUser.id)
-                    .maybeSingle();
-                const profileExists = !!existingProfile;
+                // Step A: Authenticate user using getUser()
+                const { data: authData, error: authError } = await supabaseClient.auth.getUser();
+                if (authError || !authData || !authData.user) {
+                    console.error("Onboarding authentication check failed:", authError);
+                    throw authError || new Error("Failed to authenticate user: session not active.");
+                }
+                const authenticatedUser = authData.user;
+                const authenticatedUserId = authenticatedUser.id;
 
-                // Step B: Insert Organization
-                console.log("Onboarding org insert input parameters:", { id: orgId, name: orgName, email: sessionUser.email, phone: phone });
+                const meta = authenticatedUser.user_metadata || sessionUser?.user_metadata;
+                const orgName = meta?.org_name || 'My Organization';
+                const firstName = meta?.first_name || '';
+                const lastName = meta?.last_name || '';
+                const phone = meta?.phone || '';
+                const email = authenticatedUser.email || sessionUser?.email || '';
+
+                const orgId = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() : 
+                    ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                        const r = Math.random() * 16 | 0;
+                        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                        return v.toString(16);
+                    }));
+
+                // Step B: Create organization
+                console.log("Onboarding org insert input parameters:", { id: orgId, name: orgName, email: email, phone: phone });
                 const { error: orgError } = await supabaseClient
                     .from('organizations')
                     .insert({
                         id: orgId,
                         name: orgName,
-                        email: sessionUser.email,
+                        email: email,
                         phone: phone,
                         subscription_plan: 'Trial',
                         subscription_status: 'Active'
@@ -321,13 +323,27 @@
                     throw orgError;
                 }
 
-                // Step C: Insert Profile
+                // Step C: Create profile (using the same auth UUID as profiles.id)
+                // Check if profile already exists (to avoid duplicate primary key violations)
+                const { data: existingProfile, error: profileCheckError } = await supabaseClient
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', authenticatedUserId)
+                    .maybeSingle();
+
+                if (profileCheckError) {
+                    console.error("Failed to check if profile exists:", profileCheckError);
+                    throw profileCheckError;
+                }
+
+                const profileExists = !!existingProfile;
+
                 if (!profileExists) {
-                    console.log("Onboarding profile insert input parameters:", { id: sessionUser.id, first_name: firstName, last_name: lastName, phone: phone });
+                    console.log("Onboarding profile insert input parameters:", { id: authenticatedUserId, first_name: firstName, last_name: lastName, phone: phone });
                     const { data: profileData, error: profileError } = await supabaseClient
                         .from('profiles')
                         .insert({
-                            id: sessionUser.id,
+                            id: authenticatedUserId,
                             first_name: firstName,
                             last_name: lastName,
                             phone: phone
@@ -343,7 +359,7 @@
                     console.log("Profile already exists. Skipping profile insertion.");
                 }
 
-                // Step D: Get Role ID
+                // Step D: Fetch Owner role
                 console.log("Onboarding role lookup name parameters: 'Owner'");
                 const { data: roleRow, error: roleError } = await supabaseClient
                     .from('roles')
@@ -357,17 +373,23 @@
                     throw new Error("Role 'Owner' could not be resolved.");
                 }
 
-                // Step E: Insert Membership
-                console.log("Onboarding membership insert input parameters:", { organization_id: orgId, user_id: sessionUser.id, role_id: roleRow.id });
+                // Step E: Insert into organization_members with user_id = auth.users.id
+                // Add temporary debug logs to verify the authenticated UUID and the membership payload before insertion.
+                console.log("DEBUG: Authenticated user UUID obtained from getUser():", authenticatedUserId);
+
+                const membershipPayload = {
+                    organization_id: orgId,
+                    user_id: authenticatedUserId,
+                    role_id: roleRow.id,
+                    status: 'Active',
+                    joined_at: new Date().toISOString()
+                };
+
+                console.log("DEBUG: Membership payload before insertion:", JSON.stringify(membershipPayload));
+
                 const { data: memberData, error: memberError } = await supabaseClient
                     .from('organization_members')
-                    .insert({
-                        organization_id: orgId,
-                        user_id: sessionUser.id,
-                        role_id: roleRow.id,
-                        status: 'Active',
-                        joined_at: new Date().toISOString()
-                    })
+                    .insert(membershipPayload)
                     .select();
 
                 console.log("organization_members insert data result:", memberData);
