@@ -389,8 +389,7 @@
 
                 const { data: memberData, error: memberError } = await supabaseClient
                     .from('organization_members')
-                    .insert(membershipPayload)
-                    .select();
+                    .insert(membershipPayload);
 
                 console.log("organization_members insert data result:", memberData);
                 if (memberError) {
