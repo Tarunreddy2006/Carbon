@@ -87,25 +87,25 @@ async function getUserProfile() {
     if (!profile) return null;
 
     // 2. Fetch organization_members membership details, joining organizations and roles
-    let query = supabaseClient
+    const { data: members, error: memberError } = await supabaseClient
         .from('organization_members')
         .select('*, organizations(*), roles(*)')
-        .eq('user_id', user.id);
-
-    if (profile.organization_id) {
-        query = query.eq('organization_id', profile.organization_id);
-    }
-
-    // Sort by joined_at descending to get the most recent membership first
-    query = query.order('joined_at', { ascending: false });
-
-    const { data: members, error: memberError } = await query;
+        .eq('user_id', user.id)
+        .order('joined_at', { ascending: false });
 
     if (memberError) {
         console.error('getUserProfile organization_members select error:', memberError);
     }
 
-    const member = (members && members.length > 0) ? members[0] : null;
+    // Find matching membership or fallback to the most recent one
+    let member = null;
+    if (members && members.length > 0) {
+        if (profile.organization_id) {
+            member = members.find(m => m.organization_id === profile.organization_id) || members[0];
+        } else {
+            member = members[0];
+        }
+    }
 
     // 3. Attach organization and role information resolved from organization_members
     if (member) {
