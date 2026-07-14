@@ -174,27 +174,32 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                     }
 
                     // Step B: Insert a new multi-tenant organization row into organizations table
+                    const orgId = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() : 
+                        ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                            const r = Math.random() * 16 | 0;
+                            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                            return v.toString(16);
+                        }));
+
                     console.log("Inserting organization:", orgName, email, phone);
-                    const { data: orgRow, error: orgError } = await supabaseClient
+                    const { error: orgError } = await supabaseClient
                         .from('organizations')
                         .insert({
+                            id: orgId,
                             name: orgName,
                             email: email,
                             phone: phone,
                             subscription_plan: 'Trial',
                             subscription_status: 'Active'
-                        })
-                        .select()
-                        .single();
+                        });
 
-                    console.log("organizations insert data result:", orgRow);
                     if (orgError) {
                         console.error("organizations insert error result:", orgError);
                         throw orgError;
                     }
 
                     // Step C: Insert corresponding user record metadata into profiles table
-                    console.log("Inserting profile:", user.id, firstName, lastName, phone, orgRow.id);
+                    console.log("Inserting profile:", user.id, firstName, lastName, phone, orgId);
                     const { data: profileData, error: profileError } = await supabaseClient
                         .from('profiles')
                         .insert({
@@ -202,7 +207,7 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                             first_name: firstName,
                             last_name: lastName,
                             phone: phone,
-                            organization_id: orgRow.id
+                            organization_id: orgId
                         })
                         .select();
 
@@ -227,11 +232,11 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                     }
 
                     // Step E: Link user context by inserting a row into organization_members
-                    console.log("Inserting organization member:", orgRow.id, user.id, roleRow.id);
+                    console.log("Inserting organization member:", orgId, user.id, roleRow.id);
                     const { data: memberData, error: memberError } = await supabaseClient
                         .from('organization_members')
                         .insert({
-                            organization_id: orgRow.id,
+                            organization_id: orgId,
                             user_id: user.id,
                             role_id: roleRow.id,
                             joined_at: new Date().toISOString()

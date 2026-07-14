@@ -1072,3 +1072,62 @@ CREATE TABLE public.laboratory_integrations (
   CONSTRAINT laboratory_integrations_pkey PRIMARY KEY (id),
   CONSTRAINT laboratory_integrations_laboratory_id_fkey FOREIGN KEY (laboratory_id) REFERENCES public.laboratories(id)
 );
+CREATE POLICY "Allow authenticated users to create organizations"
+ON public.organizations
+FOR INSERT
+TO authenticated
+WITH CHECK (true);
+CREATE POLICY "Users can view their own organization context"
+ON public.organizations
+FOR SELECT
+TO authenticated
+USING (
+    id IN (
+        SELECT organization_id
+        FROM public.profiles
+        WHERE id = auth.uid()
+    )
+);
+CREATE POLICY "Allow users to insert their own profile"
+ON public.profiles
+FOR INSERT
+TO authenticated
+WITH CHECK (
+    auth.uid() = id
+);
+CREATE POLICY "Users can view their own profile"
+ON public.profiles
+FOR SELECT
+TO authenticated
+USING (
+    auth.uid() = id
+);
+CREATE POLICY "Users can update their own profile"
+ON public.profiles
+FOR UPDATE
+TO authenticated
+USING (
+    auth.uid() = id
+)
+WITH CHECK (
+    auth.uid() = id
+);
+CREATE POLICY "Allow authenticated users to view system roles"
+ON public.roles
+FOR SELECT
+TO authenticated
+USING (true);
+CREATE POLICY "Allow users to establish their own workspace membership"
+ON public.organization_members
+FOR INSERT
+TO authenticated
+WITH CHECK (
+    auth.uid() = user_id
+);
+CREATE POLICY "Users can view their own memberships"
+ON public.organization_members
+FOR SELECT
+TO authenticated
+USING (
+    auth.uid() = user_id
+);
