@@ -109,7 +109,22 @@ async function getUserProfile() {
 
     // 3. Attach organization and role information resolved from organization_members
     if (member) {
-        profile.organization_id = member.organization_id;
+        if (profile.organization_id !== member.organization_id) {
+            profile.organization_id = member.organization_id;
+            try {
+                const { error: syncError } = await supabaseClient
+                    .from('profiles')
+                    .update({ organization_id: member.organization_id })
+                    .eq('id', user.id);
+                if (syncError) {
+                    console.error('Failed to sync profile organization_id in DB:', syncError);
+                } else {
+                    console.log('Successfully synced profile organization_id in DB to:', member.organization_id);
+                }
+            } catch (syncErr) {
+                console.error('Error syncing profile organization_id:', syncErr);
+            }
+        }
         profile.organizations = member.organizations;
         profile.role = member.roles;
         profile.role_id = member.role_id;
