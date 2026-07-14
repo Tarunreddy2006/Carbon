@@ -478,14 +478,14 @@
             document.getElementById('dropdown-user-email').textContent = Auth.user?.email || '';
 
             // Register single-page navigation components
-            Router.register('/dashboard', { title: 'Dashboard', render: DashboardModule.render });
-            Router.register('/projects', { title: 'Projects', render: ProjectsModule.render });
-            Router.register('/feedstock', { title: 'Feedstock', render: FeedstockModule.render });
-            Router.register('/batches', { title: 'Biochar Batches', render: BatchesModule.render });
-            Router.register('/pyrolysis', { title: 'Pyrolysis Telemetry', render: PyrolysisModule.render });
-            Router.register('/laboratory', { title: 'Laboratory', render: LaboratoryModule.render });
-            Router.register('/distribution', { title: 'Distribution', render: DistributionModule.render });
-            Router.register('/settings', { title: 'Settings', render: SettingsModule.render });
+            Router.register('/dashboard', { title: 'Dashboard', render: container => DashboardModule.render(container) });
+            Router.register('/projects', { title: 'Projects', render: container => ProjectsModule.render(container) });
+            Router.register('/feedstock', { title: 'Feedstock', render: container => FeedstockModule.render(container) });
+            Router.register('/batches', { title: 'Biochar Batches', render: container => BatchesModule.render(container) });
+            Router.register('/pyrolysis', { title: 'Pyrolysis Telemetry', render: container => PyrolysisModule.render(container) });
+            Router.register('/laboratory', { title: 'Laboratory', render: container => LaboratoryModule.render(container) });
+            Router.register('/distribution', { title: 'Distribution', render: container => DistributionModule.render(container) });
+            Router.register('/settings', { title: 'Settings', render: container => SettingsModule.render(container) });
 
             // Fire routing listener
             Router.init('content');
