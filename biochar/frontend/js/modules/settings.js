@@ -8,6 +8,16 @@ const SettingsModule = {
     async render(container) {
         this._container = container;
         
+        const isOwnerOrAdmin = typeof Permissions !== 'undefined' && (Permissions.hasRole('Owner') || Permissions.hasRole('Admin'));
+        let tabsHtml = `<button class="tab active" data-tab="profile">User Profile</button>`;
+        if (isOwnerOrAdmin) {
+            tabsHtml += `
+                <button class="tab" data-tab="organization">Organization</button>
+                <button class="tab" data-tab="members">Users</button>
+            `;
+        }
+        tabsHtml += `<button class="tab" data-tab="appearance">Preferences</button>`;
+
         container.innerHTML = `
             <div class="page-header animate-fade-in">
                 <div class="page-header-left">
@@ -18,10 +28,7 @@ const SettingsModule = {
 
             <!-- Tabs Navigation -->
             <div class="tabs animate-fade-up">
-                <button class="tab active" data-tab="profile">User Profile</button>
-                <button class="tab" data-tab="organization">Organization</button>
-                <button class="tab" data-tab="members">Users</button>
-                <button class="tab" data-tab="appearance">Preferences</button>
+                ${tabsHtml}
             </div>
 
             <!-- Profile Tab -->
@@ -163,8 +170,10 @@ const SettingsModule = {
         // Initialize setup
         this.initTabs();
         await this.loadProfileData();
-        await this.loadOrgData();
-        await this.loadMembers();
+        if (isOwnerOrAdmin) {
+            await this.loadOrgData();
+            await this.loadMembers();
+        }
         this.initPreferenceTab();
     },
 
@@ -322,12 +331,13 @@ const SettingsModule = {
                 this._roles = roles;
             }
 
-            const isOwner = Auth.profile?.role?.name === 'Owner' || Auth.profile?.role === 'Owner';
+            const canManageUsers = typeof Permissions !== 'undefined' && Permissions.hasPermission('manage_users');
+            const isCurrentUserOwner = typeof Permissions !== 'undefined' && Permissions.hasRole('Owner');
             
             // Populate Add User button container dynamically
             const btnContainer = document.getElementById('add-user-btn-container');
             if (btnContainer) {
-                if (isOwner) {
+                if (canManageUsers) {
                     btnContainer.innerHTML = `<button class="btn btn-primary btn-sm" id="add-user-btn">Add User</button>`;
                     const addBtn = document.getElementById('add-user-btn');
                     if (addBtn) addBtn.onclick = () => this.showAddUserModal();
@@ -399,11 +409,14 @@ const SettingsModule = {
                     label: 'Assigned Role', 
                     sortable: true,
                     render: (val, row) => {
-                        // Render dropdown if Owner, and not self
-                        if (isOwner && row.user_id !== Auth.user.id) {
+                        const targetIsOwner = row.role_name === 'Owner';
+                        // Render dropdown if has manage_users permission, and not self, and the target is not Owner (unless current user is Owner)
+                        if (canManageUsers && row.user_id !== Auth.user.id && (!targetIsOwner || isCurrentUserOwner)) {
+                            // Filter roles: if current user is not Owner, exclude Owner from selection options
+                            const allowedRoles = isCurrentUserOwner ? this._roles : this._roles.filter(r => r.name !== 'Owner');
                             return `
                                 <select class="form-select select-sm role-change-select" style="padding: 2px 8px; font-size: 0.85rem; height: auto; width: auto;" data-id="${row.id}" data-is-active="${row.is_active}">
-                                    ${this._roles.map(r => `<option value="${r.id}" ${r.id === row.role_id ? 'selected' : ''}>${r.name}</option>`).join('')}
+                                    ${allowedRoles.map(r => `<option value="${r.id}" ${r.id === row.role_id ? 'selected' : ''}>${r.name}</option>`).join('')}
                                 </select>
                             `;
                         } else {
@@ -422,13 +435,15 @@ const SettingsModule = {
                 }
             ];
 
-            if (isOwner) {
+            if (canManageUsers) {
                 columns.push({
                     key: 'actions',
                     label: 'Actions',
                     sortable: false,
                     render: (val, row) => {
                         if (row.user_id === Auth.user.id) return '—';
+                        const targetIsOwner = row.role_name === 'Owner';
+                        if (targetIsOwner && !isCurrentUserOwner) return '—'; // Admin cannot remove Owner
                         return `
                             <button class="btn btn-danger btn-sm remove-member-btn" style="padding: 2px 8px; font-size: 0.8rem; height: auto;" data-id="${row.id}" data-is-active="${row.is_active}" data-email="${row.email}">
                                 Remove
@@ -478,6 +493,9 @@ const SettingsModule = {
     showAddUserModal() {
         if (!this._roles) return;
 
+        const isCurrentUserOwner = typeof Permissions !== 'undefined' && Permissions.hasRole('Owner');
+        const allowedRoles = isCurrentUserOwner ? this._roles : this._roles.filter(r => r.name !== 'Owner');
+
         const html = `
             <div class="modal-header">
                 <h3 class="modal-title">Add User</h3>
@@ -501,7 +519,7 @@ const SettingsModule = {
                     <div class="form-group">
                         <label class="form-label" for="add-role">Role <span class="required">*</span></label>
                         <select class="form-select" id="add-role" required>
-                            ${this._roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+                            ${allowedRoles.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
                         </select>
                     </div>
                 </div>

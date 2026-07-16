@@ -206,6 +206,13 @@ const DataTable = {
                     });
                 });
             }
+
+            // Enforce UI constraints for current role on table updates
+            if (typeof Permissions !== 'undefined') {
+                const path = window.Router ? window.Router.currentPath() : '';
+                const moduleName = path.replace('/', '') || 'dashboard';
+                Permissions.enforceUI(container, moduleName);
+            }
         };
 
         renderTable();

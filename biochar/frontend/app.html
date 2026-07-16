@@ -259,6 +259,7 @@
     <script src="/js/modal.js"></script>
     <script src="/js/form.js"></script>
     <script src="/js/table.js"></script>
+    <script src="/js/permissions.js"></script>
     <script src="/js/auth.js"></script>
     <script src="/js/router.js"></script>
 
@@ -425,6 +426,9 @@
 
             // Sync verified account layouts
             Auth.populateUI();
+            if (typeof Permissions !== 'undefined') {
+                Permissions.updateSidebar();
+            }
             document.getElementById('dropdown-user-name').textContent = Auth.displayName;
             document.getElementById('dropdown-user-email').textContent = Auth.user?.email || '';
 
@@ -437,6 +441,20 @@
             Router.register('/laboratory', { title: 'Laboratory', render: container => LaboratoryModule.render(container) });
             Router.register('/distribution', { title: 'Distribution', render: container => DistributionModule.render(container) });
             Router.register('/settings', { title: 'Settings', render: container => SettingsModule.render(container) });
+            Router.register('/users', {
+                title: 'Users',
+                render: async (container) => {
+                    if (typeof Permissions !== 'undefined' && Permissions.hasPermission('manage_users')) {
+                        Router.navigate('/settings');
+                        setTimeout(() => {
+                            const tab = document.querySelector('.tab[data-tab="members"]');
+                            if (tab) tab.click();
+                        }, 100);
+                    } else if (typeof Router !== 'undefined') {
+                        Router._renderAccessDenied();
+                    }
+                }
+            });
 
             // Fire routing listener
             Router.init('content');
