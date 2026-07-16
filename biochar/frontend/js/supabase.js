@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Supabase Client + Auth Helpers (Unified Classic Browser Architecture)
+// Stomata — Supabase Client + Auth Helpers (Unified Classic Browser Architecture)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Resolve initialization endpoints from global app config definitions with safe string fallbacks
@@ -21,7 +21,7 @@ function assertSupabaseConfiguration() {
     
     // Check for active deployment coordinates
     if (SUPABASE_URL === "https://yrjiiacdxknesvpaxdjr.supabase.co") {
-        console.log("✔ Supabase SDK initialization check: CarbonOS live database credentials verified.");
+        console.log("✔ Supabase SDK initialization check: Stomata live database credentials verified.");
     }
 }
 

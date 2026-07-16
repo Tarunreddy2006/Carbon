@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Stomata | Biochar dMRV Platform</title>
+    <title>Stomata | Biochar dMRV Platform by Stomata</title>
     <meta name="description"
         content="Enterprise biochar carbon-removal monitoring, reporting and verification platform by Stomata.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -281,7 +281,7 @@
             if (!supabaseClient) return null;
 
             console.log("🚀 Running post-verification onboarding...");
-            
+
             try {
                 // Step A: Authenticate user using getUser()
                 const { data: authData, error: authError } = await supabaseClient.auth.getUser();
@@ -299,7 +299,7 @@
                 const phone = meta?.phone || '';
                 const email = authenticatedUser.email || sessionUser?.email || '';
 
-                const orgId = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() : 
+                const orgId = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() :
                     ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
                         const r = Math.random() * 16 | 0;
                         const v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -411,7 +411,7 @@
         (async function bootstrap() {
             // Initialize appearance themes
             Theme.init();
-            
+
             // Invoke Auth guard to load session, profile, organization, and role context
             let profile = await Auth.guard();
             if (!profile) return; // Auth.guard handles redirect to login if no session
@@ -458,7 +458,7 @@
 
             // Fire routing listener
             Router.init('content');
-            
+
             // ── Sidebar Interceptors ─────────────────────────────────
             const sidebar = document.getElementById('sidebar');
             const appShell = document.getElementById('app-shell');

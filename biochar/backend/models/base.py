@@ -1,7 +1,7 @@
 """
 biochar/backend/models/base.py
 ──────────────────────────────────────────────────────────────────────────────
-Shared mixins and Base re-export for all CarbonOS ORM models.
+Shared mixins and Base re-export for all Stomata ORM models.
 ──────────────────────────────────────────────────────────────────────────────
 """
 

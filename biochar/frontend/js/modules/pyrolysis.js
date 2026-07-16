@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Pyrolysis Module (SCADA Telemetry)
+// Stomata — Pyrolysis Module (SCADA Telemetry)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const PyrolysisModule = {

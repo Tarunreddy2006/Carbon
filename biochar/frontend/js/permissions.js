@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Centralized Permission & Role-Based Access Control (RBAC) Service
+// Stomata — Centralized Permission & Role-Based Access Control (RBAC) Service
 // ═══════════════════════════════════════════════════════════════════════════
 
 const Permissions = {

@@ -2,7 +2,7 @@
 carbon/biochar/backend/database.py
 ──────────────────────────────────────────────────────────────────────────────
 SQLAlchemy 2.x engine, session factory, and declarative base for the
-CarbonOS biochar platform.
+Stomata biochar platform.
 
 Configure via the ``DATABASE_URL`` environment variable (PostgreSQL).
 ──────────────────────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 if not DATABASE_URL:
     raise RuntimeError(
         "DATABASE_URL environment variable is not set. "
-        "The CarbonOS backend requires a PostgreSQL connection string."
+        "The Stomata backend requires a PostgreSQL connection string."
     )
 
 engine = create_engine(
@@ -40,7 +40,7 @@ SessionLocal = sessionmaker(
 
 
 class Base(DeclarativeBase):
-    """SQLAlchemy 2.x declarative base for all CarbonOS models."""
+    """SQLAlchemy 2.x declarative base for all Stomata models."""
     pass
 
 

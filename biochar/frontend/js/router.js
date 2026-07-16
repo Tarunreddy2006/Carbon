@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Hash-Based SPA Router
+// Stomata — Hash-Based SPA Router
 // ═══════════════════════════════════════════════════════════════════════════
 
 const Router = {
@@ -132,7 +132,7 @@ const Router = {
         const breadcrumb = document.getElementById('topbar-breadcrumb');
         if (breadcrumb) {
             breadcrumb.innerHTML = `
-                <span>CarbonOS</span>
+                <span>Stomata</span>
                 <span class="topbar-breadcrumb-separator">/</span>
                 <span class="topbar-breadcrumb-current">${Utils.escapeHtml(title || 'Dashboard')}</span>
             `;
