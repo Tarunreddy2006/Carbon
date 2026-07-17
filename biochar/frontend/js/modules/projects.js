@@ -40,20 +40,35 @@ const ProjectsModule = {
 
     async loadProjects() {
         try {
-            const { data, error } = await supabase
+            const { data: projectsData, error: projectsError } = await supabase
                 .from('projects')
-                .select('*, biochar_batches(id)')
+                .select('*')
                 .order('created_at', { ascending: false });
 
-            if (error) throw error;
+            if (projectsError) throw projectsError;
+
+            // Fetch batches to resolve project counts in memory since projects -> biochar_batches is an indirect relationship
+            const { data: batchesData, error: batchesError } = await supabase
+                .from('biochar_batches')
+                .select('id, pyrolysis_runs(feedstock_batches(project_id))');
+
+            const projectBatchCounts = {};
+            if (batchesData) {
+                batchesData.forEach(batch => {
+                    const projectId = batch.pyrolysis_runs?.feedstock_batches?.project_id;
+                    if (projectId) {
+                        projectBatchCounts[projectId] = (projectBatchCounts[projectId] || 0) + 1;
+                    }
+                });
+            }
 
             const container = document.getElementById('projects-table-container');
             if (!container) return;
 
             // Map batch counts
-            const mappedData = data.map(p => ({
+            const mappedData = projectsData.map(p => ({
                 ...p,
-                batch_count: p.biochar_batches ? p.biochar_batches.length : 0
+                batch_count: projectBatchCounts[p.id] || 0
             }));
 
             this._table = DataTable.render(container, {
