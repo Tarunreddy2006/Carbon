@@ -210,15 +210,17 @@
 .main-area {
     flex: 1;
     margin-left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    transition: margin-left var(--duration-slow) var(--ease-out);
+    transition: margin-left var(--duration-slow) var(--ease-out), width var(--duration-slow) var(--ease-out);
 }
 
 .sidebar.collapsed ~ .main-area,
 .app-shell.sidebar-collapsed .main-area {
     margin-left: var(--sidebar-collapsed);
+    width: calc(100% - var(--sidebar-collapsed));
 }
 
 /* ── Topbar ─────────────────────────────────────────────────────────────── */
