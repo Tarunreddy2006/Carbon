@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Biochar Batches Module (CRUD)
+// Stomata — Biochar Batches Module (CRUD)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const BatchesModule = {

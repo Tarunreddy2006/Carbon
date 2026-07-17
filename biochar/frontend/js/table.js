@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Reusable Data Table Engine
+// Stomata — Reusable Data Table Engine
 // ═══════════════════════════════════════════════════════════════════════════
 
 const DataTable = {
@@ -205,6 +205,13 @@ const DataTable = {
                         config.onRowClick(pageData[i]);
                     });
                 });
+            }
+
+            // Enforce UI constraints for current role on table updates
+            if (typeof Permissions !== 'undefined') {
+                const path = window.Router ? window.Router.currentPath() : '';
+                const moduleName = path.replace('/', '') || 'dashboard';
+                Permissions.enforceUI(container, moduleName);
             }
         };
 

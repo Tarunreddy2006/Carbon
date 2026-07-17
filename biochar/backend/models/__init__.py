@@ -1,7 +1,7 @@
 """
 biochar/backend/models/__init__.py
 ──────────────────────────────────────────────────────────────────────────────
-Public re-export hub for all CarbonOS SQLAlchemy 2.x domain models.
+Public re-export hub for all Stomata SQLAlchemy 2.x domain models.
 ──────────────────────────────────────────────────────────────────────────────
 """
 

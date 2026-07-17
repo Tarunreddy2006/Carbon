@@ -1131,3 +1131,37 @@ TO authenticated
 USING (
     auth.uid() = user_id
 );
+ALTER TABLE public.organization_members
+ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'Active';
+ALTER TABLE public.organization_members
+ADD COLUMN IF NOT EXISTS joined_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.organization_members
+ADD COLUMN IF NOT EXISTS invited_by UUID;
+ALTER TABLE public.organization_members
+ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.organization_members
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.organization_members
+ADD CONSTRAINT organization_members_invited_by_fkey
+FOREIGN KEY (invited_by)
+REFERENCES public.profiles(id)
+ON DELETE SET NULL;
+ALTER TABLE public.organization_members
+ADD CONSTRAINT organization_members_user_fkey
+FOREIGN KEY (user_id)
+REFERENCES public.profiles(id)
+ON DELETE CASCADE;
+ALTER TABLE public.organization_members
+ADD CONSTRAINT organization_members_unique_member
+UNIQUE (organization_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_org_members_user
+ON public.organization_members(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_org_members_org
+ON public.organization_members(organization_id);
+
+CREATE INDEX IF NOT EXISTS idx_org_members_role
+ON public.organization_members(role_id);
+ALTER TABLE public.organization_members
+ALTER COLUMN status
+SET DEFAULT 'Active';

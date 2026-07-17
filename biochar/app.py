@@ -53,8 +53,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     logger.info("═══════════════════════════════════════════════════════")
 
     try:
-        logger.info("Connecting to CarbonOS Biochar Database (PostgreSQL)...")
-        logger.info("✔  CarbonOS ORM models loaded (%d tables mapped). Database schema managed via Supabase.", len(Base.metadata.tables))
+        logger.info("Connecting to Stomata Biochar Database (PostgreSQL)...")
+        logger.info("✔  Stomata ORM models loaded (%d tables mapped). Database schema managed via Supabase.", len(Base.metadata.tables))
     except Exception as exc:
         logger.error("❌  Failed during startup verification (%s).", exc)
 

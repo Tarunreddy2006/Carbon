@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Distribution Module (Attestation)
+// Stomata — Distribution Module (Attestation)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const DistributionModule = {

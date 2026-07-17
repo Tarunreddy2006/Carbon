@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Hash-Based SPA Router
+// Stomata — Hash-Based SPA Router
 // ═══════════════════════════════════════════════════════════════════════════
 
 const Router = {
@@ -59,6 +59,16 @@ const Router = {
             return;
         }
 
+        const moduleName = path.replace('/', '') || 'dashboard';
+
+        // Validate view permission before loading the route
+        if (typeof Permissions !== 'undefined' && !Permissions.canView(moduleName)) {
+            this._renderAccessDenied();
+            this._updateSidebarActive(path);
+            this._updateBreadcrumb('Access Denied');
+            return;
+        }
+
         this._currentRoute = path;
 
         // Update sidebar active state
@@ -73,6 +83,10 @@ const Router = {
         // Render the module
         try {
             await handler.render(this._contentEl);
+            // Enforce UI constraints for current role
+            if (typeof Permissions !== 'undefined') {
+                Permissions.enforceUI(this._contentEl, moduleName);
+            }
         } catch (err) {
             console.error(`Route render error [${path}]:`, err);
             this._renderError(err);
@@ -118,7 +132,7 @@ const Router = {
         const breadcrumb = document.getElementById('topbar-breadcrumb');
         if (breadcrumb) {
             breadcrumb.innerHTML = `
-                <span>CarbonOS</span>
+                <span>Stomata</span>
                 <span class="topbar-breadcrumb-separator">/</span>
                 <span class="topbar-breadcrumb-current">${Utils.escapeHtml(title || 'Dashboard')}</span>
             `;
@@ -134,6 +148,20 @@ const Router = {
                 <div class="empty-state-icon">🔍</div>
                 <h3 class="empty-state-title">Page Not Found</h3>
                 <p class="empty-state-text">The page "${Utils.escapeHtml(path)}" doesn't exist.</p>
+                <button class="btn btn-primary" onclick="Router.navigate('/dashboard')">Go to Dashboard</button>
+            </div>
+        `;
+    },
+
+    /**
+     * Render Access Denied page.
+     */
+    _renderAccessDenied() {
+        this._contentEl.innerHTML = `
+            <div class="empty-state animate-fade-up">
+                <div class="empty-state-icon">🚫</div>
+                <h3 class="empty-state-title">Access Denied</h3>
+                <p class="empty-state-text">You do not have permission to access this module.</p>
                 <button class="btn btn-primary" onclick="Router.navigate('/dashboard')">Go to Dashboard</button>
             </div>
         `;

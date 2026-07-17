@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Supabase Client + Auth Helpers (Unified Classic Browser Architecture)
+// Stomata — Supabase Client + Auth Helpers (Unified Classic Browser Architecture)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Resolve initialization endpoints from global app config definitions with safe string fallbacks
@@ -21,7 +21,7 @@ function assertSupabaseConfiguration() {
     
     // Check for active deployment coordinates
     if (SUPABASE_URL === "https://yrjiiacdxknesvpaxdjr.supabase.co") {
-        console.log("✔ Supabase SDK initialization check: CarbonOS live database credentials verified.");
+        console.log("✔ Supabase SDK initialization check: Stomata live database credentials verified.");
     }
 }
 
@@ -87,19 +87,44 @@ async function getUserProfile() {
     if (!profile) return null;
 
     // 2. Fetch organization_members membership details, joining organizations and roles
-    const { data: member, error: memberError } = await supabaseClient
+    const { data: members, error: memberError } = await supabaseClient
         .from('organization_members')
         .select('*, organizations(*), roles(*)')
         .eq('user_id', user.id)
-        .maybeSingle();
+        .order('joined_at', { ascending: false });
 
     if (memberError) {
         console.error('getUserProfile organization_members select error:', memberError);
     }
 
+    // Find matching membership or fallback to the most recent one
+    let member = null;
+    if (members && members.length > 0) {
+        if (profile.organization_id) {
+            member = members.find(m => m.organization_id === profile.organization_id) || members[0];
+        } else {
+            member = members[0];
+        }
+    }
+
     // 3. Attach organization and role information resolved from organization_members
     if (member) {
-        profile.organization_id = member.organization_id;
+        if (profile.organization_id !== member.organization_id) {
+            profile.organization_id = member.organization_id;
+            try {
+                const { error: syncError } = await supabaseClient
+                    .from('profiles')
+                    .update({ organization_id: member.organization_id })
+                    .eq('id', user.id);
+                if (syncError) {
+                    console.error('Failed to sync profile organization_id in DB:', syncError);
+                } else {
+                    console.log('Successfully synced profile organization_id in DB to:', member.organization_id);
+                }
+            } catch (syncErr) {
+                console.error('Error syncing profile organization_id:', syncErr);
+            }
+        }
         profile.organizations = member.organizations;
         profile.role = member.roles;
         profile.role_id = member.role_id;

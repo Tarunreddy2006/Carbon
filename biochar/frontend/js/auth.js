@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Multi-Tenant Auth Lifecycle & Guard (ESM & Browser Support)
+// Stomata — Multi-Tenant Auth Lifecycle & Guard (ESM & Browser Support)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // supabase, getSession, getUserProfile, and clearProfileCache are resolved from global scope (supabase.js)

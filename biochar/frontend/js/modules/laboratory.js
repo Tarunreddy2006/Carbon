@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Laboratory Assays Module (CRUD)
+// Stomata — Laboratory Assays Module (CRUD)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const LaboratoryModule = {

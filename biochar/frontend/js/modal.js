@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// CarbonOS — Modal & Confirm Dialog System
+// Stomata — Modal & Confirm Dialog System
 // ═══════════════════════════════════════════════════════════════════════════
 
 const Modal = {
@@ -54,6 +54,12 @@ const Modal = {
         `;
 
         this._container.querySelector('.modal-close-btn').addEventListener('click', () => this.close());
+
+        if (typeof Permissions !== 'undefined') {
+            const path = window.Router ? window.Router.currentPath() : '';
+            const moduleName = path.replace('/', '') || 'dashboard';
+            Permissions.enforceUI(this._container, moduleName);
+        }
 
         requestAnimationFrame(() => {
             this._backdrop.classList.add('modal-backdrop--visible');
