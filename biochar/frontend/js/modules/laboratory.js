@@ -245,7 +245,7 @@ const LaboratoryModule = {
                         .insert({
                             biochar_batch_id: batch_id,
                             sample_code: `SMP-${Math.floor(100000 + Math.random() * 900000)}`,
-                            sampling_date: now
+                            collection_date: now
                         })
                         .select()
                         .single();

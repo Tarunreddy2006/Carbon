@@ -1165,3 +1165,633 @@ ON public.organization_members(role_id);
 ALTER TABLE public.organization_members
 ALTER COLUMN status
 SET DEFAULT 'Active';
+
+-- -----------------------------------------------------
+-- Row Level Security (RLS) Policies for Biochar Schema
+-- -----------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.get_user_organization_id()
+RETURNS uuid
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT organization_id FROM public.profiles WHERE id = auth.uid();
+$$;
+
+-- projects
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view projects in their organization"
+ON public.projects FOR SELECT TO authenticated
+USING (organization_id = public.get_user_organization_id());
+
+CREATE POLICY "Users can insert projects in their organization"
+ON public.projects FOR INSERT TO authenticated
+WITH CHECK (organization_id = public.get_user_organization_id());
+
+CREATE POLICY "Users can update projects in their organization"
+ON public.projects FOR UPDATE TO authenticated
+USING (organization_id = public.get_user_organization_id())
+WITH CHECK (organization_id = public.get_user_organization_id());
+
+CREATE POLICY "Users can delete projects in their organization"
+ON public.projects FOR DELETE TO authenticated
+USING (organization_id = public.get_user_organization_id());
+
+-- feedstock_batches
+ALTER TABLE public.feedstock_batches ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view feedstock_batches in their organization"
+ON public.feedstock_batches FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.projects p
+    WHERE p.id = feedstock_batches.project_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert feedstock_batches in their organization"
+ON public.feedstock_batches FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.projects p
+    WHERE p.id = feedstock_batches.project_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update feedstock_batches in their organization"
+ON public.feedstock_batches FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.projects p
+    WHERE p.id = feedstock_batches.project_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.projects p
+    WHERE p.id = feedstock_batches.project_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete feedstock_batches in their organization"
+ON public.feedstock_batches FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.projects p
+    WHERE p.id = feedstock_batches.project_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- pyrolysis_runs
+ALTER TABLE public.pyrolysis_runs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view pyrolysis_runs in their organization"
+ON public.pyrolysis_runs FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.feedstock_batches fb
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE fb.id = pyrolysis_runs.feedstock_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert pyrolysis_runs in their organization"
+ON public.pyrolysis_runs FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.feedstock_batches fb
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE fb.id = pyrolysis_runs.feedstock_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update pyrolysis_runs in their organization"
+ON public.pyrolysis_runs FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.feedstock_batches fb
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE fb.id = pyrolysis_runs.feedstock_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.feedstock_batches fb
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE fb.id = pyrolysis_runs.feedstock_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete pyrolysis_runs in their organization"
+ON public.pyrolysis_runs FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.feedstock_batches fb
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE fb.id = pyrolysis_runs.feedstock_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- biochar_batches
+ALTER TABLE public.biochar_batches ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view biochar_batches in their organization"
+ON public.biochar_batches FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.pyrolysis_runs pr
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE pr.id = biochar_batches.pyrolysis_run_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert biochar_batches in their organization"
+ON public.biochar_batches FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.pyrolysis_runs pr
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE pr.id = biochar_batches.pyrolysis_run_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update biochar_batches in their organization"
+ON public.biochar_batches FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.pyrolysis_runs pr
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE pr.id = biochar_batches.pyrolysis_run_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.pyrolysis_runs pr
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE pr.id = biochar_batches.pyrolysis_run_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete biochar_batches in their organization"
+ON public.biochar_batches FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.pyrolysis_runs pr
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE pr.id = biochar_batches.pyrolysis_run_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- biochar_samples
+ALTER TABLE public.biochar_samples ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view biochar_samples in their organization"
+ON public.biochar_samples FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_samples.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert biochar_samples in their organization"
+ON public.biochar_samples FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_samples.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update biochar_samples in their organization"
+ON public.biochar_samples FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_samples.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_samples.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete biochar_samples in their organization"
+ON public.biochar_samples FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_samples.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- laboratory_tests
+ALTER TABLE public.laboratory_tests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view laboratory_tests in their organization"
+ON public.laboratory_tests FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_samples bs
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bs.id = laboratory_tests.sample_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert laboratory_tests in their organization"
+ON public.laboratory_tests FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_samples bs
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bs.id = laboratory_tests.sample_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update laboratory_tests in their organization"
+ON public.laboratory_tests FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_samples bs
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bs.id = laboratory_tests.sample_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_samples bs
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bs.id = laboratory_tests.sample_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete laboratory_tests in their organization"
+ON public.laboratory_tests FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_samples bs
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bs.id = laboratory_tests.sample_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- laboratory_certificates
+ALTER TABLE public.laboratory_certificates ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view laboratory_certificates in their organization"
+ON public.laboratory_certificates FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = laboratory_certificates.batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert laboratory_certificates in their organization"
+ON public.laboratory_certificates FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = laboratory_certificates.batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update laboratory_certificates in their organization"
+ON public.laboratory_certificates FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = laboratory_certificates.batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = laboratory_certificates.batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete laboratory_certificates in their organization"
+ON public.laboratory_certificates FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = laboratory_certificates.batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- laboratory_results
+ALTER TABLE public.laboratory_results ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view laboratory_results in their organization"
+ON public.laboratory_results FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE lt.id = laboratory_results.laboratory_test_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert laboratory_results in their organization"
+ON public.laboratory_results FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE lt.id = laboratory_results.laboratory_test_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update laboratory_results in their organization"
+ON public.laboratory_results FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE lt.id = laboratory_results.laboratory_test_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE lt.id = laboratory_results.laboratory_test_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete laboratory_results in their organization"
+ON public.laboratory_results FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE lt.id = laboratory_results.laboratory_test_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- shipments
+ALTER TABLE public.shipments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view shipments in their organization"
+ON public.shipments FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = shipments.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert shipments in their organization"
+ON public.shipments FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = shipments.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update shipments in their organization"
+ON public.shipments FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = shipments.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = shipments.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete shipments in their organization"
+ON public.shipments FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = shipments.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- biochar_applications
+ALTER TABLE public.biochar_applications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view biochar_applications in their organization"
+ON public.biochar_applications FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_applications.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert biochar_applications in their organization"
+ON public.biochar_applications FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_applications.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can update biochar_applications in their organization"
+ON public.biochar_applications FOR UPDATE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_applications.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_applications.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can delete biochar_applications in their organization"
+ON public.biochar_applications FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.biochar_batches bb
+    JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE bb.id = biochar_applications.biochar_batch_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+-- reactor_sensor_logs
+ALTER TABLE public.reactor_sensor_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view reactor_sensor_logs in their organization"
+ON public.reactor_sensor_logs FOR SELECT TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.pyrolysis_runs pr
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE pr.id = reactor_sensor_logs.pyrolysis_run_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);
+
+CREATE POLICY "Users can insert reactor_sensor_logs in their organization"
+ON public.reactor_sensor_logs FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.pyrolysis_runs pr
+    JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
+    JOIN public.projects p ON p.id = fb.project_id
+    WHERE pr.id = reactor_sensor_logs.pyrolysis_run_id
+      AND p.organization_id = public.get_user_organization_id()
+  )
+);

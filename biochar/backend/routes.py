@@ -231,7 +231,7 @@ async def submit_lab_assay(
             sample = BiocharSample(
                 biochar_batch_id=payload.batch_id,
                 sample_code=f"SMP-{uuid.uuid4().hex[:8].upper()}",
-                sampling_date=datetime.now(timezone.utc).date()
+                collection_date=datetime.now(timezone.utc).date()
             )
             db.add(sample)
             db.flush()
