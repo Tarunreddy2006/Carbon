@@ -84,6 +84,10 @@ const FeedstockModule = {
                     <div class="action-menu">
                         <button class="action-menu-btn" onclick="FeedstockModule.toggleMenu(event, '${row.id}')">•••</button>
                         <div class="action-menu-dropdown" id="dropdown-${row.id}">
+                            <button class="action-menu-item" onclick="EvidenceModule.openUploadDialog({ entity_type: 'feedstock', entity_id: '${row.id}', project_id: '${row.project_id || ''}', activity: 'feedstock' })">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                Manage Evidence
+                            </button>
                             <button class="action-menu-item" onclick="FeedstockModule.openFeedstockModal('${row.id}')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                                 Edit Record

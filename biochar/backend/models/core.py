@@ -12,7 +12,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, Date, Float, ForeignKey, Integer, String, Text, text, BigInteger
-from sqlalchemy.dialects.postgresql import UUID as pgUUID
+from sqlalchemy.dialects.postgresql import UUID as pgUUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from biochar.backend.models.base import Base, TimestampMixin, UUIDMixin
@@ -455,3 +455,128 @@ class Laboratory(Base):
 class LaboratoryApproval(Base):
     __tablename__ = "laboratory_approvals"
     id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+
+
+class Evidence(Base):
+    __tablename__ = "evidence"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    entity_type: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), nullable=False)
+    activity: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    uploaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    uploaded_by_role: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    capture_timestamp: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    upload_timestamp: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    altitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    device_information: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    media_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    filename: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    storage_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    mime_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sha256_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verification_status: Mapped[str] = mapped_column(Text, default="Draft", server_default=text("'Draft'"))
+    reviewer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    files: Mapped[list["EvidenceFile"]] = relationship(back_populates="evidence", cascade="all, delete-orphan")
+    reviews: Mapped[list["EvidenceReview"]] = relationship(back_populates="evidence", cascade="all, delete-orphan")
+    ai_results: Mapped[list["EvidenceAIResult"]] = relationship(back_populates="evidence", cascade="all, delete-orphan")
+
+
+class EvidenceFile(Base):
+    __tablename__ = "evidence_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    evidence_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("evidence.id", ondelete="CASCADE"), nullable=False
+    )
+    file_role: Mapped[str] = mapped_column(Text, nullable=False)
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    file_size: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    mime_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sha256_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    evidence: Mapped["Evidence"] = relationship(back_populates="files")
+
+
+class EvidenceReview(Base):
+    __tablename__ = "evidence_reviews"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    evidence_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("evidence.id", ondelete="CASCADE"), nullable=False
+    )
+    reviewer_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    review_time: Mapped[datetime] = mapped_column(server_default=text("now()"))
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    previous_status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_status: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    evidence: Mapped["Evidence"] = relationship(back_populates="reviews")
+
+
+class EvidenceAIResult(Base):
+    __tablename__ = "evidence_ai_results"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    evidence_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("evidence.id", ondelete="CASCADE"), nullable=False
+    )
+    detected_objects: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    duplicate_detection_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    metadata_extraction: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    anomaly_flags: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    gps_validation: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    timestamp_validation: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+    evidence: Mapped["Evidence"] = relationship(back_populates="ai_results")
+
+
+class EvidenceAuditLog(Base):
+    __tablename__ = "evidence_audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    evidence_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("evidence.id", ondelete="SET NULL"), nullable=True
+    )
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    ip_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))

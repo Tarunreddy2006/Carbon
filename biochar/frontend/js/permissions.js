@@ -31,15 +31,15 @@ const Permissions = {
             case 'Admin':
                 return true;
             case 'Project Manager':
-                return ['dashboard', 'projects', 'feedstock', 'batches', 'laboratory', 'settings'].includes(module);
+                return ['dashboard', 'projects', 'feedstock', 'batches', 'laboratory', 'settings', 'evidence'].includes(module);
             case 'Operator':
-                return ['dashboard', 'feedstock', 'batches', 'pyrolysis'].includes(module);
+                return ['dashboard', 'feedstock', 'batches', 'pyrolysis', 'evidence'].includes(module);
             case 'Laboratory':
-                return ['dashboard', 'projects', 'laboratory'].includes(module);
+                return ['dashboard', 'projects', 'laboratory', 'evidence'].includes(module);
             case 'MRV Officer':
-                return ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'settings'].includes(module);
+                return ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'settings', 'evidence'].includes(module);
             case 'Viewer':
-                return ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution'].includes(module);
+                return ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'evidence'].includes(module);
             default:
                 return false;
         }

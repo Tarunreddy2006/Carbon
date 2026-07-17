@@ -42,6 +42,11 @@ from biochar.backend.models.core import (
     Shipment,
     Laboratory,
     LaboratoryApproval,
+    Evidence,
+    EvidenceFile,
+    EvidenceReview,
+    EvidenceAIResult,
+    EvidenceAuditLog,
 )
 
 
@@ -104,6 +109,11 @@ __all__ = [
     "Shipment",
     "Laboratory",
     "LaboratoryApproval",
+    "Evidence",
+    "EvidenceFile",
+    "EvidenceReview",
+    "EvidenceAIResult",
+    "EvidenceAuditLog",
     "BatchStatus",
     "VerificationTier",
     "FeedstockIngest",

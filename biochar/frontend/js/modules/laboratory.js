@@ -41,7 +41,7 @@ const LaboratoryModule = {
             // Fetch certificates and join through tests, samples, and batches
             const { data: certs, error: certErr } = await supabase
                 .from('laboratory_certificates')
-                .select('*, laboratory_tests(*, biochar_samples(*, biochar_batches(id, batch_code)))')
+                .select('*, laboratory_tests(*, biochar_samples(*, biochar_batches(id, batch_code, pyrolysis_runs(feedstock_batches(project_id)))))')
                 .order('issue_date', { ascending: false });
 
             if (certErr) throw certErr;
@@ -74,6 +74,7 @@ const LaboratoryModule = {
                 const sample = test?.biochar_samples;
                 const batch = sample?.biochar_batches;
                 const res = resultsMap[c.laboratory_test_id] || {};
+                const projectId = batch?.pyrolysis_runs?.feedstock_batches?.project_id || '';
                 
                 // Auto-calculate verification tier
                 let verification_tier = 'standard_200yr';
@@ -92,6 +93,7 @@ const LaboratoryModule = {
                     verification_tier: verification_tier,
                     certificate_hash: c.certificate_number || '—',
                     uploaded_at: c.issue_date || test?.test_date || '—',
+                    project_id: projectId
                 };
             });
 
@@ -132,6 +134,10 @@ const LaboratoryModule = {
                     <div class="action-menu">
                         <button class="action-menu-btn" onclick="LaboratoryModule.toggleMenu(event, '${row.id}')">•••</button>
                         <div class="action-menu-dropdown" id="dropdown-${row.id}">
+                            <button class="action-menu-item" onclick="EvidenceModule.openUploadDialog({ entity_type: 'laboratory', entity_id: '${row.test_id}', project_id: '${row.project_id || ''}', activity: 'laboratory' })">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                Manage Evidence
+                            </button>
                             <button class="action-menu-item danger" onclick="LaboratoryModule.deleteAssay('${row.test_id}')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                 Delete

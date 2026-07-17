@@ -41,7 +41,7 @@ const DistributionModule = {
             // Query shipments
             const { data: shipments, error: shipErr } = await supabase
                 .from('shipments')
-                .select('*, biochar_batches(batch_code)')
+                .select('*, biochar_batches(batch_code, pyrolysis_runs(feedstock_batches(project_id)))')
                 .order('shipment_number', { ascending: false });
 
             if (shipErr) throw shipErr;
@@ -62,6 +62,7 @@ const DistributionModule = {
 
             const mappedData = shipments.map(s => {
                 const app = appMap[s.biochar_batch_id] || {};
+                const projectId = s.biochar_batches?.pyrolysis_runs?.feedstock_batches?.project_id || '';
                 return {
                     id: s.id,
                     shipment_number: s.shipment_number || '—',
@@ -71,7 +72,8 @@ const DistributionModule = {
                     latitude: app.latitude,
                     longitude: app.longitude,
                     status: s.status || 'pending',
-                    biochar_batch_id: s.biochar_batch_id
+                    biochar_batch_id: s.biochar_batch_id,
+                    project_id: projectId
                 };
             });
 
@@ -117,6 +119,14 @@ const DistributionModule = {
                     <div class="action-menu">
                         <button class="action-menu-btn" onclick="DistributionModule.toggleMenu(event, '${row.id}')">•••</button>
                         <div class="action-menu-dropdown" id="dropdown-${row.id}">
+                            <button class="action-menu-item" onclick="EvidenceModule.openUploadDialog({ entity_type: 'distribution', entity_id: '${row.id}', project_id: '${row.project_id || ''}', activity: 'distribution' })">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                Delivery Evidence
+                            </button>
+                            <button class="action-menu-item" onclick="EvidenceModule.openUploadDialog({ entity_type: 'distribution', entity_id: '${row.id}', project_id: '${row.project_id || ''}', activity: 'farmer_application' })">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                Application Evidence
+                            </button>
                             <button class="action-menu-item danger" onclick="DistributionModule.deleteDelivery('${row.id}', '${row.biochar_batch_id}')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
                                 Delete

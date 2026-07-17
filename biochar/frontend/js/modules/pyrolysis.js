@@ -59,7 +59,7 @@ const PyrolysisModule = {
         try {
             const { data, error } = await supabase
                 .from('pyrolysis_runs')
-                .select('*, feedstock_batches(batch_code)')
+                .select('*, feedstock_batches(project_id, batch_code)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -69,14 +69,13 @@ const PyrolysisModule = {
 
             this._table = DataTable.render(container, {
                 columns: [
-                    { key: 'run_number', label: 'Run Number', sortable: true },
+                    { key: 'run_number', label: 'Run Number', sortable: true, render: (val) => `<strong>#${Utils.escapeHtml(val)}</strong>` },
                     { 
                         key: 'feedstock_batches', 
-                        label: 'Feedstock Batch', 
+                        label: 'Feedstock Lot', 
                         sortable: true, 
-                        render: (val) => val ? Utils.escapeHtml(val.batch_code) : '—' 
+                        render: (val) => val ? `Lot #${Utils.escapeHtml(val.batch_code)}` : '—' 
                     },
-                    { key: 'reactor_name', label: 'Reactor', sortable: true },
                     { key: 'average_temperature', label: 'Average Temp (°C)', sortable: true, render: (val) => `${Utils.formatNumber(val, 1)} °C` },
                     { key: 'electricity_kwh', label: 'Electricity (kWh)', sortable: true, render: (val) => `${Utils.formatNumber(val, 2)} kWh` },
                     { key: 'fuel_used_liters', label: 'Fossil Fuel (L)', sortable: true, render: (val) => `${Utils.formatNumber(val, 2)} L` },
@@ -87,9 +86,14 @@ const PyrolysisModule = {
                 emptyText: 'Record kiln runs and utility consumption to calculate processing emissions.',
                 exportFilename: 'pyrolysis_runs_export.csv',
                 actions: (row) => `
-                    <button class="btn btn-ghost btn-sm" onclick="PyrolysisModule.deleteReading('${row.id}')" title="Delete run">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    </button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-ghost btn-sm" onclick="EvidenceModule.openUploadDialog({ entity_type: 'pyrolysis', entity_id: '${row.id}', project_id: '${row.feedstock_batches?.project_id || ''}', activity: 'pyrolysis' })" title="Manage Evidence" style="padding: 4px 8px;">
+                            📁 Evidence
+                        </button>
+                        <button class="btn btn-ghost btn-sm text-danger" onclick="PyrolysisModule.deleteReading('${row.id}')" title="Delete run" style="padding: 4px 8px;">
+                            Delete
+                        </button>
+                    </div>
                 `
             });
 

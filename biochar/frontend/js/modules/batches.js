@@ -41,7 +41,7 @@ const BatchesModule = {
             // Query specific columns of biochar_batches to explicitly exclude net_sequestration_tco2e
             const { data, error } = await supabase
                 .from('biochar_batches')
-                .select('id, pyrolysis_run_id, batch_code, weight_kg, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(projects(name)))')
+                .select('id, pyrolysis_run_id, batch_code, weight_kg, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(project_id, projects(id, name)))')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -88,21 +88,32 @@ const BatchesModule = {
                 emptyTitle: 'No production batches',
                 emptyText: 'Start a new biochar carbon-removal batch to log pyrolysis runs and quality assays.',
                 exportFilename: 'biochar_production_batches.csv',
-                actions: (row) => `
-                    <div class="action-menu">
-                        <button class="action-menu-btn" onclick="BatchesModule.toggleMenu(event, '${row.id}')">•••</button>
-                        <div class="action-menu-dropdown" id="dropdown-${row.id}">
-                            <button class="action-menu-item" onclick="BatchesModule.openBatchModal('${row.id}')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                                Edit Batch
-                            </button>
-                            <button class="action-menu-item danger" onclick="BatchesModule.deleteBatch('${row.id}', '${Utils.escapeHtml(row.batch_code)}')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-                                Delete
-                            </button>
+                actions: (row) => {
+                    const projectId = row.pyrolysis_runs?.feedstock_batches?.projects?.id || row.pyrolysis_runs?.feedstock_batches?.project_id || '';
+                    return `
+                        <div class="action-menu">
+                            <button class="action-menu-btn" onclick="BatchesModule.toggleMenu(event, '${row.id}')">•••</button>
+                            <div class="action-menu-dropdown" id="dropdown-${row.id}">
+                                <button class="action-menu-item" onclick="EvidenceModule.openUploadDialog({ entity_type: 'batch', entity_id: '${row.id}', project_id: '${projectId}', activity: 'batches' })">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                    Batch Evidence
+                                </button>
+                                <button class="action-menu-item" onclick="EvidenceModule.openUploadDialog({ entity_type: 'batch', entity_id: '${row.id}', project_id: '${projectId}', activity: 'storage' })">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+                                    Storage Evidence
+                                </button>
+                                <button class="action-menu-item" onclick="BatchesModule.openBatchModal('${row.id}')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                                    Edit Batch
+                                </button>
+                                <button class="action-menu-item danger" onclick="BatchesModule.deleteBatch('${row.id}', '${Utils.escapeHtml(row.batch_code)}')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                                    Delete
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                `
+                    `;
+                }
             });
         } catch (err) {
             console.error('Failed to load batches:', err);

@@ -9,10 +9,16 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Form, File, UploadFile
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import or_, and_, func
+
+from PIL import Image
+import io
+import hashlib
 
 from biochar.backend.database import get_db
 from biochar.backend.models import (
@@ -27,6 +33,11 @@ from biochar.backend.models import (
     PyrolysisRun,
     Shipment,
     VerificationTier,
+    Evidence,
+    EvidenceFile,
+    EvidenceReview,
+    EvidenceAIResult,
+    EvidenceAuditLog,
 )
 from biochar.backend.validation import (
     calculate_net_sequestration,
@@ -536,4 +547,562 @@ async def get_audit_dossier(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to compile verification dossier: {exc}"
+        )
+
+
+# ─── Evidence Management System (EMS) REST API Endpoints ────────────────────
+
+EMS_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend", "evidence", "ems")
+
+def save_evidence_file(file_bytes: bytes, filename: str, file_role: str) -> tuple[str, str]:
+    bucket_name = os.getenv("BIOCHAR_STORAGE_BUCKET")
+    unique_filename = f"{uuid.uuid4()}_{file_role}_{filename}"
+    if bucket_name:
+        try:
+            from google.cloud import storage
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blob_name = f"evidence/ems/{unique_filename}"
+            blob = bucket.blob(blob_name)
+            
+            content_type = "application/octet-stream"
+            if filename.lower().endswith(('.jpg', '.jpeg')):
+                content_type = "image/jpeg"
+            elif filename.lower().endswith('.png'):
+                content_type = "image/png"
+            elif filename.lower().endswith('.pdf'):
+                content_type = "application/pdf"
+            
+            blob.upload_from_string(file_bytes, content_type=content_type)
+            gcs_url = f"https://storage.googleapis.com/{bucket_name}/{blob_name}"
+            return blob_name, gcs_url
+        except Exception as exc:
+            logger.error("Failed to upload to Google Cloud Storage: %s. Falling back to local.", exc)
+
+    # Local fallback
+    os.makedirs(EMS_UPLOAD_DIR, exist_ok=True)
+    file_path = os.path.join(EMS_UPLOAD_DIR, unique_filename)
+    with open(file_path, "wb") as f:
+        f.write(file_bytes)
+    
+    relative_url = f"/evidence/ems/{unique_filename}"
+    return file_path, relative_url
+
+
+def compute_sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def process_and_compress_image(image_bytes: bytes) -> tuple[bytes, bytes]:
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        
+        # 1. Compress
+        img_copy = img.copy()
+        img_copy.thumbnail((1024, 1024))
+        compressed_out = io.BytesIO()
+        save_format = "JPEG" if img_copy.mode == "RGB" else img.format or "JPEG"
+        img_copy.save(compressed_out, format=save_format, quality=75)
+        compressed_bytes = compressed_out.getvalue()
+        
+        # 2. Thumbnail
+        img_thumb = img.copy()
+        img_thumb.thumbnail((150, 150))
+        thumbnail_out = io.BytesIO()
+        img_thumb.save(thumbnail_out, format=save_format, quality=70)
+        thumbnail_bytes = thumbnail_out.getvalue()
+        
+        return compressed_bytes, thumbnail_bytes
+    except Exception as exc:
+        logger.error("Error processing/compressing image: %s. Using original bytes.", exc)
+        return image_bytes, image_bytes
+
+
+@router.post("/evidence/upload", status_code=status.HTTP_201_CREATED)
+async def upload_evidence(
+    file: UploadFile = File(...),
+    organization_id: str = Form(...),
+    project_id: Optional[str] = Form(None),
+    entity_type: str = Form(...),
+    entity_id: str = Form(...),
+    activity: str = Form(...),
+    uploaded_by: Optional[str] = Form(None),
+    uploaded_by_role: Optional[str] = Form(None),
+    capture_timestamp: Optional[str] = Form(None),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
+    altitude: Optional[float] = Form(None),
+    device_information: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        file_bytes = await file.read()
+        filename = file.filename or "file"
+        mime_type = file.content_type or "application/octet-stream"
+        file_size = len(file_bytes)
+        sha256_hash = compute_sha256(file_bytes)
+        
+        device_info_dict = None
+        if device_information:
+            try:
+                import json
+                device_info_dict = json.loads(device_information)
+            except Exception:
+                device_info_dict = {"raw": device_information}
+
+        capture_dt = None
+        if capture_timestamp:
+            try:
+                capture_dt = datetime.fromisoformat(capture_timestamp.replace("Z", "+00:00"))
+            except Exception:
+                capture_dt = datetime.now(timezone.utc)
+
+        orig_storage, orig_url = save_evidence_file(file_bytes, filename, "original")
+
+        evidence_record = Evidence(
+            organization_id=uuid.UUID(organization_id),
+            project_id=uuid.UUID(project_id) if project_id else None,
+            entity_type=entity_type,
+            entity_id=uuid.UUID(entity_id),
+            activity=activity,
+            uploaded_by=uuid.UUID(uploaded_by) if uploaded_by else None,
+            uploaded_by_role=uploaded_by_role,
+            capture_timestamp=capture_dt,
+            latitude=latitude,
+            longitude=longitude,
+            altitude=altitude,
+            device_information=device_info_dict,
+            media_type="image" if mime_type.startswith("image/") else "document",
+            filename=filename,
+            storage_path=orig_url,
+            file_size=file_size,
+            mime_type=mime_type,
+            sha256_hash=sha256_hash,
+            verification_status="Draft",
+        )
+        db.add(evidence_record)
+        db.flush()
+
+        orig_file = EvidenceFile(
+            evidence_id=evidence_record.id,
+            file_role="original",
+            filename=filename,
+            storage_path=orig_url,
+            file_size=file_size,
+            mime_type=mime_type,
+            sha256_hash=sha256_hash,
+        )
+        db.add(orig_file)
+
+        if mime_type.startswith("image/"):
+            compressed_bytes, thumbnail_bytes = process_and_compress_image(file_bytes)
+            
+            comp_storage, comp_url = save_evidence_file(compressed_bytes, filename, "compressed")
+            comp_file = EvidenceFile(
+                evidence_id=evidence_record.id,
+                file_role="compressed",
+                filename=f"compressed_{filename}",
+                storage_path=comp_url,
+                file_size=len(compressed_bytes),
+                mime_type="image/jpeg",
+                sha256_hash=compute_sha256(compressed_bytes),
+            )
+            db.add(comp_file)
+
+            thumb_storage, thumb_url = save_evidence_file(thumbnail_bytes, filename, "thumbnail")
+            thumb_file = EvidenceFile(
+                evidence_id=evidence_record.id,
+                file_role="thumbnail",
+                filename=f"thumbnail_{filename}",
+                storage_path=thumb_url,
+                file_size=len(thumbnail_bytes),
+                mime_type="image/jpeg",
+                sha256_hash=compute_sha256(thumbnail_bytes),
+            )
+            db.add(thumb_file)
+
+        audit_log = EvidenceAuditLog(
+            evidence_id=evidence_record.id,
+            user_id=uuid.UUID(uploaded_by) if uploaded_by else None,
+            action="upload",
+            details={
+                "filename": filename,
+                "mime_type": mime_type,
+                "file_size": file_size,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+            }
+        )
+        db.add(audit_log)
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": "Evidence uploaded successfully",
+            "evidence_id": str(evidence_record.id),
+            "url": orig_url
+        }
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to upload evidence: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload evidence: {exc}"
+        )
+
+
+@router.get("/evidence/list")
+async def list_evidence(
+    organization_id: str,
+    project_id: Optional[str] = None,
+    activity: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    uploaded_by: Optional[str] = None,
+    verification_status: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db)
+):
+    try:
+        query = db.query(Evidence).filter(Evidence.organization_id == uuid.UUID(organization_id))
+        
+        if project_id:
+            query = query.filter(Evidence.project_id == uuid.UUID(project_id))
+        if activity:
+            query = query.filter(Evidence.activity == activity)
+        if entity_type:
+            query = query.filter(Evidence.entity_type == entity_type)
+        if entity_id:
+            query = query.filter(Evidence.entity_id == uuid.UUID(entity_id))
+        if uploaded_by:
+            query = query.filter(Evidence.uploaded_by == uuid.UUID(uploaded_by))
+        if verification_status:
+            query = query.filter(Evidence.verification_status == verification_status)
+            
+        if search:
+            query = query.filter(
+                or_(
+                    Evidence.filename.ilike(f"%{search}%"),
+                    Evidence.remarks.ilike(f"%{search}%"),
+                    Evidence.uploaded_by_role.ilike(f"%{search}%"),
+                    Evidence.entity_type.ilike(f"%{search}%"),
+                )
+            )
+
+        total = query.count()
+        offset = (page - 1) * page_size
+        records = query.order_by(Evidence.upload_timestamp.desc()).offset(offset).limit(page_size).all()
+
+        results = []
+        for r in records:
+            files_list = db.query(EvidenceFile).filter(EvidenceFile.evidence_id == r.id).all()
+            files_data = [{
+                "id": str(f.id),
+                "file_role": f.file_role,
+                "filename": f.filename,
+                "storage_path": f.storage_path,
+                "file_size": f.file_size,
+                "mime_type": f.mime_type,
+                "sha256_hash": f.sha256_hash,
+            } for f in files_list]
+
+            reviews_list = db.query(EvidenceReview).filter(EvidenceReview.evidence_id == r.id).all()
+            reviews_data = [{
+                "id": str(rev.id),
+                "reviewer_id": str(rev.reviewer_id),
+                "review_time": rev.review_time.isoformat() if rev.review_time else None,
+                "action": rev.action,
+                "comments": rev.comments,
+                "previous_status": rev.previous_status,
+                "new_status": rev.new_status
+            } for rev in reviews_list]
+
+            results.append({
+                "id": str(r.id),
+                "project_id": str(r.project_id) if r.project_id else None,
+                "entity_type": r.entity_type,
+                "entity_id": str(r.entity_id),
+                "activity": r.activity,
+                "uploaded_by": str(r.uploaded_by) if r.uploaded_by else None,
+                "uploaded_by_role": r.uploaded_by_role,
+                "capture_timestamp": r.capture_timestamp.isoformat() if r.capture_timestamp else None,
+                "upload_timestamp": r.upload_timestamp.isoformat(),
+                "latitude": r.latitude,
+                "longitude": r.longitude,
+                "altitude": r.altitude,
+                "device_information": r.device_information,
+                "media_type": r.media_type,
+                "filename": r.filename,
+                "storage_path": r.storage_path,
+                "file_size": r.file_size,
+                "mime_type": r.mime_type,
+                "sha256_hash": r.sha256_hash,
+                "verification_status": r.verification_status,
+                "reviewer_id": str(r.reviewer_id) if r.reviewer_id else None,
+                "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+                "remarks": r.remarks,
+                "files": files_data,
+                "reviews": reviews_data,
+            })
+
+        return {
+            "status": "success",
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "data": results
+        }
+    except Exception as exc:
+        logger.error("Failed to list evidence: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list evidence: {exc}"
+        )
+
+
+@router.get("/evidence/{evidence_id}")
+async def get_evidence(evidence_id: str, db: Session = Depends(get_db)):
+    try:
+        r = db.query(Evidence).filter(Evidence.id == uuid.UUID(evidence_id)).first()
+        if not r:
+            raise HTTPException(status_code=404, detail="Evidence record not found")
+
+        files_list = db.query(EvidenceFile).filter(EvidenceFile.evidence_id == r.id).all()
+        files_data = [{
+            "id": str(f.id),
+            "file_role": f.file_role,
+            "filename": f.filename,
+            "storage_path": f.storage_path,
+            "file_size": f.file_size,
+            "mime_type": f.mime_type,
+            "sha256_hash": f.sha256_hash,
+        } for f in files_list]
+
+        reviews_list = db.query(EvidenceReview).filter(EvidenceReview.evidence_id == r.id).all()
+        reviews_data = [{
+            "id": str(rev.id),
+            "reviewer_id": str(rev.reviewer_id),
+            "review_time": rev.review_time.isoformat() if rev.review_time else None,
+            "action": rev.action,
+            "comments": rev.comments,
+            "previous_status": rev.previous_status,
+            "new_status": rev.new_status
+        } for rev in reviews_list]
+
+        return {
+            "status": "success",
+            "data": {
+                "id": str(r.id),
+                "organization_id": str(r.organization_id),
+                "project_id": str(r.project_id) if r.project_id else None,
+                "entity_type": r.entity_type,
+                "entity_id": str(r.entity_id),
+                "activity": r.activity,
+                "uploaded_by": str(r.uploaded_by) if r.uploaded_by else None,
+                "uploaded_by_role": r.uploaded_by_role,
+                "capture_timestamp": r.capture_timestamp.isoformat() if r.capture_timestamp else None,
+                "upload_timestamp": r.upload_timestamp.isoformat(),
+                "latitude": r.latitude,
+                "longitude": r.longitude,
+                "altitude": r.altitude,
+                "device_information": r.device_information,
+                "media_type": r.media_type,
+                "filename": r.filename,
+                "storage_path": r.storage_path,
+                "file_size": r.file_size,
+                "mime_type": r.mime_type,
+                "sha256_hash": r.sha256_hash,
+                "verification_status": r.verification_status,
+                "reviewer_id": str(r.reviewer_id) if r.reviewer_id else None,
+                "reviewed_at": r.reviewed_at.isoformat() if r.reviewed_at else None,
+                "remarks": r.remarks,
+                "files": files_data,
+                "reviews": reviews_data,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to retrieve evidence details: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve evidence details: {exc}"
+        )
+
+
+@router.post("/evidence/{evidence_id}/review")
+async def review_evidence(
+    evidence_id: str,
+    reviewer_id: str = Form(...),
+    action: str = Form(...),
+    comments: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        r = db.query(Evidence).filter(Evidence.id == uuid.UUID(evidence_id)).first()
+        if not r:
+            raise HTTPException(status_code=404, detail="Evidence record not found")
+
+        if r.verification_status == "Locked":
+            raise HTTPException(status_code=400, detail="Cannot review locked evidence")
+
+        prev_status = r.verification_status
+        new_status = prev_status
+
+        if action == "Approve":
+            new_status = "Approved"
+        elif action == "Reject":
+            new_status = "Rejected"
+        elif action == "Lock":
+            new_status = "Locked"
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid action: {action}")
+
+        r.verification_status = new_status
+        r.reviewer_id = uuid.UUID(reviewer_id)
+        r.reviewed_at = datetime.now(timezone.utc)
+        if comments:
+            r.remarks = comments
+
+        review_record = EvidenceReview(
+            evidence_id=r.id,
+            reviewer_id=uuid.UUID(reviewer_id),
+            action=action,
+            comments=comments,
+            previous_status=prev_status,
+            new_status=new_status,
+        )
+        db.add(review_record)
+
+        audit_log = EvidenceAuditLog(
+            evidence_id=r.id,
+            user_id=uuid.UUID(reviewer_id),
+            action=action.lower(),
+            details={
+                "comments": comments,
+                "previous_status": prev_status,
+                "new_status": new_status,
+            }
+        )
+        db.add(audit_log)
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": f"Evidence successfully reviewed and marked as {new_status}",
+            "new_status": new_status
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to review evidence: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to review evidence: {exc}"
+        )
+
+
+@router.delete("/evidence/{evidence_id}")
+async def delete_evidence(
+    evidence_id: str,
+    user_id: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        r = db.query(Evidence).filter(Evidence.id == uuid.UUID(evidence_id)).first()
+        if not r:
+            raise HTTPException(status_code=404, detail="Evidence record not found")
+
+        if r.verification_status == "Locked":
+            raise HTTPException(status_code=400, detail="Locked evidence cannot be deleted")
+
+        files_list = db.query(EvidenceFile).filter(EvidenceFile.evidence_id == r.id).all()
+        for f in files_list:
+            if f.storage_path and f.storage_path.startswith("/evidence/ems/"):
+                local_path = os.path.join(os.path.dirname(__file__), "..", "frontend", f.storage_path.lstrip("/"))
+                if os.path.exists(local_path):
+                    try:
+                        os.remove(local_path)
+                    except Exception as e:
+                        logger.error("Failed to delete local file %s: %s", local_path, e)
+
+        db.delete(r)
+
+        audit_log = EvidenceAuditLog(
+            user_id=uuid.UUID(user_id),
+            action="delete",
+            details={
+                "evidence_id": evidence_id,
+                "filename": r.filename,
+            }
+        )
+        db.add(audit_log)
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": "Evidence record and associated files successfully deleted"
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.error("Failed to delete evidence: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete evidence: {exc}"
+        )
+
+
+@router.get("/evidence/{evidence_id}/download/{file_role}")
+async def download_evidence(
+    evidence_id: str,
+    file_role: str,
+    user_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    try:
+        r = db.query(Evidence).filter(Evidence.id == uuid.UUID(evidence_id)).first()
+        if not r:
+            raise HTTPException(status_code=404, detail="Evidence record not found")
+
+        f = db.query(EvidenceFile).filter(
+            EvidenceFile.evidence_id == r.id,
+            EvidenceFile.file_role == file_role
+        ).first()
+
+        if not f:
+            raise HTTPException(status_code=404, detail=f"File with role {file_role} not found")
+
+        audit_log = EvidenceAuditLog(
+            evidence_id=r.id,
+            user_id=uuid.UUID(user_id) if user_id else None,
+            action="download",
+            details={
+                "file_role": file_role,
+                "filename": f.filename
+            }
+        )
+        db.add(audit_log)
+        db.commit()
+
+        if f.storage_path.startswith("/evidence/ems/"):
+            local_path = os.path.join(os.path.dirname(__file__), "..", "frontend", f.storage_path.lstrip("/"))
+            if not os.path.exists(local_path):
+                raise HTTPException(status_code=404, detail="Local file missing on server disk")
+            return FileResponse(path=local_path, media_type=f.mime_type, filename=f.filename)
+
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=f.storage_path)
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to download evidence file: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download evidence file: {exc}"
         )
