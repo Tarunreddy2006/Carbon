@@ -1506,11 +1506,13 @@ CREATE POLICY "Users can view laboratory_certificates in their organization"
 ON public.laboratory_certificates FOR SELECT TO authenticated
 USING (
   EXISTS (
-    SELECT 1 FROM public.biochar_batches bb
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
     JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
     JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
     JOIN public.projects p ON p.id = fb.project_id
-    WHERE bb.id = laboratory_certificates.batch_id
+    WHERE lt.id = laboratory_certificates.laboratory_test_id
       AND p.organization_id = public.get_user_organization_id()
   )
 );
@@ -1519,11 +1521,13 @@ CREATE POLICY "Users can insert laboratory_certificates in their organization"
 ON public.laboratory_certificates FOR INSERT TO authenticated
 WITH CHECK (
   EXISTS (
-    SELECT 1 FROM public.biochar_batches bb
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
     JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
     JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
     JOIN public.projects p ON p.id = fb.project_id
-    WHERE bb.id = laboratory_certificates.batch_id
+    WHERE lt.id = laboratory_certificates.laboratory_test_id
       AND p.organization_id = public.get_user_organization_id()
   )
 );
@@ -1532,21 +1536,25 @@ CREATE POLICY "Users can update laboratory_certificates in their organization"
 ON public.laboratory_certificates FOR UPDATE TO authenticated
 USING (
   EXISTS (
-    SELECT 1 FROM public.biochar_batches bb
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
     JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
     JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
     JOIN public.projects p ON p.id = fb.project_id
-    WHERE bb.id = laboratory_certificates.batch_id
+    WHERE lt.id = laboratory_certificates.laboratory_test_id
       AND p.organization_id = public.get_user_organization_id()
   )
 )
 WITH CHECK (
   EXISTS (
-    SELECT 1 FROM public.biochar_batches bb
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
     JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
     JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
     JOIN public.projects p ON p.id = fb.project_id
-    WHERE bb.id = laboratory_certificates.batch_id
+    WHERE lt.id = laboratory_certificates.laboratory_test_id
       AND p.organization_id = public.get_user_organization_id()
   )
 );
@@ -1555,11 +1563,13 @@ CREATE POLICY "Users can delete laboratory_certificates in their organization"
 ON public.laboratory_certificates FOR DELETE TO authenticated
 USING (
   EXISTS (
-    SELECT 1 FROM public.biochar_batches bb
+    SELECT 1 FROM public.laboratory_tests lt
+    JOIN public.biochar_samples bs ON bs.id = lt.sample_id
+    JOIN public.biochar_batches bb ON bb.id = bs.biochar_batch_id
     JOIN public.pyrolysis_runs pr ON pr.id = bb.pyrolysis_run_id
     JOIN public.feedstock_batches fb ON fb.id = pr.feedstock_batch_id
     JOIN public.projects p ON p.id = fb.project_id
-    WHERE bb.id = laboratory_certificates.batch_id
+    WHERE lt.id = laboratory_certificates.laboratory_test_id
       AND p.organization_id = public.get_user_organization_id()
   )
 );
