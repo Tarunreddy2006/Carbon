@@ -1199,6 +1199,26 @@ CREATE POLICY "Users can delete projects in their organization"
 ON public.projects FOR DELETE TO authenticated
 USING (organization_id = public.get_user_organization_id());
 
+-- invitations
+ALTER TABLE public.invitations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view invitations in their organization"
+ON public.invitations FOR SELECT TO authenticated
+USING (organization_id = public.get_user_organization_id());
+
+CREATE POLICY "Users can insert invitations in their organization"
+ON public.invitations FOR INSERT TO authenticated
+WITH CHECK (organization_id = public.get_user_organization_id());
+
+CREATE POLICY "Users can update invitations in their organization"
+ON public.invitations FOR UPDATE TO authenticated
+USING (organization_id = public.get_user_organization_id())
+WITH CHECK (organization_id = public.get_user_organization_id());
+
+CREATE POLICY "Users can delete invitations in their organization"
+ON public.invitations FOR DELETE TO authenticated
+USING (organization_id = public.get_user_organization_id());
+
 -- feedstock_batches
 ALTER TABLE public.feedstock_batches ENABLE ROW LEVEL SECURITY;
 
