@@ -1,9 +1,9 @@
 """
-create_biochar_schema
+temp_rev
 
-Revision ID: 5c757989da62
-Revises: 
-Create Date: 2026-07-10 17:12:41.679647
+Revision ID: df0743f02b5b
+Revises: b9eccc5613f8
+Create Date: 2026-07-17 09:41:40.650740
 """
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '5c757989da62'
-down_revision: Union[str, None] = None
+revision: str = 'df0743f02b5b'
+down_revision: Union[str, None] = 'b9eccc5613f8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

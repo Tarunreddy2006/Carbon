@@ -25,8 +25,8 @@ sys.path.insert(
 )
 
 # Import models so their tables are registered on Base.metadata
-from carbon.biochar.backend.database import Base  # noqa: E402
-import carbon.biochar.backend.models  # noqa: E402, F401  — registers tables
+from biochar.backend.database import Base  # noqa: E402
+import biochar.backend.models  # noqa: E402, F401  — registers tables
 
 config = context.config
 
