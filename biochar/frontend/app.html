@@ -288,6 +288,16 @@
     <script src="/js/modules/settings.js"></script>
     <script src="/js/modules/evidence.js"></script>
 
+    <!-- 5. Offline Sync Subsystem Modules -->
+    <script src="/js/offline/indexeddb.js"></script>
+    <script src="/js/offline/connectivity.js"></script>
+    <script src="/js/offline/queue.js"></script>
+    <script src="/js/offline/uploadQueue.js"></script>
+    <script src="/js/offline/conflictResolver.js"></script>
+    <script src="/js/offline/syncEngine.js"></script>
+    <script src="/js/offline/storage.js"></script>
+    <script src="/js/offline/offlineUI.js"></script>
+
     <!-- 4. Master Application Runtime Initialization Engine -->
     <script>
         // ── Helper to execute database onboarding ──
@@ -424,6 +434,19 @@
         }
 
         (async function bootstrap() {
+            // Bootstrap Offline Subsystem first
+            if (typeof OfflineDB !== 'undefined') {
+                try {
+                    await OfflineDB.open();
+                    Connectivity.init();
+                    SyncEngine.init();
+                    OfflineStorage.init();
+                    OfflineUI.init();
+                } catch (offlineErr) {
+                    console.error("Failed to initialize offline subsystem:", offlineErr);
+                }
+            }
+
             // Initialize appearance themes
             Theme.init();
 

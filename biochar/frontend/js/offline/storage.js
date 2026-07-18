@@ -1,0 +1,211 @@
+class SupabaseQueryBuilder {
+    constructor(tableName) {
+        this.tableName = tableName;
+        this.filters = [];
+        this.mutationType = null;
+        this.payload = null;
+        this.isSingle = false;
+    }
+
+    select(columns) {
+        this.mutationType = 'SELECT';
+        return this;
+    }
+
+    insert(payload) {
+        this.mutationType = 'INSERT';
+        this.payload = payload;
+        return this;
+    }
+
+    update(payload) {
+        this.mutationType = 'UPDATE';
+        this.payload = payload;
+        return this;
+    }
+
+    delete() {
+        this.mutationType = 'DELETE';
+        return this;
+    }
+
+    eq(column, value) {
+        this.filters.push({ type: 'eq', column, value });
+        return this;
+    }
+
+    filter(column, operator, value) {
+        this.filters.push({ type: 'filter', column, operator, value });
+        return this;
+    }
+
+    order(column, options) {
+        this.filters.push({ type: 'order', column, options });
+        return this;
+    }
+
+    limit(count) {
+        this.filters.push({ type: 'limit', count });
+        return this;
+    }
+
+    maybeSingle() {
+        this.isSingle = true;
+        return this;
+    }
+
+    single() {
+        this.isSingle = true;
+        return this;
+    }
+
+    async then(onfulfilled, onrejected) {
+        try {
+            const res = await this.execute();
+            return onfulfilled(res);
+        } catch (err) {
+            if (onrejected) return onrejected(err);
+            throw err;
+        }
+    }
+
+    async execute() {
+        const online = Connectivity.isOnline;
+        
+        if (online && window.originalSupabase) {
+            let query = window.originalSupabase.from(this.tableName);
+            
+            if (this.mutationType === 'SELECT') {
+                query = query.select();
+            } else if (this.mutationType === 'INSERT') {
+                query = query.insert(this.payload);
+            } else if (this.mutationType === 'UPDATE') {
+                query = query.update(this.payload);
+            } else if (this.mutationType === 'DELETE') {
+                query = query.delete();
+            }
+
+            this.filters.forEach(f => {
+                if (f.type === 'eq') query = query.eq(f.column, f.value);
+                else if (f.type === 'filter') query = query.filter(f.column, f.operator, f.value);
+                else if (f.type === 'order') query = query.order(f.column, f.options);
+                else if (f.type === 'limit') query = query.limit(f.count);
+            });
+
+            if (this.isSingle) {
+                query = query.maybeSingle();
+            }
+
+            const res = await query;
+            
+            if (this.mutationType === 'SELECT' && res.data && !res.error) {
+                const dataArray = Array.isArray(res.data) ? res.data : [res.data];
+                for (const item of dataArray) {
+                    await OfflineDB.put(this.tableName, item);
+                }
+            }
+            
+            return res;
+        } else {
+            console.log(`SupabaseQueryBuilder (OFFLINE): ${this.mutationType} on ${this.tableName}`);
+            
+            if (this.mutationType === 'SELECT') {
+                const all = await OfflineDB.getAll(this.tableName);
+                let filtered = [...all];
+                
+                this.filters.forEach(f => {
+                    if (f.type === 'eq') {
+                        filtered = filtered.filter(item => item[f.column] === f.value);
+                    }
+                });
+                
+                if (this.isSingle) {
+                    return { data: filtered[0] || null, error: null };
+                }
+                return { data: filtered, error: null };
+            }
+            
+            else if (this.mutationType === 'INSERT') {
+                const payloads = Array.isArray(this.payload) ? this.payload : [this.payload];
+                const insertedData = [];
+                
+                for (const singlePayload of payloads) {
+                    if (!singlePayload.id) {
+                        singlePayload.id = crypto.randomUUID();
+                    }
+                    if (!singlePayload.created_at) {
+                        singlePayload.created_at = new Date().toISOString();
+                    }
+                    
+                    await OfflineDB.put(this.tableName, singlePayload);
+                    await SyncQueue.push('CREATE', this.tableName, singlePayload.id, singlePayload);
+                    insertedData.push(singlePayload);
+                }
+                
+                return { data: Array.isArray(this.payload) ? insertedData : insertedData[0], error: null };
+            }
+            
+            else if (this.mutationType === 'UPDATE') {
+                const idFilter = this.filters.find(f => f.type === 'eq' && f.column === 'id');
+                if (!idFilter) {
+                    return { data: null, error: { message: "Offline updates require an ID filter." } };
+                }
+                
+                const targetId = idFilter.value;
+                const existing = await OfflineDB.get(this.tableName, targetId);
+                
+                if (!existing) {
+                    return { data: null, error: { message: "Record not found in local cache." } };
+                }
+                
+                const updated = { ...existing, ...this.payload, updated_at: new Date().toISOString() };
+                await OfflineDB.put(this.tableName, updated);
+                await SyncQueue.push('UPDATE', this.tableName, targetId, updated);
+                
+                return { data: updated, error: null };
+            }
+            
+            else if (this.mutationType === 'DELETE') {
+                const idFilter = this.filters.find(f => f.type === 'eq' && f.column === 'id');
+                if (!idFilter) {
+                    return { data: null, error: { message: "Offline deletes require an ID filter." } };
+                }
+                
+                const targetId = idFilter.value;
+                await OfflineDB.delete(this.tableName, targetId);
+                await SyncQueue.push('DELETE', this.tableName, targetId, null);
+                
+                return { data: null, error: null };
+            }
+            
+            return { data: null, error: { message: "Unsupported offline query type." } };
+        }
+    }
+}
+
+const OfflineStorage = {
+    init() {
+        if (!window.originalSupabase) {
+            window.originalSupabase = window.supabase || window.supabaseClient;
+        }
+
+        const offlineSupabase = {
+            from(tableName) {
+                if (OfflineDB.tables.includes(tableName)) {
+                    return new SupabaseQueryBuilder(tableName);
+                }
+                return window.originalSupabase.from(tableName);
+            },
+            
+            get auth() {
+                return window.originalSupabase.auth;
+            }
+        };
+
+        window.supabase = offlineSupabase;
+        window.supabaseClient = offlineSupabase;
+        console.log("✔ Supabase client intercepted by OfflineStorage wrapper.");
+    }
+};
+
+window.OfflineStorage = OfflineStorage;

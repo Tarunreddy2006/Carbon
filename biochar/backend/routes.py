@@ -53,10 +53,37 @@ from biochar.backend.attestation import (
 from biochar.backend.audit import compile_verification_dossier
 import os
 import uuid
+from biochar.backend.storage import get_storage_provider
+from biochar.backend.models import OrganizationMember, Role, Organization, Project
 
 logger = logging.getLogger("carbon_engine")
 
 router = APIRouter(prefix="/api/v1/biochar", tags=["Biochar Pipeline"])
+
+
+# ─── Storage Request/Response Schemas ─────────────────────────────────────────
+
+class UploadUrlRequest(BaseModel):
+    filename: str
+    mime_type: str
+    file_size: int
+    organization_id: str
+    project_id: Optional[str] = None
+    entity_type: str
+    entity_id: str
+    activity: str
+    uploaded_by: str
+    uploaded_by_role: Optional[str] = None
+
+class ConfirmUploadRequest(BaseModel):
+    evidence_id: str
+    sha256_hash: str
+
+class PublicUploadUrlRequest(BaseModel):
+    token: str
+    filename: str
+    mime_type: str
+    file_size: int
 
 
 # ─── Pydantic Request/Response Schemas ────────────────────────────────────────
@@ -139,6 +166,77 @@ def save_evidence_image(file_data: bytes, filename: str) -> str:
     with open(file_path, "wb") as f:
         f.write(file_data)
     return f"https://biochar.stomata.tech/evidence/sinks/{unique_filename}"
+
+
+def validate_user_org_rbac(db: Session, user_id: str, organization_id: str, required_roles: Optional[List[str]] = None):
+    try:
+        user_uuid = uuid.UUID(user_id)
+        org_uuid = uuid.UUID(organization_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user_id or organization_id format")
+
+    org = db.query(Organization).filter(Organization.id == org_uuid).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    member = db.query(OrganizationMember).filter(
+        OrganizationMember.organization_id == org_uuid,
+        OrganizationMember.user_id == user_uuid,
+        OrganizationMember.status == "Active"
+    ).first()
+
+    if not member:
+        raise HTTPException(status_code=403, detail="Access denied. User is not an active member of this organization.")
+
+    if required_roles:
+        role = db.query(Role).filter(Role.id == member.role_id).first()
+        if not role or role.name not in required_roles:
+            raise HTTPException(status_code=403, detail="Access denied. User does not have the required role.")
+
+
+def validate_file_metadata(mime_type: str, file_size: int):
+    # Allowed mime types
+    allowed_mimes = [
+        "image/jpeg", "image/png", "image/gif", "image/webp",
+        "application/pdf", "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain", "text/csv", "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ]
+    if mime_type not in allowed_mimes:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {mime_type}")
+
+    # Maximum file size: 100MB
+    MAX_SIZE = 100 * 1024 * 1024
+    if file_size > MAX_SIZE:
+        raise HTTPException(status_code=400, detail=f"File exceeds maximum allowed size of 100MB")
+
+
+def get_storage_folder(activity: str, entity_type: str) -> str:
+    # Map activity/entity_type to folder
+    act = (activity or "").lower()
+    ent = (entity_type or "").lower()
+    
+    if "feedstock" in act or "feedstock" in ent:
+        return "feedstock"
+    if "pyrolysis" in act or "pyrolysis" in ent:
+        return "pyrolysis"
+    if "batch" in act or "batch" in ent or "biochar" in act:
+        return "biochar"
+    if "laboratory" in act or "laboratory" in ent or "test" in ent or "sample" in ent or "cert" in ent:
+        return "laboratory"
+    if "storage" in act or "storage" in ent:
+        return "storage"
+    if "distribution" in act or "distribution" in ent or "attest" in act or "sink" in ent:
+        return "distribution"
+    if "monitoring" in act or "monitoring" in ent:
+        return "monitoring"
+    if "report" in act or "report" in ent:
+        return "reports"
+    if "export" in act or "export" in ent:
+        return "exports"
+        
+    return "evidence"
 
 
 # ─── Endpoints ────────────────────────────────────────────────────────────────
@@ -416,35 +514,21 @@ async def public_attest_delivery(
     token: str = Form(..., description="Farmer attestation JWT token"),
     latitude: float = Form(..., description="Sink GPS latitude"),
     longitude: float = Form(..., description="Sink GPS longitude"),
-    evidence_file: UploadFile = File(..., description="Attestation photo evidence"),
+    evidence_file: Optional[UploadFile] = File(None, description="Attestation photo evidence"),
+    object_key: Optional[str] = Form(None, description="Cloudflare R2 object key"),
+    filename: Optional[str] = Form(None, description="Original filename"),
+    mime_type: Optional[str] = Form(None, description="MIME type of file"),
+    file_size: Optional[int] = Form(None, description="Size of file in bytes"),
+    sha256_hash: Optional[str] = Form(None, description="SHA-256 hash of file"),
     db: Session = Depends(get_db)
 ) -> PublicAttestResponse:
     """
     Public attestation endpoint for farmers to geotag and submit photo evidence.
-    No authentication is required; access is validated via cryptographic tokens.
+    Supports either direct browser upload to R2 (with object_key) or multi-part fallback.
     """
     logger.info("Received public attestation request.")
 
-    # 1. Size limit validation
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-    file_bytes = await evidence_file.read(MAX_FILE_SIZE + 1)
-    if len(file_bytes) > MAX_FILE_SIZE:
-        logger.warning("Upload rejected: file size exceeds 10MB limit.")
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="The uploaded evidence file exceeds the maximum allowed size of 10MB."
-        )
-
-    # 2. Upload type validation
-    allowed_content_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
-    if evidence_file.content_type not in allowed_content_types:
-        logger.warning("Upload rejected: invalid content type %s.", evidence_file.content_type)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file type. Only JPEG, PNG, GIF, and WEBP images are allowed."
-        )
-
-    # 3. Token verification
+    # 1. Token verification
     try:
         shipment_id = verify_attestation_token(token)
     except AttestationTokenExpiredError as exc:
@@ -454,7 +538,7 @@ async def public_attest_delivery(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Token verification failed: {exc}")
 
-    # 4. Query Shipment
+    # 2. Query Shipment
     shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
     if not shipment:
         raise HTTPException(
@@ -470,18 +554,143 @@ async def public_attest_delivery(
             detail="Attestation has already been submitted for this delivery."
         )
 
-    # 5. Upload file and get URL
-    try:
-        filename = evidence_file.filename or "evidence.jpg"
-        photo_url = save_evidence_image(file_bytes, filename)
-    except Exception as exc:
-        logger.error("Failed to store evidence image: %s", exc, exc_info=True)
+    photo_url = None
+    
+    # 3. Store file based on upload workflow
+    if object_key:
+        # --- Direct Client R2 Upload Flow ---
+        try:
+            storage_provider = get_storage_provider()
+            is_verified = storage_provider.verify_upload(object_key, file_size or 0)
+        except Exception as e:
+            logger.error("Error verifying storage object %s: %s", object_key, e)
+            is_verified = False
+
+        if not is_verified:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File upload verification failed. File not found in R2 or size mismatch."
+            )
+
+        # Update or create Evidence metadata record
+        evidence_record = db.query(Evidence).filter(
+            Evidence.object_key == object_key,
+            Evidence.upload_status == "Pending"
+        ).first()
+
+        if not evidence_record:
+            # Resolve org/project context
+            org_id = None
+            project_id = None
+            if shipment.biochar_batch:
+                batch = shipment.biochar_batch
+                if batch.pyrolysis_run and batch.pyrolysis_run.feedstock_batch:
+                    feedstock = batch.pyrolysis_run.feedstock_batch
+                    if feedstock.project:
+                        project_id = feedstock.project.id
+                        org_id = feedstock.project.organization_id
+
+            if not org_id:
+                raise HTTPException(status_code=400, detail="Could not resolve organization for this shipment.")
+
+            evidence_record = Evidence(
+                organization_id=org_id,
+                project_id=project_id,
+                entity_type="distribution",
+                entity_id=uuid.UUID(shipment_id),
+                activity="distribution",
+                uploaded_by=None,
+                uploaded_by_role="Farmer",
+                capture_timestamp=datetime.now(timezone.utc),
+                media_type="image" if (mime_type or "").startswith("image/") else "document",
+                filename=os.path.basename(object_key),
+                original_filename=filename or "evidence.jpg",
+                storage_path=object_key,
+                file_size=file_size,
+                mime_type=mime_type,
+                bucket_name=storage_provider.bucket_name,
+                object_key=object_key,
+                storage_provider="cloudflare_r2",
+                upload_status="Completed",
+                verification_status="Uploaded",
+                sha256_hash=sha256_hash,
+                uploaded_at=datetime.now(timezone.utc)
+            )
+            db.add(evidence_record)
+            db.flush()
+        else:
+            evidence_record.upload_status = "Completed"
+            evidence_record.verification_status = "Uploaded"
+            evidence_record.sha256_hash = sha256_hash
+            evidence_record.uploaded_at = datetime.now(timezone.utc)
+            evidence_record.updated_at = datetime.now(timezone.utc)
+            db.flush()
+
+        # Add backward-compatible EvidenceFile
+        evidence_file = EvidenceFile(
+            evidence_id=evidence_record.id,
+            file_role="original",
+            filename=evidence_record.original_filename,
+            storage_path=evidence_record.object_key,
+            file_size=evidence_record.file_size,
+            mime_type=evidence_record.mime_type,
+            sha256_hash=sha256_hash
+        )
+        db.add(evidence_file)
+
+        # Log audit
+        audit_log = EvidenceAuditLog(
+            evidence_id=evidence_record.id,
+            user_id=None,
+            action="upload_completed",
+            details={
+                "filename": evidence_record.original_filename,
+                "object_key": object_key,
+                "sha256_hash": sha256_hash
+            }
+        )
+        db.add(audit_log)
+
+        # Generate temporary signed URL for immediate display
+        photo_url = storage_provider.generate_presigned_download_url(object_key)
+
+    elif evidence_file:
+        # --- Legacy Multipart Upload Proxy Flow ---
+        # Size limit validation
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+        file_bytes = await evidence_file.read(MAX_FILE_SIZE + 1)
+        if len(file_bytes) > MAX_FILE_SIZE:
+            logger.warning("Upload rejected: file size exceeds 10MB limit.")
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="The uploaded evidence file exceeds the maximum allowed size of 10MB."
+            )
+
+        # Upload type validation
+        allowed_content_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+        if evidence_file.content_type not in allowed_content_types:
+            logger.warning("Upload rejected: invalid content type %s.", evidence_file.content_type)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file type. Only JPEG, PNG, GIF, and WEBP images are allowed."
+            )
+
+        try:
+            fname = evidence_file.filename or "evidence.jpg"
+            photo_url = save_evidence_image(file_bytes, fname)
+        except Exception as exc:
+            logger.error("Failed to store evidence image: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to store evidence image."
+            )
+    else:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to store evidence image."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing file upload payload. Either provide an object_key or upload a file directly."
         )
 
-    # 6. Update Shipment and BiocharApplication
+    # 4. Update Shipment and BiocharApplication
     try:
         shipment.status = 'delivered'
         
@@ -493,7 +702,7 @@ async def public_attest_delivery(
                 latitude=latitude,
                 longitude=longitude,
                 application_site=shipment.shipment_number,
-                remarks=photo_url,
+                remarks=photo_url or object_key,
                 applied_by=shipment.destination or "Farmer",
                 application_date=datetime.now(timezone.utc).date(),
                 application_rate_kg_ha=1500.0,
@@ -503,7 +712,7 @@ async def public_attest_delivery(
         else:
             app.latitude = latitude
             app.longitude = longitude
-            app.remarks = photo_url
+            app.remarks = photo_url or object_key
             app.application_site = shipment.shipment_number
             app.applied_by = shipment.destination or "Farmer"
             app.application_date = datetime.now(timezone.utc).date()
@@ -518,14 +727,14 @@ async def public_attest_delivery(
             detail="Failed to update database record."
         )
 
-    # 7. Check batch delivery completion in background
+    # 5. Check batch delivery completion in background
     if shipment.biochar_batch_id:
         background_tasks.add_task(check_batch_delivery_completion, str(shipment.biochar_batch_id))
 
     return PublicAttestResponse(
         message="Attestation successfully submitted and verified.",
         sink_id=str(shipment_id),
-        photo_evidence_url=photo_url
+        photo_evidence_url=photo_url or ""
     )
 
 
@@ -616,6 +825,273 @@ def process_and_compress_image(image_bytes: bytes) -> tuple[bytes, bytes]:
     except Exception as exc:
         logger.error("Error processing/compressing image: %s. Using original bytes.", exc)
         return image_bytes, image_bytes
+
+
+@router.post("/evidence/upload-url", status_code=status.HTTP_200_OK)
+async def request_upload_url(
+    payload: UploadUrlRequest,
+    db: Session = Depends(get_db)
+):
+    validate_user_org_rbac(db, payload.uploaded_by, payload.organization_id)
+    validate_file_metadata(payload.mime_type, payload.file_size)
+
+    folder = get_storage_folder(payload.activity, payload.entity_type)
+    org_id = payload.organization_id
+    proj_id = payload.project_id or "unlinked"
+    
+    _, ext = os.path.splitext(payload.filename)
+    if not ext and payload.mime_type.startswith("image/"):
+        ext = ".jpg" if payload.mime_type == "image/jpeg" else f".{payload.mime_type.split('/')[-1]}"
+    
+    uuid_filename = f"{uuid.uuid4()}{ext}"
+    object_key = f"organizations/{org_id}/projects/{proj_id}/{folder}/{uuid_filename}"
+
+    try:
+        storage_provider = get_storage_provider()
+        presigned_data = storage_provider.generate_presigned_upload_url(
+            object_key=object_key,
+            mime_type=payload.mime_type,
+            file_size=payload.file_size
+        )
+    except Exception as e:
+        logger.error("Failed to generate presigned upload URL: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to initialize storage provider or generate URL")
+
+    try:
+        evidence_record = Evidence(
+            organization_id=uuid.UUID(org_id),
+            project_id=uuid.UUID(payload.project_id) if payload.project_id else None,
+            entity_type=payload.entity_type,
+            entity_id=uuid.UUID(payload.entity_id),
+            activity=payload.activity,
+            uploaded_by=uuid.UUID(payload.uploaded_by),
+            uploaded_by_role=payload.uploaded_by_role,
+            capture_timestamp=datetime.now(timezone.utc),
+            media_type="image" if payload.mime_type.startswith("image/") else "document",
+            filename=uuid_filename,
+            original_filename=payload.filename,
+            storage_path=object_key,
+            file_size=payload.file_size,
+            mime_type=payload.mime_type,
+            bucket_name=storage_provider.bucket_name,
+            object_key=object_key,
+            storage_provider="cloudflare_r2",
+            upload_status="Pending",
+            verification_status="Draft"
+        )
+        db.add(evidence_record)
+        db.commit()
+        
+        audit_log = EvidenceAuditLog(
+            evidence_id=evidence_record.id,
+            user_id=uuid.UUID(payload.uploaded_by),
+            action="upload_requested",
+            details={
+                "filename": payload.filename,
+                "mime_type": payload.mime_type,
+                "file_size": payload.file_size,
+                "object_key": object_key
+            }
+        )
+        db.add(audit_log)
+        db.commit()
+
+        return {
+            "status": "success",
+            "evidence_id": str(evidence_record.id),
+            "upload_url": presigned_data["url"],
+            "method": presigned_data["method"],
+            "headers": presigned_data["headers"]
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error("Failed to save pending evidence metadata: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save upload metadata")
+
+
+@router.post("/evidence/confirm-upload", status_code=status.HTTP_200_OK)
+async def confirm_upload(
+    payload: ConfirmUploadRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        evidence_id_uuid = uuid.UUID(payload.evidence_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid evidence_id format")
+
+    evidence = db.query(Evidence).filter(Evidence.id == evidence_id_uuid).first()
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence record not found")
+
+    if evidence.upload_status == "Completed":
+        return {
+            "status": "success",
+            "message": "Upload already confirmed",
+            "evidence_id": str(evidence.id)
+        }
+
+    try:
+        storage_provider = get_storage_provider()
+        is_verified = storage_provider.verify_upload(evidence.object_key, evidence.file_size)
+    except Exception as e:
+        logger.error("Error verifying storage object %s: %s", evidence.object_key, e)
+        is_verified = False
+
+    if not is_verified:
+        raise HTTPException(
+            status_code=400,
+            detail="File upload verification failed. File not found in storage or size mismatch."
+        )
+
+    try:
+        evidence.upload_status = "Completed"
+        evidence.verification_status = "Uploaded"
+        evidence.sha256_hash = payload.sha256_hash
+        evidence.uploaded_at = datetime.now(timezone.utc)
+        evidence.updated_at = datetime.now(timezone.utc)
+
+        evidence_file = EvidenceFile(
+            evidence_id=evidence.id,
+            file_role="original",
+            filename=evidence.original_filename,
+            storage_path=evidence.object_key,
+            file_size=evidence.file_size,
+            mime_type=evidence.mime_type,
+            sha256_hash=payload.sha256_hash
+        )
+        db.add(evidence_file)
+
+        audit_log = EvidenceAuditLog(
+            evidence_id=evidence.id,
+            user_id=evidence.uploaded_by,
+            action="upload_completed",
+            details={
+                "filename": evidence.original_filename,
+                "object_key": evidence.object_key,
+                "sha256_hash": payload.sha256_hash
+            }
+        )
+        db.add(audit_log)
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": "Evidence upload confirmed and verified successfully",
+            "evidence_id": str(evidence.id)
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error("Failed to confirm evidence upload: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Database confirmation failed")
+
+
+@router.post("/public/attest/upload-url", status_code=status.HTTP_200_OK)
+async def public_attest_upload_url(
+    payload: PublicUploadUrlRequest,
+    db: Session = Depends(get_db)
+):
+    try:
+        shipment_id = verify_attestation_token(payload.token)
+    except AttestationTokenExpiredError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except AttestationTokenInvalidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Token verification failed: {exc}")
+
+    shipment = db.query(Shipment).filter(Shipment.id == shipment_id).first()
+    if not shipment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shipment record not found.")
+
+    if shipment.status == 'delivered':
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Attestation has already been submitted for this delivery.")
+
+    org_id = None
+    project_id = None
+    if shipment.biochar_batch:
+        batch = shipment.biochar_batch
+        if batch.pyrolysis_run and batch.pyrolysis_run.feedstock_batch:
+            feedstock = batch.pyrolysis_run.feedstock_batch
+            if feedstock.project:
+                project_id = str(feedstock.project.id)
+                org_id = str(feedstock.project.organization_id)
+
+    if not org_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Could not resolve organization associated with this shipment.")
+
+    validate_file_metadata(payload.mime_type, payload.file_size)
+
+    _, ext = os.path.splitext(payload.filename)
+    if not ext and payload.mime_type.startswith("image/"):
+        ext = ".jpg" if payload.mime_type == "image/jpeg" else f".{payload.mime_type.split('/')[-1]}"
+    
+    uuid_filename = f"{uuid.uuid4()}{ext}"
+    proj_folder = project_id if project_id else "unlinked"
+    object_key = f"organizations/{org_id}/projects/{proj_folder}/distribution/{uuid_filename}"
+
+    try:
+        storage_provider = get_storage_provider()
+        presigned_data = storage_provider.generate_presigned_upload_url(
+            object_key=object_key,
+            mime_type=payload.mime_type,
+            file_size=payload.file_size
+        )
+    except Exception as e:
+        logger.error("Failed to generate presigned upload URL for attestation: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to initialize storage provider or generate URL")
+
+    try:
+        evidence_record = Evidence(
+            organization_id=uuid.UUID(org_id),
+            project_id=uuid.UUID(project_id) if project_id else None,
+            entity_type="distribution",
+            entity_id=uuid.UUID(shipment_id),
+            activity="distribution",
+            uploaded_by=None,
+            uploaded_by_role="Farmer",
+            capture_timestamp=datetime.now(timezone.utc),
+            media_type="image" if payload.mime_type.startswith("image/") else "document",
+            filename=uuid_filename,
+            original_filename=payload.filename,
+            storage_path=object_key,
+            file_size=payload.file_size,
+            mime_type=payload.mime_type,
+            bucket_name=storage_provider.bucket_name,
+            object_key=object_key,
+            storage_provider="cloudflare_r2",
+            upload_status="Pending",
+            verification_status="Draft"
+        )
+        db.add(evidence_record)
+        db.commit()
+
+        audit_log = EvidenceAuditLog(
+            evidence_id=evidence_record.id,
+            user_id=None,
+            action="upload_requested",
+            details={
+                "filename": payload.filename,
+                "mime_type": payload.mime_type,
+                "file_size": payload.file_size,
+                "object_key": object_key,
+                "shipment_id": shipment_id
+            }
+        )
+        db.add(audit_log)
+        db.commit()
+
+        return {
+            "status": "success",
+            "evidence_id": str(evidence_record.id),
+            "upload_url": presigned_data["url"],
+            "method": presigned_data["method"],
+            "headers": presigned_data["headers"],
+            "object_key": object_key
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error("Failed to create pending attestation metadata: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save attestation upload metadata")
 
 
 @router.post("/evidence/upload", status_code=status.HTTP_201_CREATED)
@@ -751,6 +1227,18 @@ async def upload_evidence(
         )
 
 
+def sign_storage_path(storage_path: Optional[str], storage_provider_name: Optional[str] = None) -> Optional[str]:
+    if not storage_path:
+        return storage_path
+    if storage_provider_name == "cloudflare_r2" or (not storage_path.startswith("/") and not storage_path.startswith("http")):
+        try:
+            sp = get_storage_provider()
+            return sp.generate_presigned_download_url(storage_path)
+        except Exception as e:
+            logger.error("Failed to sign R2 key %s: %s", storage_path, e)
+    return storage_path
+
+
 @router.get("/evidence/list")
 async def list_evidence(
     organization_id: str,
@@ -802,7 +1290,7 @@ async def list_evidence(
                 "id": str(f.id),
                 "file_role": f.file_role,
                 "filename": f.filename,
-                "storage_path": f.storage_path,
+                "storage_path": sign_storage_path(f.storage_path, r.storage_provider),
                 "file_size": f.file_size,
                 "mime_type": f.mime_type,
                 "sha256_hash": f.sha256_hash,
@@ -835,7 +1323,7 @@ async def list_evidence(
                 "device_information": r.device_information,
                 "media_type": r.media_type,
                 "filename": r.filename,
-                "storage_path": r.storage_path,
+                "storage_path": sign_storage_path(r.storage_path, r.storage_provider),
                 "file_size": r.file_size,
                 "mime_type": r.mime_type,
                 "sha256_hash": r.sha256_hash,
@@ -874,7 +1362,7 @@ async def get_evidence(evidence_id: str, db: Session = Depends(get_db)):
             "id": str(f.id),
             "file_role": f.file_role,
             "filename": f.filename,
-            "storage_path": f.storage_path,
+            "storage_path": sign_storage_path(f.storage_path, r.storage_provider),
             "file_size": f.file_size,
             "mime_type": f.mime_type,
             "sha256_hash": f.sha256_hash,
@@ -910,7 +1398,7 @@ async def get_evidence(evidence_id: str, db: Session = Depends(get_db)):
                 "device_information": r.device_information,
                 "media_type": r.media_type,
                 "filename": r.filename,
-                "storage_path": r.storage_path,
+                "storage_path": sign_storage_path(r.storage_path, r.storage_provider),
                 "file_size": r.file_size,
                 "mime_type": r.mime_type,
                 "sha256_hash": r.sha256_hash,
@@ -1021,7 +1509,13 @@ async def delete_evidence(
 
         files_list = db.query(EvidenceFile).filter(EvidenceFile.evidence_id == r.id).all()
         for f in files_list:
-            if f.storage_path and f.storage_path.startswith("/evidence/ems/"):
+            if r.storage_provider == "cloudflare_r2" or (f.storage_path and not f.storage_path.startswith("/") and not f.storage_path.startswith("http")):
+                try:
+                    sp = get_storage_provider()
+                    sp.delete_file(f.storage_path)
+                except Exception as e:
+                    logger.error("Failed to delete R2 file %s: %s", f.storage_path, e)
+            elif f.storage_path and f.storage_path.startswith("/evidence/ems/"):
                 local_path = os.path.join(os.path.dirname(__file__), "..", "frontend", f.storage_path.lstrip("/"))
                 if os.path.exists(local_path):
                     try:
@@ -1088,6 +1582,16 @@ async def download_evidence(
         )
         db.add(audit_log)
         db.commit()
+
+        if r.storage_provider == "cloudflare_r2" or (f.storage_path and not f.storage_path.startswith("/") and not f.storage_path.startswith("http")):
+            try:
+                sp = get_storage_provider()
+                signed_url = sp.generate_presigned_download_url(f.storage_path)
+                from fastapi.responses import RedirectResponse
+                return RedirectResponse(url=signed_url)
+            except Exception as e:
+                logger.error("Failed to generate presigned download URL for %s: %s", f.storage_path, e)
+                raise HTTPException(status_code=500, detail="Failed to generate download URL from storage provider")
 
         if f.storage_path.startswith("/evidence/ems/"):
             local_path = os.path.join(os.path.dirname(__file__), "..", "frontend", f.storage_path.lstrip("/"))

@@ -180,6 +180,14 @@ const EvidenceModule = {
 
     async loadEvidence() {
         try {
+            if (typeof Connectivity !== 'undefined' && !Connectivity.isOnline) {
+                const cached = await OfflineDB.getAll('evidence');
+                this._cachedData = cached || [];
+                this._totalRecords = cached.length;
+                this.renderEvidenceData();
+                return;
+            }
+
             const orgId = Auth.orgId;
             let url = `/api/v1/biochar/evidence/list?organization_id=${orgId}&page=${this._page}&page_size=${this._pageSize}`;
             if (this._filters.project_id) url += `&project_id=${this._filters.project_id}`;
@@ -193,6 +201,14 @@ const EvidenceModule = {
             if (result.status === 'success') {
                 this._cachedData = result.data || [];
                 this._totalRecords = result.total || 0;
+                
+                // Keep local cache synced with fresh online list
+                if (typeof OfflineDB !== 'undefined') {
+                    for (const item of this._cachedData) {
+                        await OfflineDB.put('evidence', item);
+                    }
+                }
+                
                 this.renderEvidenceData();
             } else {
                 throw new Error(result.detail || 'Failed to load evidence');
@@ -504,48 +520,109 @@ const EvidenceModule = {
             btn.classList.add('loading');
             btn.disabled = true;
 
+            // Helper function to calculate SHA-256 hash of a file client-side
+            async function calculateSHA256(file) {
+                const arrayBuffer = await file.arrayBuffer();
+                const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                return hashHex;
+            }
+
             try {
-                const formData = new FormData();
-                formData.append('file', fileInput.files[0]);
-                formData.append('organization_id', Auth.orgId);
-                
-                const projIdVal = context?.project_id || document.getElementById('ems-project').value;
-                if (projIdVal) formData.append('project_id', projIdVal);
+                const file = fileInput.files[0];
 
-                formData.append('entity_type', context?.entity_type || 'unlinked');
-                formData.append('entity_id', context?.entity_id || '00000000-0000-0000-0000-000000000000');
-                
+                if (typeof Connectivity !== 'undefined' && !Connectivity.isOnline) {
+                    const projIdVal = context?.project_id || document.getElementById('ems-project').value || null;
+                    const entityTypeVal = context?.entity_type || 'unlinked';
+                    const entityIdVal = context?.entity_id || '00000000-0000-0000-0000-000000000000';
+                    const activityVal = context?.activity || document.getElementById('ems-activity').value;
+
+                    await UploadQueue.queueFileUpload(file, {
+                        evidence_id: crypto.randomUUID(),
+                        organization_id: Auth.orgId,
+                        project_id: projIdVal,
+                        entity_type: entityTypeVal,
+                        entity_id: entityIdVal,
+                        activity: activityVal,
+                        uploaded_by: Auth.user.id,
+                        uploaded_by_role: currentRole
+                    });
+
+                    Toast.success("Offline: Upload queued locally! It will sync automatically.");
+                    Modal.close();
+                    await this.loadEvidence();
+                    return;
+                }
+
+                // Calculate SHA-256 client side
+                const sha256_hash = await calculateSHA256(file);
+
+                const projIdVal = context?.project_id || document.getElementById('ems-project').value || null;
+                const entityTypeVal = context?.entity_type || 'unlinked';
+                const entityIdVal = context?.entity_id || '00000000-0000-0000-0000-000000000000';
                 const activityVal = context?.activity || document.getElementById('ems-activity').value;
-                formData.append('activity', activityVal);
-                
-                formData.append('uploaded_by', Auth.user.id);
-                formData.append('uploaded_by_role', currentRole);
-                formData.append('capture_timestamp', new Date().toISOString());
 
-                if (lat !== null) {
-                    formData.append('latitude', lat);
-                    formData.append('longitude', lng);
-                }
-                if (alt !== null) {
-                    formData.append('altitude', alt);
-                }
-
-                // Add device information
-                const devInfo = {
-                    userAgent: navigator.userAgent,
-                    platform: navigator.platform,
-                    screen: `${window.screen.width}x${window.screen.height}`,
-                    remarks: document.getElementById('ems-remarks').value.trim()
-                };
-                formData.append('device_information', JSON.stringify(devInfo));
-
-                const response = await fetch('/api/v1/biochar/evidence/upload', {
+                // 1. Request presigned upload URL from backend
+                const uploadUrlResponse = await fetch('/api/v1/biochar/evidence/upload-url', {
                     method: 'POST',
-                    body: formData
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: file.name,
+                        mime_type: file.type || 'application/octet-stream',
+                        file_size: file.size,
+                        organization_id: Auth.orgId,
+                        project_id: projIdVal,
+                        entity_type: entityTypeVal,
+                        entity_id: entityIdVal,
+                        activity: activityVal,
+                        uploaded_by: Auth.user.id,
+                        uploaded_by_role: currentRole
+                    })
                 });
-                const result = await response.json();
 
-                if (result.status === 'success') {
+                if (!uploadUrlResponse.ok) {
+                    const errData = await uploadUrlResponse.json();
+                    throw new Error(errData.detail || 'Failed to request upload URL');
+                }
+
+                const uploadUrlData = await uploadUrlResponse.json();
+                const { evidence_id, upload_url, headers } = uploadUrlData;
+
+                // 2. Upload file directly to Cloudflare R2 using the presigned URL
+                const r2Headers = { ...headers };
+                const r2Response = await fetch(upload_url, {
+                    method: 'PUT',
+                    headers: r2Headers,
+                    body: file
+                });
+
+                if (!r2Response.ok) {
+                    throw new Error(`Direct upload to storage failed with status ${r2Response.status}`);
+                }
+
+                // 3. Confirm the upload with the backend
+                const confirmResponse = await fetch('/api/v1/biochar/evidence/confirm-upload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        evidence_id: evidence_id,
+                        sha256_hash: sha256_hash
+                    })
+                });
+
+                if (!confirmResponse.ok) {
+                    const errData = await confirmResponse.json();
+                    throw new Error(errData.detail || 'Failed to confirm upload with backend');
+                }
+
+                const confirmResult = await confirmResponse.json();
+
+                if (confirmResult.status === 'success') {
                     Toast.success("Evidence uploaded successfully!");
                     Modal.close();
                     // Reload if EMS Dashboard is showing
@@ -553,7 +630,7 @@ const EvidenceModule = {
                         await this.loadEvidence();
                     }
                 } else {
-                    throw new Error(result.detail || 'Upload failed');
+                    throw new Error(confirmResult.detail || 'Upload failed');
                 }
             } catch (err) {
                 console.error(err);

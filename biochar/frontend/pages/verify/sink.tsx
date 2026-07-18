@@ -115,6 +115,14 @@ export const VerifySinkPage: React.FC = () => {
     }
   };
 
+  const calculateSHA256 = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest("SHA-256", arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  };
+
   // 5. Submit attestation payload
   const handleSubmitAttestation = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,14 +135,81 @@ export const VerifySinkPage: React.FC = () => {
     setSubmitError(null);
     setSubmitSuccess(false);
 
-    const formData = new FormData();
-    formData.append("token", token);
-    formData.append("latitude", String(latitude));
-    formData.append("longitude", String(longitude));
-    formData.append("evidence_file", photoFile);
-
     try {
+      // Offline mode check
+      if (!navigator.onLine || (window as any).Connectivity?.isOnline === false) {
+        const local_uuid = crypto.randomUUID();
+        await (window as any).UploadQueue.queueFileUpload(photoFile, {
+            token: token,
+            evidence_id: local_uuid,
+            organization_id: "public",
+            project_id: null,
+            entity_type: "distribution",
+            entity_id: local_uuid,
+            activity: "distribution",
+            uploaded_by: null,
+            uploaded_by_role: "Farmer",
+            latitude: latitude,
+            longitude: longitude,
+            filename: photoFile.name,
+            mime_type: photoFile.type || "image/jpeg",
+            file_size: photoFile.size
+        });
+        setSubmitSuccess(true);
+        setSubmitting(false);
+        return;
+      }
+
       const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      
+      // Calculate SHA-256
+      const sha256_hash = await calculateSHA256(photoFile);
+
+      // 1. Get presigned R2 upload URL
+      const urlRes = await fetch(`${backendUrl}/api/v1/biochar/public/attest/upload-url`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token: token,
+          filename: photoFile.name,
+          mime_type: photoFile.type || "image/jpeg",
+          file_size: photoFile.size,
+        }),
+      });
+
+      if (!urlRes.ok) {
+        const errData = await urlRes.json();
+        throw new Error(errData.detail || "Failed to generate storage upload URL.");
+      }
+
+      const { upload_url, headers, object_key } = await urlRes.json();
+
+      // 2. Upload photo directly to Cloudflare R2
+      const r2Res = await fetch(upload_url, {
+        method: "PUT",
+        headers: {
+          ...headers,
+        },
+        body: photoFile,
+      });
+
+      if (!r2Res.ok) {
+        throw new Error(`Direct upload failed with status ${r2Res.status}`);
+      }
+
+      // 3. Confirm attestation with backend
+      const formData = new FormData();
+      formData.append("token", token);
+      formData.append("latitude", String(latitude));
+      formData.append("longitude", String(longitude));
+      formData.append("object_key", object_key);
+      formData.append("filename", photoFile.name);
+      formData.append("mime_type", photoFile.type || "image/jpeg");
+      formData.append("file_size", String(photoFile.size));
+      formData.append("sha256_hash", sha256_hash);
+
       const res = await fetch(`${backendUrl}/api/v1/biochar/public/attest`, {
         method: "POST",
         body: formData,
