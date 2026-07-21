@@ -3,7 +3,7 @@ services:
     image: redis:7
     container_name: carbon-redis
 
-  # ── Landing Page — app.stomata.tech ────────────────────────────────────────
+  # ── Landing Page — app.stomata.tech & stomata.tech ─────────────────────────
   landing-api:
     build: .
     command: uvicorn landing.app:app --host 0.0.0.0 --port 8000
