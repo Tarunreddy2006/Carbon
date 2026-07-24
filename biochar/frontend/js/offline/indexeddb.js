@@ -1,6 +1,6 @@
 const OfflineDB = {
     dbName: 'stomata_offline_db',
-    dbVersion: 2,
+    dbVersion: 3,
     db: null,
 
     tables: [
@@ -57,79 +57,141 @@ const OfflineDB = {
         });
     },
 
+    async getTransaction(storeName, mode = 'readonly') {
+        try {
+            const db = await this.open();
+            if (!db || !db.objectStoreNames.contains(storeName)) {
+                console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+                return null;
+            }
+            return db.transaction(storeName, mode);
+        } catch (err) {
+            console.warn(`[OfflineDB] Failed to create transaction for '${storeName}':`, err);
+            return null;
+        }
+    },
+
     async getAll(storeName) {
-        const db = await this.open();
-        if (!db.objectStoreNames.contains(storeName)) {
-            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+        try {
+            const db = await this.open();
+            if (!db || !db.objectStoreNames.contains(storeName)) {
+                console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+                return [];
+            }
+            return new Promise((resolve, reject) => {
+                try {
+                    const tx = db.transaction(storeName, 'readonly');
+                    const store = tx.objectStore(storeName);
+                    const req = store.getAll();
+                    req.onsuccess = () => resolve(req.result || []);
+                    req.onerror = () => reject(req.error);
+                } catch (err) {
+                    console.warn(`[OfflineDB] Transaction failed for '${storeName}':`, err);
+                    resolve([]);
+                }
+            });
+        } catch (err) {
+            console.warn(`[OfflineDB] getAll failed for '${storeName}':`, err);
             return [];
         }
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(storeName, 'readonly');
-            const store = tx.objectStore(storeName);
-            const req = store.getAll();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = () => reject(req.error);
-        });
     },
 
     async get(storeName, key) {
-        const db = await this.open();
-        if (!db.objectStoreNames.contains(storeName)) {
-            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+        try {
+            const db = await this.open();
+            if (!db || !db.objectStoreNames.contains(storeName)) {
+                console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+                return null;
+            }
+            return new Promise((resolve, reject) => {
+                try {
+                    const tx = db.transaction(storeName, 'readonly');
+                    const store = tx.objectStore(storeName);
+                    const req = store.get(key);
+                    req.onsuccess = () => resolve(req.result || null);
+                    req.onerror = () => reject(req.error);
+                } catch (err) {
+                    console.warn(`[OfflineDB] Transaction failed for '${storeName}':`, err);
+                    resolve(null);
+                }
+            });
+        } catch (err) {
+            console.warn(`[OfflineDB] get failed for '${storeName}':`, err);
             return null;
         }
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(storeName, 'readonly');
-            const store = tx.objectStore(storeName);
-            const req = store.get(key);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
     },
 
     async put(storeName, data) {
-        const db = await this.open();
-        if (!db.objectStoreNames.contains(storeName)) {
-            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+        try {
+            const db = await this.open();
+            if (!db || !db.objectStoreNames.contains(storeName)) {
+                console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+                return null;
+            }
+            return new Promise((resolve, reject) => {
+                try {
+                    const tx = db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    const req = store.put(data);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                } catch (err) {
+                    console.warn(`[OfflineDB] Transaction failed for '${storeName}':`, err);
+                    resolve(null);
+                }
+            });
+        } catch (err) {
+            console.warn(`[OfflineDB] put failed for '${storeName}':`, err);
             return null;
         }
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(storeName, 'readwrite');
-            const store = tx.objectStore(storeName);
-            const req = store.put(data);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
     },
 
     async delete(storeName, key) {
-        const db = await this.open();
-        if (!db.objectStoreNames.contains(storeName)) {
-            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
-            return;
+        try {
+            const db = await this.open();
+            if (!db || !db.objectStoreNames.contains(storeName)) {
+                console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+                return;
+            }
+            return new Promise((resolve, reject) => {
+                try {
+                    const tx = db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    const req = store.delete(key);
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => reject(req.error);
+                } catch (err) {
+                    console.warn(`[OfflineDB] Transaction failed for '${storeName}':`, err);
+                    resolve();
+                }
+            });
+        } catch (err) {
+            console.warn(`[OfflineDB] delete failed for '${storeName}':`, err);
         }
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(storeName, 'readwrite');
-            const store = tx.objectStore(storeName);
-            const req = store.delete(key);
-            req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
-        });
     },
 
     async clear(storeName) {
-        const db = await this.open();
-        if (!db.objectStoreNames.contains(storeName)) {
-            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
-            return;
+        try {
+            const db = await this.open();
+            if (!db || !db.objectStoreNames.contains(storeName)) {
+                console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+                return;
+            }
+            return new Promise((resolve, reject) => {
+                try {
+                    const tx = db.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    const req = store.clear();
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => reject(req.error);
+                } catch (err) {
+                    console.warn(`[OfflineDB] Transaction failed for '${storeName}':`, err);
+                    resolve();
+                }
+            });
+        } catch (err) {
+            console.warn(`[OfflineDB] clear failed for '${storeName}':`, err);
         }
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(storeName, 'readwrite');
-            const store = tx.objectStore(storeName);
-            const req = store.clear();
-            req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
-        });
     }
 };
 

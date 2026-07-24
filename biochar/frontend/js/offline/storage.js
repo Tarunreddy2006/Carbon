@@ -219,6 +219,49 @@ const OfflineStorage = {
         window.supabase = offlineSupabase;
         window.supabaseClient = offlineSupabase;
         console.log("✔ Supabase client intercepted by OfflineStorage wrapper.");
+    },
+
+    async get(tableName, key) {
+        try {
+            return await OfflineDB.get(tableName, key);
+        } catch (err) {
+            console.warn(`[OfflineStorage] get failed for table '${tableName}':`, err);
+            return null;
+        }
+    },
+
+    async getAll(tableName) {
+        try {
+            return await OfflineDB.getAll(tableName);
+        } catch (err) {
+            console.warn(`[OfflineStorage] getAll failed for table '${tableName}':`, err);
+            return [];
+        }
+    },
+
+    async put(tableName, data) {
+        try {
+            return await OfflineDB.put(tableName, data);
+        } catch (err) {
+            console.warn(`[OfflineStorage] put failed for table '${tableName}':`, err);
+            return null;
+        }
+    },
+
+    async delete(tableName, key) {
+        try {
+            return await OfflineDB.delete(tableName, key);
+        } catch (err) {
+            console.warn(`[OfflineStorage] delete failed for table '${tableName}':`, err);
+        }
+    },
+
+    async clear(tableName) {
+        try {
+            return await OfflineDB.clear(tableName);
+        } catch (err) {
+            console.warn(`[OfflineStorage] clear failed for table '${tableName}':`, err);
+        }
     }
 };
 

@@ -324,11 +324,16 @@ const SettingsModule = {
         try {
             // Load roles if not loaded
             if (!this._roles) {
-                const { data: roles, error: rError } = await supabase
-                    .from('roles')
-                    .select('*');
-                if (rError) throw rError;
-                this._roles = roles;
+                try {
+                    const { data: roles, error: rError } = await supabase
+                        .from('roles')
+                        .select('*');
+                    if (rError) throw rError;
+                    this._roles = roles || [];
+                } catch (rErr) {
+                    console.warn('[SettingsModule] Failed to fetch roles:', rErr);
+                    this._roles = this._roles || [];
+                }
             }
 
             const canManageUsers = typeof Permissions !== 'undefined' && Permissions.hasPermission('manage_users');
@@ -346,22 +351,50 @@ const SettingsModule = {
                 }
             }
 
-            // 1. Read active membership rows
-            const { data: members, error: mError } = await supabase
-                .from('organization_members')
-                .select('*, roles(name), user:profiles(*)')
-                .eq('organization_id', orgId);
+            // 1. Read active membership rows safely
+            let members = [];
+            try {
+                const { data: mData, error: mError } = await supabase
+                    .from('organization_members')
+                    .select('*, roles(name), user:profiles(*)')
+                    .eq('organization_id', orgId);
 
-            if (mError) throw mError;
+                if (mError) throw mError;
+                members = mData || [];
+            } catch (mErr) {
+                console.warn('[SettingsModule] Failed to load members online/cache:', mErr);
+                try {
+                    if (typeof OfflineStorage !== 'undefined' && OfflineStorage.getAll) {
+                        const cached = await OfflineStorage.getAll('organization_members');
+                        members = (cached || []).filter(m => m && m.organization_id === orgId);
+                    }
+                } catch (cacheErr) {
+                    console.warn('[SettingsModule] Offline storage fallback failed for organization_members:', cacheErr);
+                }
+            }
 
-            // 2. Read pending invitations rows
-            const { data: invitations, error: iError } = await supabase
-                .from('invitations')
-                .select('*, roles(name)')
-                .eq('organization_id', orgId)
-                .eq('accepted', false);
+            // 2. Read pending invitations rows safely
+            let invitations = [];
+            try {
+                const { data: iData, error: iError } = await supabase
+                    .from('invitations')
+                    .select('*, roles(name)')
+                    .eq('organization_id', orgId)
+                    .eq('accepted', false);
 
-            if (iError) throw iError;
+                if (iError) throw iError;
+                invitations = iData || [];
+            } catch (iErr) {
+                console.warn('[SettingsModule] Failed to load invitations online/cache:', iErr);
+                try {
+                    if (typeof OfflineStorage !== 'undefined' && OfflineStorage.getAll) {
+                        const cached = await OfflineStorage.getAll('invitations');
+                        invitations = (cached || []).filter(inv => inv && inv.organization_id === orgId && !inv.accepted);
+                    }
+                } catch (cacheErr) {
+                    console.warn('[SettingsModule] Offline storage fallback failed for invitations:', cacheErr);
+                }
+            }
 
             const container = document.getElementById('members-list-container');
             if (!container) return;
@@ -370,7 +403,7 @@ const SettingsModule = {
             const mappedData = [];
 
             // Add active members
-            members.forEach(m => {
+            (members || []).forEach(m => {
                 const name = m.user ? (m.user.first_name + ' ' + m.user.last_name).trim() : 'Unregistered User';
                 const email = m.user?.email || (m.user_id === Auth.user.id ? Auth.user.email : '—');
                 mappedData.push({
@@ -387,7 +420,7 @@ const SettingsModule = {
             });
 
             // Add pending invitations
-            invitations.forEach(inv => {
+            (invitations || []).forEach(inv => {
                 mappedData.push({
                     id: inv.id,
                     user_id: null,
