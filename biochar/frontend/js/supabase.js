@@ -140,7 +140,7 @@ async function getUserProfile() {
 
                     if (member) {
                         const allRoles = await OfflineDB.getAll('roles');
-                        const role = (allRoles || []).find(r => r && r.id === member.role_id);
+                        const role = (allRoles || []).find(r => r && r.id == member.role_id);
                         profile.role = role || null;
                         profile.role_id = member.role_id || null;
                         profile.member_status = member.status || 'Active';
@@ -271,7 +271,7 @@ async function getUserProfile() {
 
                     if (member) {
                         const allRoles = await OfflineDB.getAll('roles');
-                        const role = (allRoles || []).find(r => r && r.id === member.role_id);
+                        const role = (allRoles || []).find(r => r && r.id == member.role_id);
                         profile.role = role || null;
                         profile.role_id = member.role_id || null;
                         profile.member_status = member.status || 'Active';

@@ -125,7 +125,7 @@ const AuthRepository = {
                 role = await OfflineDB.get('roles', targetRoleId);
                 if (!role) {
                     const allRoles = await OfflineDB.getAll('roles');
-                    role = (allRoles || []).find(r => r && r.id === targetRoleId);
+                    role = (allRoles || []).find(r => r && r.id == targetRoleId);
                 }
             }
 
