@@ -122,6 +122,9 @@ class SupabaseQueryBuilder {
                 if (this.mutationType === 'SELECT' && res && res.data && !res.error) {
                     try {
                         const dataArray = Array.isArray(res.data) ? res.data : [res.data];
+                        if (Array.isArray(res.data) && res.data.length > 0) {
+                            await OfflineDB.clear(this.tableName);
+                        }
                         for (const item of dataArray) {
                             if (item && item.id) {
                                 await OfflineDB.put(this.tableName, item);
@@ -300,6 +303,9 @@ const OfflineStorage = {
 
             if (res && res.data) {
                 const dataArray = Array.isArray(res.data) ? res.data : [res.data];
+                if (Array.isArray(res.data) && !options.isSingle && res.data.length > 0) {
+                    await OfflineDB.clear(storeName);
+                }
                 for (const item of dataArray) {
                     if (item && item.id) {
                         await OfflineDB.put(storeName, item);

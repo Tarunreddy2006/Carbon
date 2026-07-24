@@ -202,7 +202,54 @@ const OfflineDB = {
             console.warn(`[OfflineDB] clear failed for '${storeName}':`, err);
             return null;
         }
+    },
+
+    async clearAll() {
+        console.log('[OfflineDB] Clearing all IndexedDB object stores...');
+        try {
+            const db = await this.open();
+            if (!db) return;
+            const stores = Array.from(db.objectStoreNames);
+            for (const storeName of stores) {
+                await this.clear(storeName);
+            }
+            console.log('[OfflineDB] All object stores cleared.');
+        } catch (err) {
+            console.error('[OfflineDB] Failed to clear all object stores:', err);
+        }
+    },
+
+    async resetDatabase() {
+        console.log('[OfflineDB] Deleting IndexedDB database completely...');
+        if (this.db) {
+            this.db.close();
+            this.db = null;
+        }
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.deleteDatabase(this.dbName);
+            req.onsuccess = () => {
+                console.log('[OfflineDB] Database deleted successfully.');
+                resolve(true);
+            };
+            req.onerror = (e) => {
+                console.error('[OfflineDB] Failed to delete database:', e);
+                reject(e.target.error);
+            };
+            req.onblocked = () => {
+                console.warn('[OfflineDB] Delete database blocked. Please close other tabs.');
+            };
+        });
     }
 };
 
-window.OfflineDB = OfflineDB;
+if (typeof window !== 'undefined') {
+    window.OfflineDB = OfflineDB;
+
+    // Perform an automatic clean purge to wipe any accumulated duplicate records in IndexedDB
+    if (!localStorage.getItem('stomata_db_purged_v2')) {
+        OfflineDB.clearAll().then(() => {
+            localStorage.setItem('stomata_db_purged_v2', 'true');
+            console.log('[OfflineDB] Successfully purged IndexedDB to wipe duplicate entries.');
+        });
+    }
+}
