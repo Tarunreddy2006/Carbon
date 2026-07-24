@@ -1,6 +1,6 @@
 const OfflineDB = {
     dbName: 'stomata_offline_db',
-    dbVersion: 1,
+    dbVersion: 2,
     db: null,
     
     tables: [
@@ -19,7 +19,8 @@ const OfflineDB = {
         'profiles',
         'organizations',
         'organization_members',
-        'roles'
+        'roles',
+        'invitations'
     ],
 
     open() {
@@ -58,17 +59,25 @@ const OfflineDB = {
 
     async getAll(storeName) {
         const db = await this.open();
+        if (!db.objectStoreNames.contains(storeName)) {
+            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+            return [];
+        }
         return new Promise((resolve, reject) => {
             const tx = db.transaction(storeName, 'readonly');
             const store = tx.objectStore(storeName);
             const req = store.getAll();
-            req.onsuccess = () => resolve(req.result);
+            req.onsuccess = () => resolve(req.result || []);
             req.onerror = () => reject(req.error);
         });
     },
 
     async get(storeName, key) {
         const db = await this.open();
+        if (!db.objectStoreNames.contains(storeName)) {
+            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+            return null;
+        }
         return new Promise((resolve, reject) => {
             const tx = db.transaction(storeName, 'readonly');
             const store = tx.objectStore(storeName);
@@ -80,6 +89,10 @@ const OfflineDB = {
 
     async put(storeName, data) {
         const db = await this.open();
+        if (!db.objectStoreNames.contains(storeName)) {
+            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+            return null;
+        }
         return new Promise((resolve, reject) => {
             const tx = db.transaction(storeName, 'readwrite');
             const store = tx.objectStore(storeName);
@@ -91,6 +104,10 @@ const OfflineDB = {
 
     async delete(storeName, key) {
         const db = await this.open();
+        if (!db.objectStoreNames.contains(storeName)) {
+            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+            return;
+        }
         return new Promise((resolve, reject) => {
             const tx = db.transaction(storeName, 'readwrite');
             const store = tx.objectStore(storeName);
@@ -102,6 +119,10 @@ const OfflineDB = {
 
     async clear(storeName) {
         const db = await this.open();
+        if (!db.objectStoreNames.contains(storeName)) {
+            console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
+            return;
+        }
         return new Promise((resolve, reject) => {
             const tx = db.transaction(storeName, 'readwrite');
             const store = tx.objectStore(storeName);

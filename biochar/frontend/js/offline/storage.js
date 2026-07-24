@@ -4,11 +4,13 @@ class SupabaseQueryBuilder {
         this.filters = [];
         this.mutationType = null;
         this.payload = null;
+        this.selectColumns = '*';
         this.isSingle = false;
     }
 
     select(columns) {
         this.mutationType = 'SELECT';
+        this.selectColumns = columns || '*';
         return this;
     }
 
@@ -76,7 +78,7 @@ class SupabaseQueryBuilder {
             let query = window.originalSupabase.from(this.tableName);
             
             if (this.mutationType === 'SELECT') {
-                query = query.select();
+                query = query.select(this.selectColumns || '*');
             } else if (this.mutationType === 'INSERT') {
                 query = query.insert(this.payload);
             } else if (this.mutationType === 'UPDATE') {
@@ -99,9 +101,15 @@ class SupabaseQueryBuilder {
             const res = await query;
             
             if (this.mutationType === 'SELECT' && res.data && !res.error) {
-                const dataArray = Array.isArray(res.data) ? res.data : [res.data];
-                for (const item of dataArray) {
-                    await OfflineDB.put(this.tableName, item);
+                try {
+                    const dataArray = Array.isArray(res.data) ? res.data : [res.data];
+                    for (const item of dataArray) {
+                        if (item && item.id) {
+                            await OfflineDB.put(this.tableName, item);
+                        }
+                    }
+                } catch (cacheErr) {
+                    console.warn(`[OfflineStorage] Local caching skipped for ${this.tableName}:`, cacheErr);
                 }
             }
             
@@ -137,7 +145,9 @@ class SupabaseQueryBuilder {
                         singlePayload.created_at = new Date().toISOString();
                     }
                     
-                    await OfflineDB.put(this.tableName, singlePayload);
+                    try {
+                        await OfflineDB.put(this.tableName, singlePayload);
+                    } catch (e) { }
                     await SyncQueue.push('CREATE', this.tableName, singlePayload.id, singlePayload);
                     insertedData.push(singlePayload);
                 }
@@ -159,7 +169,9 @@ class SupabaseQueryBuilder {
                 }
                 
                 const updated = { ...existing, ...this.payload, updated_at: new Date().toISOString() };
-                await OfflineDB.put(this.tableName, updated);
+                try {
+                    await OfflineDB.put(this.tableName, updated);
+                } catch (e) { }
                 await SyncQueue.push('UPDATE', this.tableName, targetId, updated);
                 
                 return { data: updated, error: null };
@@ -172,7 +184,9 @@ class SupabaseQueryBuilder {
                 }
                 
                 const targetId = idFilter.value;
-                await OfflineDB.delete(this.tableName, targetId);
+                try {
+                    await OfflineDB.delete(this.tableName, targetId);
+                } catch (e) { }
                 await SyncQueue.push('DELETE', this.tableName, targetId, null);
                 
                 return { data: null, error: null };
