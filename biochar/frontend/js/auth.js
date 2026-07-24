@@ -92,6 +92,23 @@ const Auth = {
         return this._profile?.organization_id || null;
     },
 
+    getUserRole() {
+        const profile = this._profile;
+        if (!profile) return 'viewer';
+
+        let roleVal = null;
+        if (profile.organization_members?.[0]?.roles?.name) {
+            roleVal = profile.organization_members[0].roles.name;
+        } else if (profile.role) {
+            roleVal = typeof profile.role === 'object' ? profile.role.name : profile.role;
+        }
+
+        if (typeof Permissions !== 'undefined') {
+            return Permissions.normalizeRole(roleVal);
+        }
+        return (roleVal || 'viewer').toString().toLowerCase();
+    },
+
     populateUI() {
         const avatarEl = document.getElementById('topbar-avatar');
         const nameEl = document.getElementById('topbar-user-name');

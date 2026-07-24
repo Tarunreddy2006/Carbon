@@ -2,12 +2,43 @@
 // Stomata — Centralized Permission & Role-Based Access Control (RBAC) Service
 // ═══════════════════════════════════════════════════════════════════════════
 
+const ROLE_PERMISSIONS = {
+    'owner': ['*'],
+    'org_owner': ['*'],
+    'admin': ['*'],
+    'project manager': ['dashboard', 'projects', 'feedstock', 'batches', 'laboratory', 'settings', 'evidence'],
+    'operator': ['dashboard', 'feedstock', 'batches', 'pyrolysis', 'evidence'],
+    'laboratory': ['dashboard', 'projects', 'laboratory', 'evidence'],
+    'mrv officer': ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'settings', 'evidence'],
+    'viewer': ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'evidence']
+};
+
 const Permissions = {
+    ROLE_PERMISSIONS: ROLE_PERMISSIONS,
+
+    /**
+     * Normalize role strings mapping variations to normalized lowercase representations.
+     */
+    normalizeRole(role) {
+        if (!role) return 'viewer';
+        const lower = role.toString().toLowerCase().trim();
+        if (lower === 'owner' || lower === 'org_owner' || lower === 'organization_owner') {
+            return 'owner';
+        }
+        if (lower === 'admin') {
+            return 'admin';
+        }
+        return lower;
+    },
+
     /**
      * Retrieve the current logged-in user's role name.
-     * Resolves dynamically from Auth.profile.role.name.
+     * Resolves dynamically from Auth.getUserRole() or fallback.
      */
     getRole() {
+        if (typeof Auth !== 'undefined' && typeof Auth.getUserRole === 'function') {
+            return Auth.getUserRole();
+        }
         if (typeof Auth !== 'undefined' && Auth.profile && Auth.profile.role) {
             return Auth.profile.role.name || 'Viewer';
         }
@@ -18,50 +49,45 @@ const Permissions = {
      * Case-insensitive check if the user has a specific role.
      */
     hasRole(role) {
-        return this.getRole().toLowerCase() === role.toLowerCase();
+        return this.normalizeRole(this.getRole()) === this.normalizeRole(role);
+    },
+
+    /**
+     * Check if the current user can access a given module.
+     */
+    canAccessModule(module) {
+        const role = this.normalizeRole(this.getRole());
+        if (role === 'owner' || role === 'admin') {
+            return true;
+        }
+        const allowedModules = this.ROLE_PERMISSIONS[role] || [];
+        return allowedModules.includes('*') || allowedModules.includes(module);
     },
 
     /**
      * Check if the current user can view a given module.
      */
     canView(module) {
-        const role = this.getRole();
-        switch (role) {
-            case 'Owner':
-            case 'Admin':
-                return true;
-            case 'Project Manager':
-                return ['dashboard', 'projects', 'feedstock', 'batches', 'laboratory', 'settings', 'evidence'].includes(module);
-            case 'Operator':
-                return ['dashboard', 'feedstock', 'batches', 'pyrolysis', 'evidence'].includes(module);
-            case 'Laboratory':
-                return ['dashboard', 'projects', 'laboratory', 'evidence'].includes(module);
-            case 'MRV Officer':
-                return ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'settings', 'evidence'].includes(module);
-            case 'Viewer':
-                return ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'evidence'].includes(module);
-            default:
-                return false;
-        }
+        return this.canAccessModule(module);
     },
 
     /**
      * Check if the current user can create records in a given module.
      */
     canCreate(module) {
-        const role = this.getRole();
+        const role = this.normalizeRole(this.getRole());
+        if (role === 'owner' || role === 'admin') {
+            return true;
+        }
         switch (role) {
-            case 'Owner':
-            case 'Admin':
-                return true;
-            case 'Project Manager':
+            case 'project manager':
                 return ['projects'].includes(module);
-            case 'Operator':
+            case 'operator':
                 return ['feedstock', 'pyrolysis', 'batches'].includes(module);
-            case 'Laboratory':
+            case 'laboratory':
                 return ['laboratory'].includes(module);
-            case 'MRV Officer':
-            case 'Viewer':
+            case 'mrv officer':
+            case 'viewer':
             default:
                 return false;
         }
@@ -78,19 +104,21 @@ const Permissions = {
      * Check if the current user can delete records in a given module.
      */
     canDelete(module) {
-        const role = this.getRole();
+        const role = this.normalizeRole(this.getRole());
+        if (role === 'owner') {
+            return true;
+        }
+        if (role === 'admin') {
+            // Admin can delete everything except organization
+            return module !== 'organization';
+        }
         switch (role) {
-            case 'Owner':
-                return true;
-            case 'Admin':
-                // Admin can delete everything except organization
-                return module !== 'organization';
-            case 'Project Manager':
+            case 'project manager':
                 return ['projects'].includes(module);
-            case 'Operator':
-            case 'Laboratory':
-            case 'MRV Officer':
-            case 'Viewer':
+            case 'operator':
+            case 'laboratory':
+            case 'mrv officer':
+            case 'viewer':
             default:
                 return false;
         }
@@ -100,25 +128,28 @@ const Permissions = {
      * Check for specific feature privileges.
      */
     hasPermission(permission) {
-        const role = this.getRole();
+        const role = this.normalizeRole(this.getRole());
+        if (role === 'owner' || role === 'admin') {
+            return true;
+        }
         switch (permission) {
             case 'manage_users':
             case 'assign_roles':
-                return ['Owner', 'Admin'].includes(role);
+                return ['owner', 'admin'].includes(role);
             case 'transfer_ownership':
             case 'delete_organization':
-                return role === 'Owner';
+                return role === 'owner';
             case 'change_org_settings':
-                return ['Owner', 'Admin'].includes(role);
+                return ['owner', 'admin'].includes(role);
             case 'generate_registry_package':
-                return ['Owner', 'Admin', 'Project Manager', 'MRV Officer'].includes(role);
+                return ['owner', 'admin', 'project manager', 'mrv officer'].includes(role);
             case 'verify_records':
             case 'access_reports':
-                return ['Owner', 'Admin', 'MRV Officer'].includes(role);
+                return ['owner', 'admin', 'mrv officer'].includes(role);
             case 'upload_reports':
-                return ['Owner', 'Admin', 'Laboratory'].includes(role);
+                return ['owner', 'admin', 'laboratory'].includes(role);
             case 'export':
-                return ['Owner', 'Admin', 'Project Manager', 'MRV Officer'].includes(role);
+                return ['owner', 'admin', 'project manager', 'mrv officer'].includes(role);
             default:
                 return false;
         }
