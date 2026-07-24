@@ -58,10 +58,42 @@ const Permissions = {
      */
     getRole() {
         let rawRole = 'Viewer';
-        if (typeof Auth !== 'undefined' && typeof Auth.getUserRole === 'function') {
+        if (typeof Auth !== 'undefined' && Auth._profile) {
+            const profile = Auth._profile;
+            let roleVal = null;
+            if (profile.role) {
+                roleVal = profile.role;
+            } else if (profile.roles?.name) {
+                roleVal = profile.roles.name;
+            } else if (profile.organization_members?.[0]?.roles?.name) {
+                roleVal = profile.organization_members[0].roles.name;
+            } else if (profile.organization_members?.[0]?.role) {
+                roleVal = profile.organization_members[0].role;
+            }
+            
+            if (roleVal) {
+                if (typeof roleVal === 'object') {
+                    rawRole = roleVal.name || roleVal.role || 'Viewer';
+                } else {
+                    rawRole = roleVal;
+                }
+            }
+        } else if (typeof Auth !== 'undefined' && typeof Auth.getUserRole === 'function') {
             rawRole = Auth.getUserRole();
         } else if (typeof Auth !== 'undefined' && Auth.profile && Auth.profile.role) {
             rawRole = Auth.profile.role.name || 'Viewer';
+        }
+
+        // Standardize output capitalization for legacy direct matches in evidence.js, etc.
+        if (rawRole && typeof rawRole === 'string') {
+            const lower = rawRole.toLowerCase().trim();
+            if (lower === 'owner' || lower.includes('owner')) rawRole = 'Owner';
+            else if (lower === 'admin' || lower.includes('admin')) rawRole = 'Admin';
+            else if (lower === 'project manager') rawRole = 'Project Manager';
+            else if (lower === 'mrv officer') rawRole = 'MRV Officer';
+            else if (lower === 'operator') rawRole = 'Operator';
+            else if (lower === 'laboratory') rawRole = 'Laboratory';
+            else if (lower === 'viewer') rawRole = 'Viewer';
         }
         
         const normalizedRole = this.normalizeRole(rawRole);
