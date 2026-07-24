@@ -181,7 +181,8 @@ async function getUserProfile() {
         }
 
         let org = null;
-        if (profile.organization_id) {
+        const isValidOrgId = profile.organization_id && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(profile.organization_id) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profile.organization_id));
+        if (isValidOrgId) {
             const { data: orgData } = await supabaseClient
                 .from('organizations')
                 .select('*')

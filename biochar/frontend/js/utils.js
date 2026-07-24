@@ -103,6 +103,14 @@ const Utils = {
     },
 
     /**
+     * Validate if a string is a valid UUID format (8-4-4-4-12 hex chars).
+     */
+    isValidUuid(str) {
+        if (!str || typeof str !== 'string') return false;
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    },
+
+    /**
      * Safely get a DOM element.
      */
     $(selector, parent = document) {

@@ -321,7 +321,8 @@ const SettingsModule = {
 
     async loadMembers() {
         const orgId = Auth.orgId;
-        if (!orgId) return;
+        const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) && orgId !== '00000000-0000-0000-0000-000000000000';
+        if (!isValidOrgId) return;
 
         try {
             // Load roles if not loaded
@@ -574,6 +575,10 @@ const SettingsModule = {
 
             try {
                 const orgId = Auth.orgId;
+                const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) && orgId !== '00000000-0000-0000-0000-000000000000';
+                if (!isValidOrgId) {
+                    throw new Error('Valid organization context is required to invite users.');
+                }
                 const token = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() : crypto.randomUUID();
 
                 // Store invitation record using invitations table

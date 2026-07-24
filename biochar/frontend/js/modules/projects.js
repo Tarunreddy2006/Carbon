@@ -199,7 +199,8 @@ const ProjectsModule = {
                     
                     // If the project schema has organization_id, we attach it.
                     // Since it has RLS on org, let's include it.
-                    if (orgId) {
+                    const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) && orgId !== '00000000-0000-0000-0000-000000000000';
+                    if (isValidOrgId) {
                         insertPayload.organization_id = orgId;
                     }
 

@@ -63,12 +63,17 @@ const AuthRepository = {
             }
 
             if (!profile.organizations && profile.organization_id) {
-                const { data: orgData } = await client
-                    .from('organizations')
-                    .select('*')
-                    .eq('id', profile.organization_id)
-                    .maybeSingle();
-                if (orgData) profile.organizations = orgData;
+                const isValidOrgId = (typeof Utils !== 'undefined' && Utils.isValidUuid)
+                    ? Utils.isValidUuid(profile.organization_id)
+                    : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profile.organization_id);
+                if (isValidOrgId) {
+                    const { data: orgData } = await client
+                        .from('organizations')
+                        .select('*')
+                        .eq('id', profile.organization_id)
+                        .maybeSingle();
+                    if (orgData) profile.organizations = orgData;
+                }
             }
 
             // Cache full auth context into IndexedDB
@@ -154,15 +159,17 @@ const AuthRepository = {
      */
     createFallbackProfile(user, orgId = null) {
         const meta = user.user_metadata || {};
+        const isValidUuid = (str) => typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(str) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        const validOrgId = isValidUuid(orgId) ? orgId : (isValidUuid(meta.org_id) ? meta.org_id : '00000000-0000-0000-0000-000000000000');
         return {
             id: user.id,
             first_name: meta.first_name || 'Offline',
             last_name: meta.last_name || 'User',
             phone: meta.phone || '',
             email: user.email || '',
-            organization_id: orgId || meta.org_id || 'offline-org',
+            organization_id: validOrgId,
             organizations: {
-                id: orgId || 'offline-org',
+                id: validOrgId,
                 name: meta.org_name || 'Stomata Biochar'
             },
             role: {
