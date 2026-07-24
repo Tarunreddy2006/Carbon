@@ -440,6 +440,9 @@
 
                 console.log("✅ Onboarding successful.");
                 window.clearProfileCache();
+                if (typeof AuthRepository !== 'undefined') {
+                    return await AuthRepository.getProfileAndPermissions(sessionUser);
+                }
                 return await window.getUserProfile();
             } catch (setupErr) {
                 console.error("Onboarding failed:", setupErr);

@@ -46,7 +46,11 @@ const Auth = {
             }
 
             this._user = session.user;
-            this._profile = await getUserProfile();
+            if (typeof AuthRepository !== 'undefined') {
+                this._profile = await AuthRepository.getProfileAndPermissions(this._user);
+            } else {
+                this._profile = await getUserProfile();
+            }
             return this._profile;
         } catch (err) {
             console.warn('[Auth] Auth.guard caught exception during bootstrap:', err);
