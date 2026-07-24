@@ -257,15 +257,24 @@ const SettingsModule = {
             , { isSingle: true, id: orgId });
 
             if (error) throw error;
+            if (!data) return;
 
-            document.getElementById('org-display-name').value = data.name || '';
-            document.getElementById('org-legal-name').value = data.legal_name || '';
-            document.getElementById('org-reg-num').value = data.registration_number || '';
-            document.getElementById('org-tax-num').value = data.gst_number || '';
-            document.getElementById('org-email').value = data.email || '';
-            document.getElementById('org-phone').value = data.phone || '';
-            document.getElementById('org-website').value = data.website || '';
-            document.getElementById('org-address').value = data.address || '';
+            const nameEl = document.getElementById('org-display-name');
+            if (nameEl) nameEl.value = data.name || '';
+            const legalEl = document.getElementById('org-legal-name');
+            if (legalEl) legalEl.value = data.legal_name || '';
+            const regEl = document.getElementById('org-reg-num');
+            if (regEl) regEl.value = data.registration_number || '';
+            const taxEl = document.getElementById('org-tax-num');
+            if (taxEl) taxEl.value = data.gst_number || '';
+            const emailEl = document.getElementById('org-email');
+            if (emailEl) emailEl.value = data.email || '';
+            const phoneEl = document.getElementById('org-phone');
+            if (phoneEl) phoneEl.value = data.phone || '';
+            const webEl = document.getElementById('org-website');
+            if (webEl) webEl.value = data.website || '';
+            const addrEl = document.getElementById('org-address');
+            if (addrEl) addrEl.value = data.address || '';
 
             // Form Submit
             const form = document.getElementById('org-settings-form');
@@ -397,20 +406,39 @@ const SettingsModule = {
 
             // Add active members
             (members || []).forEach(m => {
-                const name = m.user ? (m.user.first_name + ' ' + m.user.last_name).trim() : 'Unregistered User';
-                const email = m.user?.email || (m.user_id === Auth.user.id ? Auth.user.email : '—');
+                const name = m.user ? (m.user.first_name + ' ' + m.user.last_name).trim() : (m.user_id === Auth.user?.id ? Auth.displayName : 'Member');
+                const email = m.user?.email || (m.user_id === Auth.user?.id ? Auth.user.email : '—');
+                const roleName = m.roles?.name || (m.role_id === 1 ? 'Owner' : 'Owner');
                 mappedData.push({
                     id: m.id,
                     user_id: m.user_id,
                     name: name || '—',
                     email: email,
-                    role_id: m.role_id,
-                    role_name: m.roles ? m.roles.name : '—',
+                    role_id: m.role_id || 1,
+                    role_name: roleName,
                     status: 'Active',
-                    joined_at: m.joined_at,
+                    joined_at: m.joined_at || new Date().toISOString(),
                     is_active: true
                 });
             });
+
+            // Ensure current user / organization creator is displayed as Owner if not present in membership list
+            if (Auth.user && !mappedData.some(item => item.user_id === Auth.user.id)) {
+                const currentName = (Auth.displayName && Auth.displayName !== 'User')
+                    ? Auth.displayName
+                    : (Auth.profile ? ((Auth.profile.first_name || '') + ' ' + (Auth.profile.last_name || '')).trim() : '') || 'Organization Owner';
+                mappedData.unshift({
+                    id: 'owner-' + Auth.user.id,
+                    user_id: Auth.user.id,
+                    name: currentName || 'Organization Owner',
+                    email: Auth.user.email || '—',
+                    role_id: 1,
+                    role_name: 'Owner',
+                    status: 'Active',
+                    joined_at: Auth.profile?.created_at || new Date().toISOString(),
+                    is_active: true
+                });
+            }
 
             // Add pending invitations
             (invitations || []).forEach(inv => {
