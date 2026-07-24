@@ -89,7 +89,12 @@ const Auth = {
     },
 
     get orgId() {
-        return this._profile?.organization_id || null;
+        const raw = this._profile?.organization_id || this._profile?.organization_members?.[0]?.organization_id || null;
+        if (!raw || raw === 'offline-org') return null;
+        const isValid = typeof Utils !== 'undefined' && Utils.isValidUuid
+            ? Utils.isValidUuid(raw)
+            : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
+        return (isValid && raw !== '00000000-0000-0000-0000-000000000000') ? raw : null;
     },
 
     getUserRole() {

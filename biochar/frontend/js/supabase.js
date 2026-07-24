@@ -217,6 +217,9 @@ async function getUserProfile() {
         }
 
         if (member) {
+            if (!profile.organization_id || profile.organization_id === 'offline-org') {
+                profile.organization_id = member.organization_id || profile.organization_id;
+            }
             profile.role = member.roles || profile.role || null;
             profile.role_id = member.role_id || profile.role_id || null;
             profile.member_status = member.status || 'Active';
