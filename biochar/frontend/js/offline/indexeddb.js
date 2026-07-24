@@ -2,7 +2,7 @@ const OfflineDB = {
     dbName: 'stomata_offline_db',
     dbVersion: 2,
     db: null,
-    
+
     tables: [
         'projects',
         'feedstock_batches',
@@ -27,26 +27,26 @@ const OfflineDB = {
         return new Promise((resolve, reject) => {
             if (this.db) return resolve(this.db);
             const request = indexedDB.open(this.dbName, this.dbVersion);
-            
+
             request.onerror = (e) => reject(e.target.error);
             request.onsuccess = (e) => {
                 this.db = e.target.result;
                 resolve(this.db);
             };
-            
+
             request.onupgradeneeded = (e) => {
                 const db = e.target.result;
-                
+
                 // Create sync queue
                 if (!db.objectStoreNames.contains('sync_queue')) {
                     db.createObjectStore('sync_queue', { keyPath: 'local_uuid' });
                 }
-                
+
                 // Create pending files
                 if (!db.objectStoreNames.contains('pending_files')) {
                     db.createObjectStore('pending_files', { keyPath: 'local_uuid' });
                 }
-                
+
                 // Create cache stores
                 this.tables.forEach(tableName => {
                     if (!db.objectStoreNames.contains(tableName)) {
