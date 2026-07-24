@@ -15,7 +15,11 @@ const OfflineDB = {
         'shipments',
         'biochar_applications',
         'evidence',
-        'evidence_files'
+        'evidence_files',
+        'profiles',
+        'organizations',
+        'organization_members',
+        'roles'
     ],
 
     open() {
