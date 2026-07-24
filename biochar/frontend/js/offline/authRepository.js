@@ -13,67 +13,71 @@ const AuthRepository = {
 
         const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine;
 
-        if (isOnline && window.originalSupabase) {
-            try {
-                // 1. Fetch user profile
-                const { data: profile, error: profileErr } = await window.originalSupabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', user.id)
-                    .maybeSingle();
+        // When offline, restore directly from IndexedDB without contacting Supabase
+        if (!isOnline) {
+            console.log('[AuthRepository] Device is offline. Requesting profiles, orgs, and roles from IndexedDB cache.');
+            return await this.restoreFromCache(user);
+        }
 
-                if (profileErr) throw profileErr;
-                if (!profile) throw new Error("Profile record not found on server.");
+        // When online, use intercepted window.supabase (with SupabaseQueryBuilder fallback)
+        try {
+            const client = window.supabase || window.supabaseClient;
+            if (!client) return await this.restoreFromCache(user);
 
-                // 2. Fetch membership, org, and roles
-                const { data: members, error: memberErr } = await window.originalSupabase
-                    .from('organization_members')
-                    .select('*, organizations(*), roles(*)')
-                    .eq('user_id', user.id)
-                    .order('joined_at', { ascending: false });
+            // 1. Fetch user profile
+            const { data: profile, error: profileErr } = await client
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .maybeSingle();
 
-                if (memberErr) console.warn('[AuthRepository] Member query warning:', memberErr);
-
-                let member = null;
-                if (members && members.length > 0) {
-                    if (profile.organization_id) {
-                        member = members.find(m => m.organization_id === profile.organization_id) || members[0];
-                    } else {
-                        member = members[0];
-                    }
-                }
-
-                // Attach organization & role
-                if (member) {
-                    profile.organization_id = member.organization_id || profile.organization_id;
-                    profile.organizations = member.organizations || null;
-                    profile.role = member.roles || null;
-                    profile.role_id = member.role_id || null;
-                    profile.member_status = member.status || 'Active';
-                }
-
-                // If profile missing org details, attempt direct lookup
-                if (!profile.organizations && profile.organization_id) {
-                    const { data: orgData } = await window.originalSupabase
-                        .from('organizations')
-                        .select('*')
-                        .eq('id', profile.organization_id)
-                        .maybeSingle();
-                    if (orgData) profile.organizations = orgData;
-                }
-
-                // Cache full auth context into IndexedDB
-                await this.cacheAuthContext(profile, profile.organizations, member, profile.role);
-                return profile;
-
-            } catch (err) {
-                console.warn('[AuthRepository] Network auth fetch failed, falling back to IndexedDB:', err.message || err);
-                if (typeof Connectivity !== 'undefined') {
-                    Connectivity.setOffline();
-                }
+            if (profileErr || !profile) {
+                console.warn('[AuthRepository] Profile fetch returned error or empty profile, restoring from cache:', profileErr);
                 return await this.restoreFromCache(user);
             }
-        } else {
+
+            // 2. Fetch membership, org, and roles
+            const { data: members, error: memberErr } = await client
+                .from('organization_members')
+                .select('*, organizations(*), roles(*)')
+                .eq('user_id', user.id);
+
+            let member = null;
+            if (members && members.length > 0) {
+                if (profile.organization_id) {
+                    member = members.find(m => m.organization_id === profile.organization_id) || members[0];
+                } else {
+                    member = members[0];
+                }
+            }
+
+            // Attach organization & role
+            if (member) {
+                profile.organization_id = member.organization_id || profile.organization_id;
+                profile.organizations = member.organizations || profile.organizations || null;
+                profile.role = member.roles || profile.role || null;
+                profile.role_id = member.role_id || profile.role_id || null;
+                profile.member_status = member.status || 'Active';
+            }
+
+            if (!profile.organizations && profile.organization_id) {
+                const { data: orgData } = await client
+                    .from('organizations')
+                    .select('*')
+                    .eq('id', profile.organization_id)
+                    .maybeSingle();
+                if (orgData) profile.organizations = orgData;
+            }
+
+            // Cache full auth context into IndexedDB
+            await this.cacheAuthContext(profile, profile.organizations, member, profile.role);
+            return profile;
+
+        } catch (err) {
+            console.warn('[AuthRepository] Network auth fetch exception, falling back to IndexedDB:', err.message || err);
+            if (typeof Connectivity !== 'undefined') {
+                Connectivity.setOffline();
+            }
             return await this.restoreFromCache(user);
         }
     },

@@ -101,8 +101,20 @@ class SupabaseQueryBuilder {
 
                 const res = await query;
 
-                if (res && res.error && res.error.message && res.error.message.includes('Failed to fetch')) {
-                    console.warn(`[SupabaseQueryBuilder] Network fetch failed for ${this.tableName}, switching to offline cache.`);
+                const isFetchError = res && res.error && (
+                    !res.data ||
+                    (typeof res.error.message === 'string' && (
+                        res.error.message.includes('Failed to fetch') ||
+                        res.error.message.includes('Network') ||
+                        res.error.message.includes('ERR_') ||
+                        res.error.message.includes('load failed')
+                    )) ||
+                    res.error.name === 'FetchError' ||
+                    res.error.status === 0
+                );
+
+                if (isFetchError) {
+                    console.warn(`[SupabaseQueryBuilder] Network fetch error for ${this.tableName}, switching to offline cache.`);
                     if (typeof Connectivity !== 'undefined') Connectivity.setOffline();
                     return await this.executeOffline();
                 }
