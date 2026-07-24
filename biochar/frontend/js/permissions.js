@@ -5,12 +5,14 @@
 const ROLE_PERMISSIONS = {
     'owner': ['*'],
     'org_owner': ['*'],
+    'organization_owner': ['*'],
     'admin': ['*'],
-    'project manager': ['dashboard', 'projects', 'feedstock', 'batches', 'laboratory', 'settings', 'evidence'],
-    'operator': ['dashboard', 'feedstock', 'batches', 'pyrolysis', 'evidence'],
-    'laboratory': ['dashboard', 'projects', 'laboratory', 'evidence'],
-    'mrv officer': ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'settings', 'evidence'],
-    'viewer': ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'evidence']
+    'manager': ['dashboard:*', 'projects:*', 'feedstock:*', 'batches:*', 'pyrolysis:*', 'laboratory:*', 'distribution:*', 'evidence:*'],
+    'operator': ['dashboard:read', 'feedstock:create', 'pyrolysis:create', 'batches:create'],
+    'viewer': ['*:read'],
+    'project manager': ['dashboard', 'projects', 'feedstock', 'batches', 'laboratory', 'settings', 'evidence', 'dashboard:*', 'projects:*', 'feedstock:*', 'batches:*', 'pyrolysis:*', 'laboratory:*', 'distribution:*', 'settings:*', 'evidence:*'],
+    'laboratory': ['dashboard', 'projects', 'laboratory', 'evidence', 'dashboard:*', 'projects:*', 'laboratory:*', 'evidence:*'],
+    'mrv officer': ['dashboard', 'projects', 'feedstock', 'batches', 'pyrolysis', 'laboratory', 'distribution', 'settings', 'evidence', 'dashboard:*', 'projects:*', 'feedstock:*', 'batches:*', 'pyrolysis:*', 'laboratory:*', 'distribution:*', 'settings:*', 'evidence:*']
 };
 
 const Permissions = {
@@ -21,13 +23,32 @@ const Permissions = {
      */
     normalizeRole(role) {
         if (!role) return 'viewer';
-        const lower = role.toString().toLowerCase().trim();
-        if (lower === 'owner' || lower === 'org_owner' || lower === 'organization_owner') {
+        
+        let roleStr = '';
+        if (typeof role === 'object') {
+            roleStr = role.name || role.role || '';
+            if (typeof roleStr === 'object') {
+                roleStr = roleStr.name || roleStr.role || '';
+            }
+        } else {
+            roleStr = role;
+        }
+        
+        if (!roleStr) return 'viewer';
+        
+        const lower = roleStr.toString().toLowerCase().trim();
+        
+        // Explicitly map any role string containing 'owner', 'org_owner', 'organization_owner', 'admin', or 'administrator' to 'owner'
+        if (
+            lower.includes('owner') || 
+            lower.includes('org_owner') || 
+            lower.includes('organization_owner') || 
+            lower.includes('admin') || 
+            lower.includes('administrator')
+        ) {
             return 'owner';
         }
-        if (lower === 'admin') {
-            return 'admin';
-        }
+        
         return lower;
     },
 
@@ -36,13 +57,20 @@ const Permissions = {
      * Resolves dynamically from Auth.getUserRole() or fallback.
      */
     getRole() {
+        let rawRole = 'Viewer';
         if (typeof Auth !== 'undefined' && typeof Auth.getUserRole === 'function') {
-            return Auth.getUserRole();
+            rawRole = Auth.getUserRole();
+        } else if (typeof Auth !== 'undefined' && Auth.profile && Auth.profile.role) {
+            rawRole = Auth.profile.role.name || 'Viewer';
         }
-        if (typeof Auth !== 'undefined' && Auth.profile && Auth.profile.role) {
-            return Auth.profile.role.name || 'Viewer';
-        }
-        return 'Viewer'; // fallback
+        
+        const normalizedRole = this.normalizeRole(rawRole);
+        console.log('[Role Audit]', { 
+            rawRole, 
+            normalizedRole, 
+            permissions: this.ROLE_PERMISSIONS[normalizedRole] 
+        });
+        return rawRole;
     },
 
     /**
@@ -61,14 +89,39 @@ const Permissions = {
             return true;
         }
         const allowedModules = this.ROLE_PERMISSIONS[role] || [];
-        return allowedModules.includes('*') || allowedModules.includes(module);
+        if (allowedModules.includes('*')) {
+            return true;
+        }
+        
+        const cleanModule = module ? module.toString().toLowerCase().trim() : '';
+        if (allowedModules.includes(cleanModule)) {
+            return true;
+        }
+        
+        // Handle wildcards like 'dashboard:*' or '*:read'
+        for (const allowed of allowedModules) {
+            if (allowed === '*') return true;
+            if (allowed.endsWith(':*')) {
+                const prefix = allowed.slice(0, -2);
+                if (cleanModule === prefix || cleanModule.startsWith(prefix + ':')) {
+                    return true;
+                }
+            }
+            if (allowed.startsWith('*:')) {
+                const suffix = allowed.slice(2);
+                if (cleanModule.endsWith(':' + suffix) || cleanModule === suffix) {
+                    return true;
+                }
+            }
+        }
+        return false;
     },
 
     /**
      * Check if the current user can view a given module.
      */
     canView(module) {
-        return this.canAccessModule(module);
+        return this.canAccessModule(module) || this.canAccessModule(`${module}:read`);
     },
 
     /**
@@ -77,6 +130,13 @@ const Permissions = {
     canCreate(module) {
         const role = this.normalizeRole(this.getRole());
         if (role === 'owner' || role === 'admin') {
+            return true;
+        }
+        const allowedModules = this.ROLE_PERMISSIONS[role] || [];
+        if (allowedModules.includes('*')) {
+            return true;
+        }
+        if (allowedModules.includes(`${module}:*`) || allowedModules.includes(`${module}:create`) || allowedModules.includes(`${module}:write`)) {
             return true;
         }
         switch (role) {
@@ -97,6 +157,17 @@ const Permissions = {
      * Check if the current user can edit records in a given module.
      */
     canEdit(module) {
+        const role = this.normalizeRole(this.getRole());
+        if (role === 'owner' || role === 'admin') {
+            return true;
+        }
+        const allowedModules = this.ROLE_PERMISSIONS[role] || [];
+        if (allowedModules.includes('*')) {
+            return true;
+        }
+        if (allowedModules.includes(`${module}:*`) || allowedModules.includes(`${module}:edit`) || allowedModules.includes(`${module}:write`)) {
+            return true;
+        }
         return this.canCreate(module);
     },
 
@@ -105,7 +176,14 @@ const Permissions = {
      */
     canDelete(module) {
         const role = this.normalizeRole(this.getRole());
-        if (role === 'owner') {
+        if (role === 'owner' || role === 'admin') {
+            return true;
+        }
+        const allowedModules = this.ROLE_PERMISSIONS[role] || [];
+        if (allowedModules.includes('*')) {
+            return true;
+        }
+        if (allowedModules.includes(`${module}:*`) || allowedModules.includes(`${module}:delete`) || allowedModules.includes(`${module}:write`)) {
             return true;
         }
         if (role === 'admin') {
@@ -130,6 +208,10 @@ const Permissions = {
     hasPermission(permission) {
         const role = this.normalizeRole(this.getRole());
         if (role === 'owner' || role === 'admin') {
+            return true;
+        }
+        const allowedModules = this.ROLE_PERMISSIONS[role] || [];
+        if (allowedModules.includes('*')) {
             return true;
         }
         switch (permission) {

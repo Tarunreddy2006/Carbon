@@ -42,6 +42,8 @@ const AuthRepository = {
                 .select('*, organizations(*), roles(*)')
                 .eq('user_id', user.id);
 
+            profile.organization_members = members || [];
+
             let member = null;
             if (members && members.length > 0) {
                 if (profile.organization_id) {
@@ -101,7 +103,8 @@ const AuthRepository = {
 
             // 2. Load members from IndexedDB
             const allMembers = await OfflineDB.getAll('organization_members');
-            const member = (allMembers || []).find(m => m && m.user_id === user.id);
+            const members = (allMembers || []).filter(m => m && m.user_id === user.id);
+            const member = members.find(m => m.organization_id === (profile?.organization_id)) || members[0];
 
             const targetOrgId = profile?.organization_id || member?.organization_id;
 
@@ -130,6 +133,7 @@ const AuthRepository = {
                 profile = this.createFallbackProfile(user, targetOrgId);
             }
 
+            profile.organization_members = members || [];
             if (org) profile.organizations = org;
             if (role) profile.role = role;
             if (member) {

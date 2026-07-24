@@ -94,19 +94,50 @@ const Auth = {
 
     getUserRole() {
         const profile = this._profile;
-        if (!profile) return 'viewer';
+        if (!profile) {
+            console.log('[Role Audit]', { rawRole: 'viewer', normalizedRole: 'viewer', permissions: typeof Permissions !== 'undefined' ? Permissions.ROLE_PERMISSIONS['viewer'] : undefined });
+            return 'viewer';
+        }
 
         let roleVal = null;
-        if (profile.organization_members?.[0]?.roles?.name) {
+        if (profile.role) {
+            roleVal = profile.role;
+        } else if (profile.roles?.name) {
+            roleVal = profile.roles.name;
+        } else if (profile.organization_members?.[0]?.roles?.name) {
             roleVal = profile.organization_members[0].roles.name;
-        } else if (profile.role) {
-            roleVal = typeof profile.role === 'object' ? profile.role.name : profile.role;
+        } else if (profile.organization_members?.[0]?.role) {
+            roleVal = profile.organization_members[0].role;
         }
 
-        if (typeof Permissions !== 'undefined') {
-            return Permissions.normalizeRole(roleVal);
+        let rawRole = roleVal;
+        if (roleVal && typeof roleVal === 'object') {
+            rawRole = roleVal.name || roleVal.role || JSON.stringify(roleVal);
         }
-        return (roleVal || 'viewer').toString().toLowerCase();
+        if (!rawRole) {
+            rawRole = 'viewer';
+        }
+
+        let normalizedRole = 'viewer';
+        if (typeof Permissions !== 'undefined') {
+            normalizedRole = Permissions.normalizeRole(roleVal);
+        } else {
+            const lower = rawRole.toString().toLowerCase().trim();
+            if (
+                lower.includes('owner') || 
+                lower.includes('org_owner') || 
+                lower.includes('organization_owner') || 
+                lower.includes('admin') || 
+                lower.includes('administrator')
+            ) {
+                normalizedRole = 'owner';
+            } else {
+                normalizedRole = lower || 'viewer';
+            }
+        }
+
+        console.log('[Role Audit]', { rawRole, normalizedRole, permissions: typeof Permissions !== 'undefined' ? Permissions.ROLE_PERMISSIONS[normalizedRole] : undefined });
+        return normalizedRole;
     },
 
     populateUI() {

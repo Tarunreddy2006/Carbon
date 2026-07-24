@@ -124,6 +124,28 @@ async function getUserProfile() {
                     const orgs = await OfflineDB.getAll('organizations');
                     const org = (orgs || []).find(o => o && o.id === profile.organization_id);
                     profile.organizations = org || null;
+
+                    const allMembers = await OfflineDB.getAll('organization_members');
+                    const members = (allMembers || []).filter(m => m && m.user_id === user.id);
+                    profile.organization_members = members;
+
+                    let member = null;
+                    if (members.length > 0) {
+                        if (profile.organization_id) {
+                            member = members.find(m => m.organization_id === profile.organization_id) || members[0];
+                        } else {
+                            member = members[0];
+                        }
+                    }
+
+                    if (member) {
+                        const allRoles = await OfflineDB.getAll('roles');
+                        const role = (allRoles || []).find(r => r && r.id === member.role_id);
+                        profile.role = role || null;
+                        profile.role_id = member.role_id || null;
+                        profile.member_status = member.status || 'Active';
+                    }
+
                     _cachedProfile = profile;
                     _cachedOrgId = profile.organization_id;
                     return profile;
@@ -169,11 +191,54 @@ async function getUserProfile() {
         }
 
         profile.organizations = org;
+
+        // Fetch organization members and roles
+        let members = [];
+        try {
+            const { data: membersData } = await supabaseClient
+                .from('organization_members')
+                .select('*, organizations(*), roles(*)')
+                .eq('user_id', user.id);
+            members = membersData || [];
+        } catch (mErr) {
+            console.warn('[supabase.js] Failed to fetch organization members / roles online:', mErr);
+        }
+
+        profile.organization_members = members;
+
+        let member = null;
+        if (members && members.length > 0) {
+            if (profile.organization_id) {
+                member = members.find(m => m.organization_id === profile.organization_id) || members[0];
+            } else {
+                member = members[0];
+            }
+        }
+
+        if (member) {
+            profile.role = member.roles || profile.role || null;
+            profile.role_id = member.role_id || profile.role_id || null;
+            profile.member_status = member.status || 'Active';
+            if (member.organizations) {
+                profile.organizations = member.organizations;
+            }
+        }
         
         if (typeof OfflineDB !== 'undefined') {
             await OfflineDB.put('profiles', profile);
             if (org) {
                 await OfflineDB.put('organizations', org);
+            }
+            if (members) {
+                for (const m of members) {
+                    await OfflineDB.put('organization_members', m);
+                    if (m.roles) {
+                        await OfflineDB.put('roles', m.roles);
+                    }
+                    if (m.organizations) {
+                        await OfflineDB.put('organizations', m.organizations);
+                    }
+                }
             }
         }
 
@@ -190,6 +255,28 @@ async function getUserProfile() {
                     const orgs = await OfflineDB.getAll('organizations');
                     const org = (orgs || []).find(o => o && o.id === profile.organization_id);
                     profile.organizations = org || null;
+
+                    const allMembers = await OfflineDB.getAll('organization_members');
+                    const members = (allMembers || []).filter(m => m && m.user_id === user.id);
+                    profile.organization_members = members;
+
+                    let member = null;
+                    if (members.length > 0) {
+                        if (profile.organization_id) {
+                            member = members.find(m => m.organization_id === profile.organization_id) || members[0];
+                        } else {
+                            member = members[0];
+                        }
+                    }
+
+                    if (member) {
+                        const allRoles = await OfflineDB.getAll('roles');
+                        const role = (allRoles || []).find(r => r && r.id === member.role_id);
+                        profile.role = role || null;
+                        profile.role_id = member.role_id || null;
+                        profile.member_status = member.status || 'Active';
+                    }
+
                     _cachedProfile = profile;
                     _cachedOrgId = profile.organization_id;
                     return profile;
