@@ -113,17 +113,25 @@ const OfflineUI = {
     createUIElements() {
         this.banner = document.createElement('div');
         this.banner.className = 'offline-banner';
-        this.banner.innerHTML = `
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-            </svg>
-            Offline Mode — Changes will sync automatically.
-        `;
+        this.updateBannerText();
         document.body.appendChild(this.banner);
 
         this.indicator = document.createElement('div');
         this.indicator.className = 'sync-indicator-widget';
         document.body.appendChild(this.indicator);
+    },
+
+    updateBannerText() {
+        if (!this.banner) return;
+        const lastSync = (typeof AuthRepository !== 'undefined' && AuthRepository.getLastSyncTimestamp)
+            ? AuthRepository.getLastSyncTimestamp()
+            : 'Recently';
+        this.banner.innerHTML = `
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            Working Offline • Using locally cached organization data. Last synchronized: ${lastSync}
+        `;
     },
 
     async updateUI() {
@@ -133,6 +141,7 @@ const OfflineUI = {
         const uploadingCount = queue.filter(q => q.operation_type === 'FILE_UPLOAD').length;
         
         if (!isOnline) {
+            this.updateBannerText();
             this.banner.classList.add('visible');
             document.body.classList.add('offline-active');
         } else {

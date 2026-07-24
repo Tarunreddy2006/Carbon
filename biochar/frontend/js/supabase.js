@@ -42,13 +42,33 @@ if (typeof window !== 'undefined' && supabaseClient) {
  * Get the current session. Returns null if not authenticated.
  */
 async function getSession() {
-    if (!supabaseClient) return null;
-    const { data: { session }, error } = await supabaseClient.auth.getSession();
-    if (error) {
-        console.error('getSession error:', error);
-        return null;
+    if (supabaseClient && supabaseClient.auth) {
+        try {
+            const { data: { session }, error } = await supabaseClient.auth.getSession();
+            if (!error && session) return session;
+        } catch (err) {
+            console.warn('[supabase.js] getSession network/auth exception:', err);
+        }
     }
-    return session;
+
+    // LocalStorage fallback for offline session restoration
+    try {
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    const user = parsed.user || parsed.currentSession?.user;
+                    if (user) {
+                        return { user, access_token: parsed.access_token || 'offline-token' };
+                    }
+                }
+            }
+        }
+    } catch (e) { }
+
+    return null;
 }
 
 /**
@@ -70,76 +90,18 @@ async function getUserProfile() {
     if (_cachedProfile) return _cachedProfile;
 
     const user = await getUser();
-    if (!user || !supabaseClient) return null;
+    if (!user) return null;
 
-    // 1. Fetch user profile
-    const { data: profile, error: profileError } = await supabaseClient
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
-
-    if (profileError) {
-        console.error('getUserProfile profiles select error:', profileError);
-        return null;
-    }
-
-    if (!profile) return null;
-
-    // 2. Fetch organization_members membership details, joining organizations and roles
-    const { data: members, error: memberError } = await supabaseClient
-        .from('organization_members')
-        .select('*, organizations(*), roles(*)')
-        .eq('user_id', user.id)
-        .order('joined_at', { ascending: false });
-
-    if (memberError) {
-        console.error('getUserProfile organization_members select error:', memberError);
-    }
-
-    // Find matching membership or fallback to the most recent one
-    let member = null;
-    if (members && members.length > 0) {
-        if (profile.organization_id) {
-            member = members.find(m => m.organization_id === profile.organization_id) || members[0];
-        } else {
-            member = members[0];
+    if (typeof AuthRepository !== 'undefined') {
+        const profile = await AuthRepository.getProfileAndPermissions(user);
+        if (profile) {
+            _cachedProfile = profile;
+            _cachedOrgId = profile.organization_id;
         }
+        return profile;
     }
 
-    // 3. Attach organization and role information resolved from organization_members
-    if (member) {
-        if (profile.organization_id !== member.organization_id) {
-            profile.organization_id = member.organization_id;
-            try {
-                const { error: syncError } = await supabaseClient
-                    .from('profiles')
-                    .update({ organization_id: member.organization_id })
-                    .eq('id', user.id);
-                if (syncError) {
-                    console.error('Failed to sync profile organization_id in DB:', syncError);
-                } else {
-                    console.log('Successfully synced profile organization_id in DB to:', member.organization_id);
-                }
-            } catch (syncErr) {
-                console.error('Error syncing profile organization_id:', syncErr);
-            }
-        }
-        profile.organizations = member.organizations;
-        profile.role = member.roles;
-        profile.role_id = member.role_id;
-        profile.member_status = member.status;
-    } else {
-        profile.organization_id = null;
-        profile.organizations = null;
-        profile.role = null;
-        profile.role_id = null;
-        profile.member_status = null;
-    }
-
-    _cachedProfile = profile;
-    _cachedOrgId = profile.organization_id;
-    return profile;
+    return null;
 }
 
 /**

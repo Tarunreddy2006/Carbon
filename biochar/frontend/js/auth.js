@@ -38,15 +38,24 @@ const Auth = {
     _profile: null,
 
     async guard() {
-        const session = await getSession();
-        if (!session) {
-            window.location.replace('/pages/auth/login.html');
+        try {
+            const session = await getSession();
+            if (!session) {
+                window.location.replace('/pages/auth/login.html');
+                return null;
+            }
+
+            this._user = session.user;
+            this._profile = await getUserProfile();
+            return this._profile;
+        } catch (err) {
+            console.warn('[Auth] Auth.guard caught exception during bootstrap:', err);
+            if (this._user && typeof AuthRepository !== 'undefined') {
+                this._profile = await AuthRepository.restoreFromCache(this._user);
+                return this._profile;
+            }
             return null;
         }
-
-        this._user = session.user;
-        this._profile = await getUserProfile();
-        return this._profile;
     },
 
     get user() {

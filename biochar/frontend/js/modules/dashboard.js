@@ -93,57 +93,90 @@ const DashboardModule = {
             </div>
         `;
 
+        // Setup connectivity auto-refresh listener once
+        if (!this._connectivityListenerBound) {
+            window.addEventListener('connectivity-change', (e) => {
+                if (e.detail?.isOnline && document.getElementById('kpi-projects')) {
+                    DashboardModule.loadData();
+                }
+            });
+            this._connectivityListenerBound = true;
+        }
+
         // Load data
         await DashboardModule.loadData();
 
         // Refresh button
-        document.getElementById('refresh-dashboard-btn').addEventListener('click', async (e) => {
-            const btn = e.currentTarget;
-            btn.classList.add('loading');
-            await DashboardModule.loadData();
-            btn.classList.remove('loading');
-            Toast.success('Dashboard data refreshed');
-        });
+        const refreshBtn = document.getElementById('refresh-dashboard-btn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', async (e) => {
+                const btn = e.currentTarget;
+                btn.classList.add('loading');
+                await DashboardModule.loadData();
+                btn.classList.remove('loading');
+                if (typeof Toast !== 'undefined') Toast.success('Dashboard data refreshed');
+            });
+        }
     },
 
     async loadData() {
+        let projects = [];
+        let feedstock = [];
+        let batches = [];
+
+        // 1. Query Projects
         try {
-            // 1. Query Projects Count
-            const { data: projects, error: projectsErr } = await supabase
-                .from('projects')
-                .select('id, name');
-            if (projectsErr) throw projectsErr;
-            document.getElementById('kpi-projects').textContent = projects.length;
+            const { data, error } = await supabase.from('projects').select('id, name');
+            if (!error && data) projects = data;
+        } catch (e) {
+            console.warn('[DashboardModule] Projects query warning:', e);
+        }
 
-            // 2. Query Feedstock Batches
-            const { data: feedstock, error: feedstockErr } = await supabase
-                .from('feedstock_batches')
-                .select('weight_kg');
-            if (feedstockErr) throw feedstockErr;
-            const totalFeedstock = feedstock.reduce((acc, row) => acc + ((row.weight_kg || 0) / 1000.0), 0);
-            document.getElementById('kpi-feedstock').textContent = Utils.formatTons(totalFeedstock);
+        const kpiProjectsEl = document.getElementById('kpi-projects');
+        if (kpiProjectsEl) kpiProjectsEl.textContent = projects.length;
 
-            // 3. Query Biochar Batches
-            const { data: batches, error: batchesErr } = await supabase
+        // 2. Query Feedstock Batches
+        try {
+            const { data, error } = await supabase.from('feedstock_batches').select('weight_kg');
+            if (!error && data) feedstock = data;
+        } catch (e) {
+            console.warn('[DashboardModule] Feedstock query warning:', e);
+        }
+
+        const totalFeedstock = feedstock.reduce((acc, row) => acc + ((row.weight_kg || 0) / 1000.0), 0);
+        const kpiFeedstockEl = document.getElementById('kpi-feedstock');
+        if (kpiFeedstockEl) kpiFeedstockEl.textContent = Utils.formatTons(totalFeedstock);
+
+        // 3. Query Biochar Batches
+        try {
+            const { data, error } = await supabase
                 .from('biochar_batches')
                 .select('id, status, net_sequestration_tco2e, created_at, batch_code, pyrolysis_runs(feedstock_batches(project_id))');
-            if (batchesErr) throw batchesErr;
+            if (!error && data) batches = data;
+        } catch (e) {
+            console.warn('[DashboardModule] Batches query warning:', e);
+        }
 
-            const totalBiochar = batches.filter(b => b.status === 'completed' || b.status === 'lab_certified').length;
-            const totalCarbon = batches.reduce((acc, row) => acc + (row.net_sequestration_tco2e || 0), 0);
+        const totalBiochar = batches.filter(b => b && (b.status === 'completed' || b.status === 'lab_certified')).length;
+        const totalCarbon = batches.reduce((acc, row) => acc + ((row && row.net_sequestration_tco2e) || 0), 0);
 
-            document.getElementById('kpi-biochar').textContent = `${totalBiochar} batches`;
-            document.getElementById('kpi-carbon').textContent = Utils.formatCO2(totalCarbon);
+        const kpiBiocharEl = document.getElementById('kpi-biochar');
+        if (kpiBiocharEl) kpiBiocharEl.textContent = `${totalBiochar} batches`;
 
-            // Render Charts
+        const kpiCarbonEl = document.getElementById('kpi-carbon');
+        if (kpiCarbonEl) kpiCarbonEl.textContent = Utils.formatCO2(totalCarbon);
+
+        // Render Charts & Activity
+        try {
             DashboardModule.renderCharts(batches);
+        } catch (chartErr) {
+            console.warn('[DashboardModule] Chart render error:', chartErr);
+        }
 
-            // Render Recent Activity
+        try {
             DashboardModule.renderRecentActivity(batches, projects);
-
-        } catch (err) {
-            console.error('Failed to load dashboard data:', err);
-            Toast.error('Error loading dashboard: ' + err.message);
+        } catch (activityErr) {
+            console.warn('[DashboardModule] Activity render error:', activityErr);
         }
     },
 
