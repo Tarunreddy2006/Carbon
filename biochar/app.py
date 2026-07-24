@@ -17,7 +17,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -115,6 +115,31 @@ def create_app() -> FastAPI:
     # Serve biochar frontend static files
     frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
     if os.path.isdir(frontend_dir):
+        @application.get("/manifest.json", include_in_schema=False)
+        async def get_manifest():
+            manifest_path = os.path.join(frontend_dir, "manifest.json")
+            if os.path.isfile(manifest_path):
+                return FileResponse(
+                    manifest_path, 
+                    media_type="application/manifest+json",
+                    headers={"Cache-Control": "public, max-age=3600"}
+                )
+            return JSONResponse({"error": "manifest.json not found"}, status_code=404)
+
+        @application.get("/service-worker.js", include_in_schema=False)
+        async def get_service_worker():
+            sw_path = os.path.join(frontend_dir, "service-worker.js")
+            if os.path.isfile(sw_path):
+                return FileResponse(
+                    sw_path, 
+                    media_type="application/javascript",
+                    headers={
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "Service-Worker-Allowed": "/"
+                    }
+                )
+            return JSONResponse({"error": "service-worker.js not found"}, status_code=404)
+
         application.mount("/", StaticFiles(directory=frontend_dir, html=True), name="biochar-frontend")
 
     return application
