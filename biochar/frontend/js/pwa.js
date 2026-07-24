@@ -8,6 +8,33 @@ const PWA = {
     isStandalone: false,
 
     init() {
+        // Force update service worker cache to pull fresh client files
+        const FORCE_SW_VERSION = 'v1.0.5';
+        const SW_VERSION_KEY = 'stomata_sw_version_forced';
+        if (typeof window !== 'undefined' && 'serviceWorker' in navigator && localStorage.getItem(SW_VERSION_KEY) !== FORCE_SW_VERSION) {
+            console.log("🔄 Clearing stale PWA service worker cache and registering new version...");
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                for (let reg of registrations) {
+                    reg.unregister();
+                }
+                if (typeof caches !== 'undefined') {
+                    caches.keys().then(names => {
+                        return Promise.all(names.map(name => caches.delete(name)));
+                    }).then(() => {
+                        localStorage.setItem(SW_VERSION_KEY, FORCE_SW_VERSION);
+                        window.location.reload();
+                    });
+                } else {
+                    localStorage.setItem(SW_VERSION_KEY, FORCE_SW_VERSION);
+                    window.location.reload();
+                }
+            }).catch(() => {
+                localStorage.setItem(SW_VERSION_KEY, FORCE_SW_VERSION);
+                window.location.reload();
+            });
+            return;
+        }
+
         this.checkStandalone();
         this.registerServiceWorker();
         this.setupInstallPrompt();
