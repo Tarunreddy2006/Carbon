@@ -1,6 +1,6 @@
 const OfflineDB = {
     dbName: 'stomata_offline_db',
-    dbVersion: 3,
+    dbVersion: 4,
     db: null,
 
     tables: [
@@ -51,6 +51,14 @@ const OfflineDB = {
                 this.tables.forEach(tableName => {
                     if (!db.objectStoreNames.contains(tableName)) {
                         db.createObjectStore(tableName, { keyPath: 'id' });
+                    }
+                });
+
+                // Register missing RBAC stores explicitly
+                const rbacStores = ['profiles', 'organizations', 'organization_members', 'roles', 'invitations'];
+                rbacStores.forEach(storeName => {
+                    if (!db.objectStoreNames.contains(storeName)) {
+                        db.createObjectStore(storeName, { keyPath: 'id' });
                     }
                 });
             };
@@ -151,7 +159,7 @@ const OfflineDB = {
             const db = await this.open();
             if (!db || !db.objectStoreNames.contains(storeName)) {
                 console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
-                return;
+                return null;
             }
             return new Promise((resolve, reject) => {
                 try {
@@ -167,6 +175,7 @@ const OfflineDB = {
             });
         } catch (err) {
             console.warn(`[OfflineDB] delete failed for '${storeName}':`, err);
+            return null;
         }
     },
 
@@ -175,7 +184,7 @@ const OfflineDB = {
             const db = await this.open();
             if (!db || !db.objectStoreNames.contains(storeName)) {
                 console.warn(`[OfflineDB] Store '${storeName}' not found in IndexedDB.`);
-                return;
+                return null;
             }
             return new Promise((resolve, reject) => {
                 try {
@@ -191,6 +200,7 @@ const OfflineDB = {
             });
         } catch (err) {
             console.warn(`[OfflineDB] clear failed for '${storeName}':`, err);
+            return null;
         }
     }
 };

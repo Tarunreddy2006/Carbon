@@ -39,17 +39,21 @@ const DistributionModule = {
     async loadDeliveries() {
         try {
             // Query shipments
-            const { data: shipments, error: shipErr } = await supabase
-                .from('shipments')
-                .select('*, biochar_batches(batch_code, pyrolysis_runs(feedstock_batches(project_id)))')
-                .order('shipment_number', { ascending: false });
+            const { data: shipments, error: shipErr } = await OfflineStorage.fetchWithCache('shipments', () =>
+                supabase
+                    .from('shipments')
+                    .select('*, biochar_batches(batch_code, pyrolysis_runs(feedstock_batches(project_id)))')
+                    .order('shipment_number', { ascending: false })
+            );
 
             if (shipErr) throw shipErr;
 
             // Query applications to map coordinates
-            const { data: apps, error: appErr } = await supabase
-                .from('biochar_applications')
-                .select('*');
+            const { data: apps, error: appErr } = await OfflineStorage.fetchWithCache('biochar_applications', () =>
+                supabase
+                    .from('biochar_applications')
+                    .select('*')
+            );
 
             if (appErr) throw appErr;
 
@@ -167,10 +171,12 @@ const DistributionModule = {
         let lng = '';
 
         try {
-            const { data: batches, error: batchesErr } = await supabase
-                .from('biochar_batches')
-                .select('id, batch_code')
-                .order('batch_code', { ascending: true });
+            const { data: batches, error: batchesErr } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+                supabase
+                    .from('biochar_batches')
+                    .select('id, batch_code')
+                    .order('batch_code', { ascending: true })
+            );
 
             if (batchesErr) throw batchesErr;
 

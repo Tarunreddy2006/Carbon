@@ -40,17 +40,21 @@ const ProjectsModule = {
 
     async loadProjects() {
         try {
-            const { data: projectsData, error: projectsError } = await supabase
-                .from('projects')
-                .select('*')
-                .order('created_at', { ascending: false });
+            const { data: projectsData, error: projectsError } = await OfflineStorage.fetchWithCache('projects', () =>
+                supabase
+                    .from('projects')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+            );
 
             if (projectsError) throw projectsError;
 
             // Fetch batches to resolve project counts in memory since projects -> biochar_batches is an indirect relationship
-            const { data: batchesData, error: batchesError } = await supabase
-                .from('biochar_batches')
-                .select('id, pyrolysis_runs(feedstock_batches(project_id))');
+            const { data: batchesData, error: batchesError } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+                supabase
+                    .from('biochar_batches')
+                    .select('id, pyrolysis_runs(feedstock_batches(project_id))')
+            );
 
             const projectBatchCounts = {};
             if (batchesData) {
@@ -130,11 +134,13 @@ const ProjectsModule = {
         if (projectId) {
             title = 'Edit Project';
             try {
-                const { data, error } = await supabase
-                    .from('projects')
-                    .select('*')
-                    .eq('id', projectId)
-                    .single();
+                const { data, error } = await OfflineStorage.fetchWithCache('projects', () =>
+                    supabase
+                        .from('projects')
+                        .select('*')
+                        .eq('id', projectId)
+                        .single()
+                , { isSingle: true, id: projectId });
 
                 if (error) throw error;
                 nameValue = data.name;

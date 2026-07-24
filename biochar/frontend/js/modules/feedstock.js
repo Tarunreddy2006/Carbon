@@ -38,10 +38,12 @@ const FeedstockModule = {
 
     async loadFeedstock() {
         try {
-            const { data, error } = await supabase
-                .from('feedstock_batches')
-                .select('*, projects(name)')
-                .order('created_at', { ascending: false });
+            const { data, error } = await OfflineStorage.fetchWithCache('feedstock_batches', () =>
+                supabase
+                    .from('feedstock_batches')
+                    .select('*, projects(name)')
+                    .order('created_at', { ascending: false })
+            );
 
             if (error) throw error;
 
@@ -133,20 +135,24 @@ const FeedstockModule = {
 
         try {
             // Get active projects for select options
-            const { data: projects, error: projectsErr } = await supabase
-                .from('projects')
-                .select('id, name')
-                .order('name', { ascending: true });
+            const { data: projects, error: projectsErr } = await OfflineStorage.fetchWithCache('projects', () =>
+                supabase
+                    .from('projects')
+                    .select('id, name')
+                    .order('name', { ascending: true })
+            );
 
             if (projectsErr) throw projectsErr;
 
             if (feedstockId) {
                 title = 'Edit Feedstock Ingest';
-                const { data, error } = await supabase
-                    .from('feedstock_batches')
-                    .select('*')
-                    .eq('id', feedstockId)
-                    .single();
+                const { data, error } = await OfflineStorage.fetchWithCache('feedstock_batches', () =>
+                    supabase
+                        .from('feedstock_batches')
+                        .select('*')
+                        .eq('id', feedstockId)
+                        .single()
+                , { isSingle: true, id: feedstockId });
 
                 if (error) throw error;
 

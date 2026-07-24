@@ -126,7 +126,9 @@ const DashboardModule = {
 
         // 1. Query Projects
         try {
-            const { data, error } = await supabase.from('projects').select('id, name');
+            const { data, error } = await OfflineStorage.fetchWithCache('projects', () => 
+                supabase.from('projects').select('id, name')
+            );
             if (!error && data) projects = data;
         } catch (e) {
             console.warn('[DashboardModule] Projects query warning:', e);
@@ -137,7 +139,9 @@ const DashboardModule = {
 
         // 2. Query Feedstock Batches
         try {
-            const { data, error } = await supabase.from('feedstock_batches').select('weight_kg');
+            const { data, error } = await OfflineStorage.fetchWithCache('feedstock_batches', () => 
+                supabase.from('feedstock_batches').select('weight_kg')
+            );
             if (!error && data) feedstock = data;
         } catch (e) {
             console.warn('[DashboardModule] Feedstock query warning:', e);
@@ -149,9 +153,11 @@ const DashboardModule = {
 
         // 3. Query Biochar Batches
         try {
-            const { data, error } = await supabase
-                .from('biochar_batches')
-                .select('id, status, net_sequestration_tco2e, created_at, batch_code, pyrolysis_runs(feedstock_batches(project_id))');
+            const { data, error } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+                supabase
+                    .from('biochar_batches')
+                    .select('id, status, net_sequestration_tco2e, created_at, batch_code, pyrolysis_runs(feedstock_batches(project_id))')
+            );
             if (!error && data) batches = data;
         } catch (e) {
             console.warn('[DashboardModule] Batches query warning:', e);

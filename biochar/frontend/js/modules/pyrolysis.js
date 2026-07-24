@@ -57,10 +57,12 @@ const PyrolysisModule = {
 
     async loadTelemetry() {
         try {
-            const { data, error } = await supabase
-                .from('pyrolysis_runs')
-                .select('*, feedstock_batches(project_id, batch_code)')
-                .order('created_at', { ascending: false });
+            const { data, error } = await OfflineStorage.fetchWithCache('pyrolysis_runs', () =>
+                supabase
+                    .from('pyrolysis_runs')
+                    .select('*, feedstock_batches(project_id, batch_code)')
+                    .order('created_at', { ascending: false })
+            );
 
             if (error) throw error;
 
@@ -148,10 +150,12 @@ const PyrolysisModule = {
 
     async openTelemetryModal() {
         try {
-            const { data: feedstocks, error: fsErr } = await supabase
-                .from('feedstock_batches')
-                .select('id, batch_code')
-                .order('batch_code', { ascending: true });
+            const { data: feedstocks, error: fsErr } = await OfflineStorage.fetchWithCache('feedstock_batches', () =>
+                supabase
+                    .from('feedstock_batches')
+                    .select('id, batch_code')
+                    .order('batch_code', { ascending: true })
+            );
 
             if (fsErr) throw fsErr;
 

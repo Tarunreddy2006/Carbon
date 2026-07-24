@@ -28,10 +28,12 @@ const EvidenceModule = {
 
     async loadProjects() {
         try {
-            const { data, error } = await supabase
-                .from('projects')
-                .select('id, name')
-                .order('name');
+            const { data, error } = await OfflineStorage.fetchWithCache('projects', () =>
+                supabase
+                    .from('projects')
+                    .select('id, name')
+                    .order('name')
+            );
             if (error) throw error;
             this._projects = data || [];
         } catch (err) {

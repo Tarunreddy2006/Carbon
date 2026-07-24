@@ -255,6 +255,73 @@ const OfflineStorage = {
         console.log("✔ Supabase client intercepted by OfflineStorage wrapper.");
     },
 
+    async fetchWithCache(storeName, supabaseQueryFn, options = {}) {
+        const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine;
+
+        if (!isOnline) {
+            console.log(`[OfflineStorage] Device is offline. Fetching cached data for '${storeName}'.`);
+            const localData = await OfflineDB.getAll(storeName);
+            if (options.isSingle || storeName === 'organizations' || storeName === 'profiles') {
+                if (options.id) {
+                    const matched = (localData || []).find(item => item && item.id === options.id);
+                    return { data: matched || null, error: null };
+                }
+                return { data: (localData && localData[0]) || null, error: null };
+            }
+            return { data: localData || [], error: null };
+        }
+
+        try {
+            const res = await supabaseQueryFn();
+            
+            if (res && res.error) {
+                const isFetchError = typeof res.error.message === 'string' && (
+                    res.error.message.includes('Failed to fetch') ||
+                    res.error.message.includes('Network') ||
+                    res.error.message.includes('ERR_') ||
+                    res.error.message.includes('load failed')
+                ) || res.error.status === 0;
+
+                if (isFetchError) {
+                    console.warn(`[OfflineStorage] Fetch error, falling back to local cache for '${storeName}'`);
+                    if (typeof Connectivity !== 'undefined') Connectivity.setOffline();
+                    const localData = await OfflineDB.getAll(storeName);
+                    if (options.isSingle || storeName === 'organizations' || storeName === 'profiles') {
+                        if (options.id) {
+                            const matched = (localData || []).find(item => item && item.id === options.id);
+                            return { data: matched || null, error: null };
+                        }
+                        return { data: (localData && localData[0]) || null, error: null };
+                    }
+                    return { data: localData || [], error: null };
+                }
+                return res;
+            }
+
+            if (res && res.data) {
+                const dataArray = Array.isArray(res.data) ? res.data : [res.data];
+                for (const item of dataArray) {
+                    if (item && item.id) {
+                        await OfflineDB.put(storeName, item);
+                    }
+                }
+            }
+            return res;
+        } catch (err) {
+            console.warn(`[OfflineStorage] Network query failed for '${storeName}', falling back to local cache:`, err);
+            if (typeof Connectivity !== 'undefined') Connectivity.setOffline();
+            const localData = await OfflineDB.getAll(storeName);
+            if (options.isSingle || storeName === 'organizations' || storeName === 'profiles') {
+                if (options.id) {
+                    const matched = (localData || []).find(item => item && item.id === options.id);
+                    return { data: matched || null, error: null };
+                }
+                return { data: (localData && localData[0]) || null, error: null };
+            }
+            return { data: localData || [], error: null };
+        }
+    },
+
     async get(tableName, key) {
         try {
             return await OfflineDB.get(tableName, key);

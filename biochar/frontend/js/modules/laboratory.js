@@ -39,17 +39,21 @@ const LaboratoryModule = {
     async loadAssays() {
         try {
             // Fetch certificates and join through tests, samples, and batches
-            const { data: certs, error: certErr } = await supabase
-                .from('laboratory_certificates')
-                .select('*, laboratory_tests(*, biochar_samples(*, biochar_batches(id, batch_code, pyrolysis_runs(feedstock_batches(project_id)))))')
-                .order('issue_date', { ascending: false });
+            const { data: certs, error: certErr } = await OfflineStorage.fetchWithCache('laboratory_certificates', () =>
+                supabase
+                    .from('laboratory_certificates')
+                    .select('*, laboratory_tests(*, biochar_samples(*, biochar_batches(id, batch_code, pyrolysis_runs(feedstock_batches(project_id)))))')
+                    .order('issue_date', { ascending: false })
+            );
 
             if (certErr) throw certErr;
 
             // Fetch all results to map parameters
-            const { data: results, error: resErr } = await supabase
-                .from('laboratory_results')
-                .select('*');
+            const { data: results, error: resErr } = await OfflineStorage.fetchWithCache('laboratory_results', () =>
+                supabase
+                    .from('laboratory_results')
+                    .select('*')
+            );
 
             if (resErr) throw resErr;
 
@@ -176,10 +180,12 @@ const LaboratoryModule = {
         let certHash = '';
 
         try {
-            const { data: batches, error: batchesErr } = await supabase
-                .from('biochar_batches')
-                .select('id, batch_code')
-                .order('batch_code', { ascending: true });
+            const { data: batches, error: batchesErr } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+                supabase
+                    .from('biochar_batches')
+                    .select('id, batch_code')
+                    .order('batch_code', { ascending: true })
+            );
 
             if (batchesErr) throw batchesErr;
 

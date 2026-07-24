@@ -83,6 +83,19 @@ async function getUser() {
 let _cachedOrgId = null;
 let _cachedProfile = null;
 
+// Instrument diagnostic proxy on supabaseClient.from
+if (typeof window !== 'undefined' && supabaseClient) {
+    const originalFrom = supabaseClient.from;
+    supabaseClient.from = function(tableName) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            console.warn(`[Supabase Diagnostic Proxy] supabase.from('${tableName}') database operation invoked while offline.`);
+        }
+        return originalFrom.apply(this, arguments);
+    };
+    window.supabaseClient = supabaseClient;
+    window.supabase = supabaseClient;
+}
+
 /**
  * Fetch and cache user profile and company association rules.
  */
@@ -92,16 +105,103 @@ async function getUserProfile() {
     const user = await getUser();
     if (!user) return null;
 
-    if (typeof AuthRepository !== 'undefined') {
-        const profile = await AuthRepository.getProfileAndPermissions(user);
-        if (profile) {
-            _cachedProfile = profile;
-            _cachedOrgId = profile.organization_id;
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+    if (!isOnline) {
+        console.log('[supabase.js] getUserProfile offline, restoring from IndexedDB cache...');
+        try {
+            if (typeof OfflineDB !== 'undefined') {
+                const profiles = await OfflineDB.getAll('profiles');
+                const profile = (profiles || []).find(p => p && p.id === user.id);
+                if (profile) {
+                    const orgs = await OfflineDB.getAll('organizations');
+                    const org = (orgs || []).find(o => o && o.id === profile.organization_id);
+                    profile.organizations = org || null;
+                    _cachedProfile = profile;
+                    _cachedOrgId = profile.organization_id;
+                    return profile;
+                }
+            }
+        } catch (e) {
+            console.warn('[supabase.js] Error loading user profile from OfflineDB:', e);
         }
-        return profile;
+
+        if (typeof AuthRepository !== 'undefined') {
+            const fallbackProfile = await AuthRepository.restoreFromCache(user);
+            if (fallbackProfile) {
+                _cachedProfile = fallbackProfile;
+                _cachedOrgId = fallbackProfile.organization_id;
+                return fallbackProfile;
+            }
+        }
+        return null;
     }
 
-    return null;
+    try {
+        if (!supabaseClient) {
+            throw new Error("supabaseClient not initialized");
+        }
+        const { data: profile, error: profileErr } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        if (profileErr || !profile) {
+            throw profileErr || new Error("Profile not found");
+        }
+
+        let org = null;
+        if (profile.organization_id) {
+            const { data: orgData } = await supabaseClient
+                .from('organizations')
+                .select('*')
+                .eq('id', profile.organization_id)
+                .maybeSingle();
+            org = orgData;
+        }
+
+        profile.organizations = org;
+        
+        if (typeof OfflineDB !== 'undefined') {
+            await OfflineDB.put('profiles', profile);
+            if (org) {
+                await OfflineDB.put('organizations', org);
+            }
+        }
+
+        _cachedProfile = profile;
+        _cachedOrgId = profile.organization_id;
+        return profile;
+    } catch (err) {
+        console.warn('[supabase.js] getUserProfile online fetch failed, falling back to cache:', err);
+        try {
+            if (typeof OfflineDB !== 'undefined') {
+                const profiles = await OfflineDB.getAll('profiles');
+                const profile = (profiles || []).find(p => p && p.id === user.id);
+                if (profile) {
+                    const orgs = await OfflineDB.getAll('organizations');
+                    const org = (orgs || []).find(o => o && o.id === profile.organization_id);
+                    profile.organizations = org || null;
+                    _cachedProfile = profile;
+                    _cachedOrgId = profile.organization_id;
+                    return profile;
+                }
+            }
+        } catch (e) {
+            console.warn('[supabase.js] Error restoring profile from cache after failure:', e);
+        }
+
+        if (typeof AuthRepository !== 'undefined') {
+            const fallbackProfile = await AuthRepository.restoreFromCache(user);
+            if (fallbackProfile) {
+                _cachedProfile = fallbackProfile;
+                _cachedOrgId = fallbackProfile.organization_id;
+                return fallbackProfile;
+            }
+        }
+        return null;
+    }
 }
 
 /**

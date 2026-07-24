@@ -248,11 +248,13 @@ const SettingsModule = {
         if (!orgId) return;
 
         try {
-            const { data, error } = await supabase
-                .from('organizations')
-                .select('*')
-                .eq('id', orgId)
-                .single();
+            const { data, error } = await OfflineStorage.fetchWithCache('organizations', () => 
+                supabase
+                    .from('organizations')
+                    .select('*')
+                    .eq('id', orgId)
+                    .single()
+            , { isSingle: true, id: orgId });
 
             if (error) throw error;
 
@@ -325,9 +327,11 @@ const SettingsModule = {
             // Load roles if not loaded
             if (!this._roles) {
                 try {
-                    const { data: roles, error: rError } = await supabase
-                        .from('roles')
-                        .select('*');
+                    const { data: roles, error: rError } = await OfflineStorage.fetchWithCache('roles', () =>
+                        supabase
+                            .from('roles')
+                            .select('*')
+                    );
                     if (rError) throw rError;
                     this._roles = roles || [];
                 } catch (rErr) {
@@ -354,46 +358,34 @@ const SettingsModule = {
             // 1. Read active membership rows safely
             let members = [];
             try {
-                const { data: mData, error: mError } = await supabase
-                    .from('organization_members')
-                    .select('*, roles(name), user:profiles(*)')
-                    .eq('organization_id', orgId);
+                const { data: mData, error: mError } = await OfflineStorage.fetchWithCache('organization_members', () =>
+                    supabase
+                        .from('organization_members')
+                        .select('*, roles(name), user:profiles(*)')
+                        .eq('organization_id', orgId)
+                );
 
                 if (mError) throw mError;
-                members = mData || [];
+                members = (mData || []).filter(m => m && m.organization_id === orgId);
             } catch (mErr) {
-                console.warn('[SettingsModule] Failed to load members online/cache:', mErr);
-                try {
-                    if (typeof OfflineStorage !== 'undefined' && OfflineStorage.getAll) {
-                        const cached = await OfflineStorage.getAll('organization_members');
-                        members = (cached || []).filter(m => m && m.organization_id === orgId);
-                    }
-                } catch (cacheErr) {
-                    console.warn('[SettingsModule] Offline storage fallback failed for organization_members:', cacheErr);
-                }
+                console.warn('[SettingsModule] Failed to load members:', mErr);
             }
 
             // 2. Read pending invitations rows safely
             let invitations = [];
             try {
-                const { data: iData, error: iError } = await supabase
-                    .from('invitations')
-                    .select('*, roles(name)')
-                    .eq('organization_id', orgId)
-                    .eq('accepted', false);
+                const { data: iData, error: iError } = await OfflineStorage.fetchWithCache('invitations', () =>
+                    supabase
+                        .from('invitations')
+                        .select('*, roles(name)')
+                        .eq('organization_id', orgId)
+                        .eq('accepted', false)
+                );
 
                 if (iError) throw iError;
-                invitations = iData || [];
+                invitations = (iData || []).filter(inv => inv && inv.organization_id === orgId && !inv.accepted);
             } catch (iErr) {
-                console.warn('[SettingsModule] Failed to load invitations online/cache:', iErr);
-                try {
-                    if (typeof OfflineStorage !== 'undefined' && OfflineStorage.getAll) {
-                        const cached = await OfflineStorage.getAll('invitations');
-                        invitations = (cached || []).filter(inv => inv && inv.organization_id === orgId && !inv.accepted);
-                    }
-                } catch (cacheErr) {
-                    console.warn('[SettingsModule] Offline storage fallback failed for invitations:', cacheErr);
-                }
+                console.warn('[SettingsModule] Failed to load invitations:', iErr);
             }
 
             const container = document.getElementById('members-list-container');

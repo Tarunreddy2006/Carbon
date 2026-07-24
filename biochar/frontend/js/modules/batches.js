@@ -39,10 +39,12 @@ const BatchesModule = {
     async loadBatches() {
         try {
             // Query specific columns of biochar_batches to explicitly exclude net_sequestration_tco2e
-            const { data, error } = await supabase
-                .from('biochar_batches')
-                .select('id, pyrolysis_run_id, batch_code, weight_kg, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(project_id, projects(id, name)))')
-                .order('created_at', { ascending: false });
+            const { data, error } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+                supabase
+                    .from('biochar_batches')
+                    .select('id, pyrolysis_run_id, batch_code, weight_kg, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(project_id, projects(id, name)))')
+                    .order('created_at', { ascending: false })
+            );
 
             if (error) throw error;
 
@@ -147,20 +149,24 @@ const BatchesModule = {
 
         try {
             // Load pyrolysis runs dropdown
-            const { data: runs, error: runErr } = await supabase
-                .from('pyrolysis_runs')
-                .select('id, run_number')
-                .order('run_number', { ascending: true });
+            const { data: runs, error: runErr } = await OfflineStorage.fetchWithCache('pyrolysis_runs', () =>
+                supabase
+                    .from('pyrolysis_runs')
+                    .select('id, run_number')
+                    .order('created_at', { ascending: false })
+            );
 
             if (runErr) throw runErr;
 
             if (batchId) {
                 title = 'Edit Production Batch';
-                const { data, error } = await supabase
-                    .from('biochar_batches')
-                    .select('id, pyrolysis_run_id, batch_code, weight_kg, storage_location, status')
-                    .eq('id', batchId)
-                    .single();
+                const { data, error } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+                    supabase
+                        .from('biochar_batches')
+                        .select('*')
+                        .eq('id', batchId)
+                        .single()
+                , { isSingle: true, id: batchId });
 
                 if (error) throw error;
 
