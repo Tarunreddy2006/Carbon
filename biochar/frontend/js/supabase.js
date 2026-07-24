@@ -106,6 +106,12 @@ async function getUserProfile() {
     const user = await getUser();
     if (!user) return null;
 
+    // Resolve initial connectivity status if Connectivity subsystem is loaded but has not verified yet
+    if (typeof Connectivity !== 'undefined' && !Connectivity.hasVerified) {
+        console.log('[supabase.js] Connectivity verification in progress. Awaiting initial check before fetching user profile...');
+        await Connectivity.verify();
+    }
+
     const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : (typeof navigator !== 'undefined' ? navigator.onLine : true);
 
     if (!isOnline) {

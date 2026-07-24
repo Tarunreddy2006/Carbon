@@ -1,5 +1,7 @@
 const Connectivity = {
     isOnline: navigator.onLine,
+    hasVerified: false,
+    verifyPromise: null,
     listeners: [],
 
     init() {
@@ -21,31 +23,41 @@ const Connectivity = {
     async verify() {
         if (!navigator.onLine) {
             this.setOffline();
+            this.hasVerified = true;
             return false;
         }
 
-        // Verify backend availability by checking a lightweight endpoint
-        try {
-            // Check if organization_id matches standard pattern or zero UUID
-            const testUrl = '/api/v1/biochar/evidence/list?organization_id=00000000-0000-0000-0000-000000000000&page_size=1';
-            const controller = new AbortController();
-            const id = setTimeout(() => controller.abort(), 3000);
-            
-            const res = await fetch(testUrl, { method: 'GET', signal: controller.signal });
-            clearTimeout(id);
-            
-            // Any response code signifies server availability
-            if (res.status === 200 || res.status === 401 || res.status === 403 || res.status === 400 || res.status === 500) {
-                this.setOnline();
-                return true;
-            } else {
+        if (this.verifyPromise) return this.verifyPromise;
+
+        this.verifyPromise = (async () => {
+            try {
+                const testUrl = '/api/v1/biochar/evidence/list?organization_id=00000000-0000-0000-0000-000000000000&page_size=1';
+                const controller = new AbortController();
+                const id = setTimeout(() => controller.abort(), 3000);
+                
+                const res = await fetch(testUrl, { method: 'GET', signal: controller.signal });
+                clearTimeout(id);
+                
+                if (res.status === 200 || res.status === 401 || res.status === 403 || res.status === 400 || res.status === 500) {
+                    this.setOnline();
+                    this.hasVerified = true;
+                    this.verifyPromise = null;
+                    return true;
+                } else {
+                    this.setOffline();
+                    this.hasVerified = true;
+                    this.verifyPromise = null;
+                    return false;
+                }
+            } catch (err) {
                 this.setOffline();
+                this.hasVerified = true;
+                this.verifyPromise = null;
                 return false;
             }
-        } catch (err) {
-            this.setOffline();
-            return false;
-        }
+        })();
+
+        return this.verifyPromise;
     },
 
     setOnline() {
