@@ -87,7 +87,8 @@ let _cachedProfile = null;
 if (typeof window !== 'undefined' && supabaseClient) {
     const originalFrom = supabaseClient.from;
     supabaseClient.from = function(tableName) {
-        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine;
+        if (!isOnline) {
             console.warn(`[Supabase Diagnostic Proxy] supabase.from('${tableName}') database operation invoked while offline.`);
         }
         return originalFrom.apply(this, arguments);
@@ -105,7 +106,7 @@ async function getUserProfile() {
     const user = await getUser();
     if (!user) return null;
 
-    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : (typeof navigator !== 'undefined' ? navigator.onLine : true);
 
     if (!isOnline) {
         console.log('[supabase.js] getUserProfile offline, restoring from IndexedDB cache...');
