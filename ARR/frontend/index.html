@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Carbon Biomass Intelligence Engine</title>
+
+    <!-- MapLibre GL JS (replaces Leaflet) -->
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.0/dist/maplibre-gl.css" />
+    <!-- MapboxDraw plugin (replaces Leaflet Draw) -->
+    <link rel="stylesheet"
+        href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" />
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+    <canvas id="bg-canvas"></canvas>
+
+    <div id="login-screen" class="login-container">
+        <div class="login-box glass-premium">
+            <div class="logo-wrapper">
+                <div class="earth-logo"></div>
+            </div>
+            <h2>CARBON ENGINE</h2>
+            <p>Intelligence-Grade Digital MRV Platform</p>
+
+            <div class="role-tabs" style="margin-bottom: 15px;">
+                <button id="login-tab-farmer" class="tab-btn active" onclick="switchLoginTab('farmer')">🌾
+                    Farmer</button>
+                <button id="login-tab-institution" class="tab-btn" onclick="switchLoginTab('institution')">🏢
+                    Auditor</button>
+            </div>
+
+            <input type="text" id="login-user" class="input-dark" placeholder="Username (e.g., farmer_john)">
+            <input type="password" id="login-pass" class="input-dark" placeholder="Password">
+
+            <button class="btn btn--primary" style="width: 100%; margin-top: 15px;" onclick="performLogin()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px;">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+                    <polyline points="10 17 15 12 10 7"></polyline>
+                    <line x1="15" y1="12" x2="3" y2="12"></line>
+                </svg>
+                SECURE SIGN IN
+            </button>
+            <p id="login-error" style="color: #ef4444; display: none; margin-top: 10px;"></p>
+            <p style="margin-top: 15px; text-align: center;">
+                <a href="#" onclick="showRegisterScreen()" style="color: #58a6ff; text-decoration: none;">Register
+                    Institution</a>
+            </p>
+        </div>
+    </div>
+
+    <div id="register-screen" class="login-container" style="display: none;">
+        <div class="login-box glass-premium">
+            <div class="logo-wrapper">
+                <div class="earth-logo"></div>
+            </div>
+            <h2>REGISTER INSTITUTION</h2>
+            <p>Join the Intelligence-Grade Digital MRV Platform</p>
+
+            <form id="farmer-reg-form" action="/register/farmer" target="_self"
+                onsubmit="event.preventDefault(); performRegister();">
+                <input type="text" id="reg-user" class="input-dark" placeholder="Username" style="margin-bottom: 10px;">
+                <input type="password" id="reg-pass" class="input-dark" placeholder="Password">
+
+                <button type="submit" class="btn btn--primary" style="width: 100%; margin-top: 15px;">
+                    REGISTER
+                </button>
+            </form>
+            <p id="reg-error" style="color: #ef4444; display: none; margin-top: 10px;"></p>
+            <p style="margin-top: 15px; text-align: center;">
+                <a href="#" onclick="showLoginScreen()" style="color: #58a6ff; text-decoration: none;">Back to Login</a>
+            </p>
+        </div>
+    </div>
+
+    <div id="main-app" style="display: none;">
+
+        <div class="app-shell">
+
+            <header class="topbar">
+                <div class="topbar-logo">
+                    <span class="leaf">🌿</span>
+                    CarbonEngine™
+                    <span class="topbar-badge">MVP</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <span class="api-badge">Sentinel-2 SR · GEE</span>
+                    <div id="user-avatar" onclick="toggleSidebar()" style="width: 32px; height: 32px; border-radius: 50%; background: #3fb950; color: white; text-align: center; line-height: 32px; margin-left: 15px; cursor: pointer; font-weight: bold; user-select: none;">U</div>
+                    <button class="btn btn--demo" style="margin-left: 15px; padding: 5px 10px;" onclick="logout()">Logout</button>
+                </div>
+            </header>
+
+            <div id="history-sidebar" class="history-sidebar">
+                <h3>Asset History</h3>
+                <ul id="asset-history-list"></ul>
+            </div>
+
+            <aside class="sidebar">
+                <div class="sidebar-section">
+
+                    <div class="role-tabs" style="margin-bottom: 20px;">
+                        <button id="tab-farmer" class="tab-btn">🌾 Field App</button>
+                        <button id="tab-institution" class="tab-btn">🏢 Pro Dashboard</button>
+                    </div>
+
+                    <h3>Land Parcel Input</h3>
+
+                    <div class="form-group form-group--full">
+                        <label>Farm ID / Parcel Label</label>
+                        <input type="text" id="f-id" class="input-dark" placeholder="e.g. FARM-001">
+                    </div>
+
+                    <div class="form-group form-group--full" style="margin-top:12px">
+                        <label for="f-species">Tree Species / Vegetation Type</label>
+                        <select id="f-species" class="form-input input-dark">
+                            <option value="mixed_tropical">Mixed Tropical (Default)</option>
+                            <option value="teak">Teak (Tectona grandis)</option>
+                            <option value="eucalyptus">Eucalyptus</option>
+                            <option value="neem">Neem (Azadirachta indica)</option>
+                        </select>
+                    </div>
+
+                    <div class="instructions" style="margin-top: 15px; margin-bottom: 15px;">
+                        <div class="instruction-step active" id="step-gps">
+                            <div class="step-num">1</div>
+                            <div class="step-text"><b>Click Use My Location or Paste Coordinates</b> to fly to your farm
+                            </div>
+                        </div>
+                        <div class="instruction-step" id="step-draw">
+                            <div class="step-num">2</div>
+                            <div class="step-text">Click <b>Draw Polygon</b>, click around the farm boundary,
+                                double-click to finish</div>
+                        </div>
+                        <div class="instruction-step" id="step-run">
+                            <div class="step-num">3</div>
+                            <div class="step-text">Click <b>Run Estimation</b> to analyse with GEE</div>
+                        </div>
+                    </div>
+
+                    <div id="view-farmer" class="role-view">
+                        <button class="btn btn--gps" id="btn-gps" onclick="goToMyLocation()"
+                            style="margin-top: 15px; width: 100%;">📍 Use My Location</button>
+
+                        <div class="draw-actions" style="margin-top: 15px;">
+                            <button class="btn btn--draw" id="btn-draw" onclick="startDrawing()">✏️ Draw
+                                Polygon</button>
+                            <button class="btn btn--clear" id="btn-clear" onclick="clearPolygon()" disabled>🗑
+                                Clear</button>
+                        </div>
+
+                        <button class="btn btn--primary" id="btn-estimate-farmer" style="width: 100%; margin-top: 15px;"
+                            onclick="runDemo()" disabled>🛰️ Run Estimation</button>
+                    </div>
+
+                    <div id="view-institution" class="role-view" style="display: none;">
+                        <button class="btn btn--gps" id="btn-gps-inst" onclick="goToMyLocation()"
+                            style="margin-top: 15px; width: 100%;">📍 Use My Location</button>
+
+                        <div class="draw-actions" style="margin-top: 15px;">
+                            <button class="btn btn--draw" id="btn-draw-inst" onclick="startDrawing()">✏️ Draw
+                                Polygon</button>
+                            <button class="btn btn--clear" id="btn-clear-inst" onclick="clearPolygon()" disabled>🗑
+                                Clear</button>
+                        </div>
+
+                        <div class="form-group form-group--full" style="margin-top:15px;">
+                            <label>Paste Coordinates (GeoJSON / DMS)</label>
+                            <textarea id="f-coords" class="input-dark" rows="4"
+                                style="font-family: monospace;"></textarea>
+                            <button class="btn btn--demo" style="width: 100%; margin-top: 10px;"
+                                onclick="loadPastedCoordinates()">📍 Jump to Coordinates</button>
+                        </div>
+
+                        <hr style="border-color: #374151; margin: 20px 0;">
+
+                        <button id="btn-estimate-inst" class="btn btn--primary" style="width: 100%;"
+                            onclick="runEstimation()" disabled>🛰️ Run & Mint Carbon Credit</button>
+                        <button id="btn-download-cert" class="btn btn--primary"
+                            style="width: 100%; margin-top: 15px; display: none;"
+                            onclick="downloadCertificate(new URLSearchParams(window.location.search).get('credit_id'))">Download
+                            Certificate</button>
+                        <button id="btn-rerun-estimation" class="btn btn--primary" style="width: 100%; margin-top: 15px; display: none; background: #f59e0b; color: #fff;">🔄 Rerun MRV for Current Year</button>
+
+                        <hr style="border-color: #374151; margin: 20px 0;">
+
+                        <!-- ═══════════════════════════════════════════ -->
+                        <!-- BULK PARCEL AUDIT ZONE                     -->
+                        <!-- ═══════════════════════════════════════════ -->
+                        <h3 style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">
+                            📦 Bulk Parcel Audit
+                        </h3>
+
+                        <div id="bulk-drop-zone" class="bulk-zone">
+                            <div class="bulk-zone__icon">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <div class="bulk-zone__text">
+                                <strong>Drop CSV here</strong> or click to browse
+                            </div>
+                            <div class="bulk-zone__hint">
+                                Required: latitude, longitude columns
+                            </div>
+                            <input type="file" id="bulk-file-input" accept=".csv" style="display: none;">
+                        </div>
+
+                        <!-- Progress Tracker (hidden by default) -->
+                        <div id="bulk-progress-panel" class="bulk-progress" style="display: none;">
+                            <div class="bulk-progress__header">
+                                <span id="bulk-job-filename" class="bulk-progress__filename">—</span>
+                                <span id="bulk-job-status" class="bulk-progress__status-badge">PROCESSING</span>
+                            </div>
+                            <div class="bulk-progress__bar-track">
+                                <div id="bulk-progress-bar" class="bulk-progress__bar-fill" style="width: 0%;"></div>
+                            </div>
+                            <div class="bulk-progress__stats">
+                                <span id="bulk-progress-text">0 / 0 parcels</span>
+                                <span id="bulk-progress-pct">0%</span>
+                            </div>
+                        </div>
+
+                        <!-- Download Results (hidden until complete) -->
+                        <button id="bulk-download-btn" class="btn bulk-download-btn" style="display: none; width: 100%; margin-top: 12px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download Results CSV
+                        </button>
+
+                    </div>
+
+                    <div id="status-banner" class="status-banner" style="margin-top: 15px;"></div>
+                </div>
+
+                <div class="sidebar-section results-panel" id="results-panel">
+                    <h3>Estimation Results</h3>
+                    <div class="parcel-chip" id="res-parcel-id">—</div>
+
+                    <div class="co2-hero">
+                        <div class="co2-hero__label">CO₂ Equivalent Sequestered</div>
+                        <div class="co2-hero__value" id="res-co2">—</div>
+                        <div class="co2-hero__unit">metric tonnes CO₂e</div>
+                    </div>
+
+                    <div class="metric-grid">
+                        <div class="metric-card metric-card--ndvi">
+                            <div class="metric-card__label">NDVI Mean</div>
+                            <div class="metric-card__value" id="res-ndvi">—</div>
+                            <div class="metric-card__unit">−1 → +1</div>
+                        </div>
+                        <div class="metric-card metric-card--canopy">
+                            <div class="metric-card__label">Canopy Area</div>
+                            <div class="metric-card__value" id="res-canopy">—</div>
+                            <div class="metric-card__unit">hectares</div>
+                        </div>
+                        <div class="metric-card metric-card--biomass">
+                            <div class="metric-card__label">Biomass</div>
+                            <div class="metric-card__value" id="res-biomass">—</div>
+                            <div class="metric-card__unit">metric tonnes</div>
+                        </div>
+                        <div class="metric-card metric-card--carbon">
+                            <div class="metric-card__label">Carbon Stock</div>
+                            <div class="metric-card__value" id="res-carbon">—</div>
+                            <div class="metric-card__unit">tonnes C</div>
+                        </div>
+                        <div class="metric-card metric-card--area">
+                            <div class="metric-card__label">Parcel Area</div>
+                            <div class="metric-card__value" id="res-area">—</div>
+                            <div class="metric-card__unit">hectares</div>
+                        </div>
+                        <div class="metric-card metric-card--pixels">
+                            <div class="metric-card__label">Veg. Pixels</div>
+                            <div class="metric-card__value" id="res-pixels">—</div>
+                            <div class="metric-card__unit">@ 10 m × 10 m</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section results-panel" id="prov-panel">
+                    <h3>Data Provenance</h3>
+                    <div class="provenance" id="prov-rows"></div>
+                </div>
+            </aside>
+
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <div id="cookie-banner" class="glass-premium"
+        style="display: none; position: fixed; bottom: 20px; right: 20px; padding: 20px; z-index: 9999; border-radius: var(--radius-md); width: 350px;">
+        <h4 style="margin-top:0;">Cookie Consent</h4>
+        <p style="font-size:12px; color:var(--text-muted);">We use cookies to ensure you get the best experience on our
+            website.</p>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button class="btn btn--primary" onclick="initCookieConsent('accept')">Accept</button>
+            <button class="btn btn--clear" onclick="initCookieConsent('reject')">Reject</button>
+        </div>
+    </div>
+
+    <!-- MapLibre GL JS (replaces Leaflet) -->
+    <script src="https://unpkg.com/maplibre-gl@4.7.0/dist/maplibre-gl.js"></script>
+    <!-- MapboxDraw plugin (replaces Leaflet Draw) -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="config.js"></script>
+    <script src="api.js"></script>
+    <script src="app.js"></script>
+
+</body>
+
+</html>

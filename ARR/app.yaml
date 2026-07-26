@@ -1,0 +1,73 @@
+name: carbonengine
+region: nyc3
+
+services:
+  - name: web
+    github:
+      repo: https://github.com/Tarunreddy2006/Carbon/tree/codex
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: python
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    run_command: uvicorn ARR.carbon:app --host 0.0.0.0 --port 8080
+    http_port: 8080
+    envs:
+      # Dynamic Bindings to Managed Databases
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: REDIS_URL
+        scope: RUN_TIME
+        value: ${redis.DATABASE_URL}
+      # Required Vault Secrets
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: STRIPE_SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: STRIPE_WEBHOOK_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      # Application Configuration
+      - key: FRONTEND_URL
+        scope: RUN_TIME
+        value: "https://arr.stomata.tech"
+      - key: APP_ENV
+        scope: RUN_TIME
+        value: "production"
+
+workers:
+  - name: celery-worker
+    github:
+      repo: https://github.com/Tarunreddy2006/Carbon/tree/codex
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: python
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    run_command: celery -A ARR.worker.celery_app worker --loglevel=info
+    envs:
+      # Dynamic Bindings to Managed Databases
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: REDIS_URL
+        scope: RUN_TIME
+        value: ${redis.DATABASE_URL}
+
+databases:
+  # Managed PostgreSQL
+  - name: db
+    engine: PG
+    version: "15"
+    production: true
+
+  # Managed Redis
+  - name: redis
+    engine: REDIS
+    version: "7"
+    production: true

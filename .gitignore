@@ -1,23 +1,24 @@
 # Confidential files
 .env
-*.json
 secrets.json
 config_private.json
 api_keys.json
 detrixai.json
 .hintrc
-
 # Database
 *.db
 *.sqlite3
-
+.ini
 # Logs
 *.log
 
 # Python cache
 __pycache__/
 *.pyc
-
+/alembic.ini
+/alembic
+/.vscode
+*/__init__.py
 # OS files
 Thumbs.db
 .DS_Store 
