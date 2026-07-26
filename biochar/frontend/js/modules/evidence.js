@@ -191,7 +191,10 @@ const EvidenceModule = {
             }
 
             const orgId = Auth.orgId;
-            let url = `/api/v1/biochar/evidence/list?organization_id=${orgId}&page=${this._page}&page_size=${this._pageSize}`;
+            let url = `/api/v1/biochar/evidence/list?page=${this._page}&page_size=${this._pageSize}`;
+            if (orgId && orgId !== 'null' && orgId !== 'undefined') {
+                url += `&organization_id=${encodeURIComponent(orgId)}`;
+            }
             if (this._filters.project_id) url += `&project_id=${this._filters.project_id}`;
             if (this._filters.activity) url += `&activity=${this._filters.activity}`;
             if (this._filters.verification_status) url += `&verification_status=${this._filters.verification_status}`;

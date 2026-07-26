@@ -1241,7 +1241,7 @@ def sign_storage_path(storage_path: Optional[str], storage_provider_name: Option
 
 @router.get("/evidence/list")
 async def list_evidence(
-    organization_id: str,
+    organization_id: Optional[str] = None,
     project_id: Optional[str] = None,
     activity: Optional[str] = None,
     entity_type: Optional[str] = None,
@@ -1254,18 +1254,37 @@ async def list_evidence(
     db: Session = Depends(get_db)
 ):
     try:
-        query = db.query(Evidence).filter(Evidence.organization_id == uuid.UUID(organization_id))
-        
-        if project_id:
-            query = query.filter(Evidence.project_id == uuid.UUID(project_id))
+        def parse_uuid(val: Optional[str]) -> Optional[uuid.UUID]:
+            if not val or str(val).strip().lower() in ("null", "undefined", "none", ""):
+                return None
+            try:
+                return uuid.UUID(str(val).strip())
+            except (ValueError, TypeError, AttributeError):
+                return None
+
+        query = db.query(Evidence)
+
+        org_uuid = parse_uuid(organization_id)
+        if org_uuid:
+            query = query.filter(Evidence.organization_id == org_uuid)
+
+        proj_uuid = parse_uuid(project_id)
+        if proj_uuid:
+            query = query.filter(Evidence.project_id == proj_uuid)
+
         if activity:
             query = query.filter(Evidence.activity == activity)
         if entity_type:
             query = query.filter(Evidence.entity_type == entity_type)
-        if entity_id:
-            query = query.filter(Evidence.entity_id == uuid.UUID(entity_id))
-        if uploaded_by:
-            query = query.filter(Evidence.uploaded_by == uuid.UUID(uploaded_by))
+
+        ent_uuid = parse_uuid(entity_id)
+        if ent_uuid:
+            query = query.filter(Evidence.entity_id == ent_uuid)
+
+        up_uuid = parse_uuid(uploaded_by)
+        if up_uuid:
+            query = query.filter(Evidence.uploaded_by == up_uuid)
+
         if verification_status:
             query = query.filter(Evidence.verification_status == verification_status)
             

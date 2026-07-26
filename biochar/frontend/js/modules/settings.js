@@ -331,11 +331,10 @@ const SettingsModule = {
     async loadMembers() {
         const orgId = Auth.orgId;
         const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) && orgId !== '00000000-0000-0000-0000-000000000000';
-        if (!isValidOrgId) return;
 
         try {
             // Load roles if not loaded
-            if (!this._roles) {
+            if (!this._roles || this._roles.length === 0) {
                 try {
                     const { data: roles, error: rError } = await OfflineStorage.fetchWithCache('roles', () =>
                         supabase
@@ -348,6 +347,18 @@ const SettingsModule = {
                     console.warn('[SettingsModule] Failed to fetch roles:', rErr);
                     this._roles = this._roles || [];
                 }
+            }
+
+            if (!this._roles || this._roles.length === 0) {
+                this._roles = [
+                    { id: 1, name: 'Owner' },
+                    { id: 2, name: 'Admin' },
+                    { id: 3, name: 'Project Manager' },
+                    { id: 4, name: 'MRV Officer' },
+                    { id: 5, name: 'Operator' },
+                    { id: 6, name: 'Laboratory' },
+                    { id: 7, name: 'Viewer' }
+                ];
             }
 
             const canManageUsers = typeof Permissions !== 'undefined' && Permissions.hasPermission('manage_users');
@@ -365,37 +376,41 @@ const SettingsModule = {
                 }
             }
 
-            // 1. Read active membership rows safely
+            // 1. Read active membership rows safely if valid orgId
             let members = [];
-            try {
-                const { data: mData, error: mError } = await OfflineStorage.fetchWithCache('organization_members', () =>
-                    supabase
-                        .from('organization_members')
-                        .select('*, roles(name), user:profiles(*)')
-                        .eq('organization_id', orgId)
-                );
+            if (isValidOrgId) {
+                try {
+                    const { data: mData, error: mError } = await OfflineStorage.fetchWithCache('organization_members', () =>
+                        supabase
+                            .from('organization_members')
+                            .select('*, roles(name), user:profiles(*)')
+                            .eq('organization_id', orgId)
+                    );
 
-                if (mError) throw mError;
-                members = (mData || []).filter(m => m && m.organization_id === orgId);
-            } catch (mErr) {
-                console.warn('[SettingsModule] Failed to load members:', mErr);
+                    if (mError) throw mError;
+                    members = (mData || []).filter(m => m && m.organization_id === orgId);
+                } catch (mErr) {
+                    console.warn('[SettingsModule] Failed to load members:', mErr);
+                }
             }
 
-            // 2. Read pending invitations rows safely
+            // 2. Read pending invitations rows safely if valid orgId
             let invitations = [];
-            try {
-                const { data: iData, error: iError } = await OfflineStorage.fetchWithCache('invitations', () =>
-                    supabase
-                        .from('invitations')
-                        .select('*, roles(name)')
-                        .eq('organization_id', orgId)
-                        .eq('accepted', false)
-                );
+            if (isValidOrgId) {
+                try {
+                    const { data: iData, error: iError } = await OfflineStorage.fetchWithCache('invitations', () =>
+                        supabase
+                            .from('invitations')
+                            .select('*, roles(name)')
+                            .eq('organization_id', orgId)
+                            .eq('accepted', false)
+                    );
 
-                if (iError) throw iError;
-                invitations = (iData || []).filter(inv => inv && inv.organization_id === orgId && !inv.accepted);
-            } catch (iErr) {
-                console.warn('[SettingsModule] Failed to load invitations:', iErr);
+                    if (iError) throw iError;
+                    invitations = (iData || []).filter(inv => inv && inv.organization_id === orgId && !inv.accepted);
+                } catch (iErr) {
+                    console.warn('[SettingsModule] Failed to load invitations:', iErr);
+                }
             }
 
             const container = document.getElementById('members-list-container');
