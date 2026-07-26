@@ -63,6 +63,8 @@ const OfflineUI = {
                 transition: opacity 0.3s ease, box-shadow 0.2s ease;
                 cursor: grab;
                 user-select: none;
+                -webkit-user-select: none;
+                touch-action: none;
             }
             .sync-indicator-widget:active {
                 cursor: grabbing;
@@ -74,7 +76,7 @@ const OfflineUI = {
                 justify-content: space-between;
                 gap: 8px;
                 cursor: grab;
-                padding-bottom: 4px;
+                padding-bottom: 6px;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             }
             .sync-status-badge {
@@ -157,6 +159,9 @@ const OfflineUI = {
         const onDragStart = (e) => {
             if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
 
+            // Prevent browser default text/element drag interception
+            if (e.cancelable) e.preventDefault();
+
             isDragging = true;
             el.style.cursor = 'grabbing';
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -167,6 +172,12 @@ const OfflineUI = {
             startY = clientY;
             initialLeft = rect.left;
             initialTop = rect.top;
+
+            // Convert to explicit px values immediately to prevent offset jumps
+            el.style.left = initialLeft + 'px';
+            el.style.top = initialTop + 'px';
+            el.style.bottom = 'auto';
+            el.style.right = 'auto';
 
             document.addEventListener('mousemove', onDragMove);
             document.addEventListener('mouseup', onDragEnd);
@@ -269,8 +280,11 @@ const OfflineUI = {
         }
 
         this.indicator.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
-                <span style="font-weight: 600; opacity: 0.7;">Sync Status</span>
+            <div class="sync-drag-header">
+                <span style="font-weight: 600; opacity: 0.85; font-size: 11px; display: flex; align-items: center; gap: 4px;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="opacity:0.6;"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+                    Sync Status
+                </span>
                 <span class="sync-status-badge ${statusClass}">
                     <span class="dot ${showDotSyncing ? 'dot-syncing' : ''}"></span>
                     ${statusText}
