@@ -46,11 +46,11 @@ const OfflineUI = {
                 position: fixed;
                 bottom: 24px;
                 right: 24px;
-                background: rgba(30, 30, 45, 0.9);
+                background: rgba(30, 30, 45, 0.92);
                 backdrop-filter: blur(12px);
-                border: 1px solid rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 color: #e1e1e6;
-                padding: 14px 18px;
+                padding: 12px 16px;
                 border-radius: 12px;
                 box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
                 z-index: 9999;
@@ -60,7 +60,22 @@ const OfflineUI = {
                 gap: 8px;
                 min-width: 220px;
                 font-size: 12px;
-                transition: opacity 0.3s ease;
+                transition: opacity 0.3s ease, box-shadow 0.2s ease;
+                cursor: grab;
+                user-select: none;
+            }
+            .sync-indicator-widget:active {
+                cursor: grabbing;
+                box-shadow: 0 14px 40px rgba(0, 0, 0, 0.7);
+            }
+            .sync-drag-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                cursor: grab;
+                padding-bottom: 4px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             }
             .sync-status-badge {
                 display: inline-flex;
@@ -119,6 +134,91 @@ const OfflineUI = {
         this.indicator = document.createElement('div');
         this.indicator.className = 'sync-indicator-widget';
         document.body.appendChild(this.indicator);
+        this.makeDraggable(this.indicator);
+    },
+
+    makeDraggable(el) {
+        let isDragging = false;
+        let startX, startY, initialLeft, initialTop;
+
+        try {
+            const saved = localStorage.getItem('sync_widget_pos');
+            if (saved) {
+                const pos = JSON.parse(saved);
+                if (pos.left !== undefined && pos.top !== undefined) {
+                    el.style.left = pos.left + 'px';
+                    el.style.top = pos.top + 'px';
+                    el.style.bottom = 'auto';
+                    el.style.right = 'auto';
+                }
+            }
+        } catch (e) {}
+
+        const onDragStart = (e) => {
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+
+            isDragging = true;
+            el.style.cursor = 'grabbing';
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            const rect = el.getBoundingClientRect();
+            startX = clientX;
+            startY = clientY;
+            initialLeft = rect.left;
+            initialTop = rect.top;
+
+            document.addEventListener('mousemove', onDragMove);
+            document.addEventListener('mouseup', onDragEnd);
+            document.addEventListener('touchmove', onDragMove, { passive: false });
+            document.addEventListener('touchend', onDragEnd);
+        };
+
+        const onDragMove = (e) => {
+            if (!isDragging) return;
+            if (e.cancelable) e.preventDefault();
+
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+            const deltaX = clientX - startX;
+            const deltaY = clientY - startY;
+
+            let newLeft = initialLeft + deltaX;
+            let newTop = initialTop + deltaY;
+
+            const maxLeft = window.innerWidth - el.offsetWidth - 10;
+            const maxTop = window.innerHeight - el.offsetHeight - 10;
+            newLeft = Math.max(10, Math.min(newLeft, maxLeft));
+            newTop = Math.max(10, Math.min(newTop, maxTop));
+
+            el.style.left = newLeft + 'px';
+            el.style.top = newTop + 'px';
+            el.style.bottom = 'auto';
+            el.style.right = 'auto';
+        };
+
+        const onDragEnd = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            el.style.cursor = 'grab';
+
+            document.removeEventListener('mousemove', onDragMove);
+            document.removeEventListener('mouseup', onDragEnd);
+            document.removeEventListener('touchmove', onDragMove);
+            document.removeEventListener('touchend', onDragEnd);
+
+            const rect = el.getBoundingClientRect();
+            try {
+                localStorage.setItem('sync_widget_pos', JSON.stringify({
+                    left: rect.left,
+                    top: rect.top
+                }));
+            } catch (e) {}
+        };
+
+        el.addEventListener('mousedown', onDragStart);
+        el.addEventListener('touchstart', onDragStart, { passive: true });
     },
 
     updateBannerText() {
