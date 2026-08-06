@@ -523,7 +523,10 @@ LANGUAGE sql
 SECURITY DEFINER
 STABLE
 AS $$
-  SELECT organization_id FROM public.profiles WHERE id = auth.uid();
+  SELECT COALESCE(
+    (SELECT organization_id FROM public.profiles WHERE id = auth.uid() AND organization_id IS NOT NULL),
+    (SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid() LIMIT 1)
+  );
 $$;
 
 -- 1. Enable RLS
@@ -531,7 +534,7 @@ ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mass_balance_anomalies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mass_balance_configs ENABLE ROW LEVEL SECURITY;
 
--- 2. Projects RLS Policies (matching editor.sql)
+-- 2. Projects RLS Policies
 DROP POLICY IF EXISTS "Users can view projects in their organization" ON public.projects;
 DROP POLICY IF EXISTS "Users can insert projects in their organization" ON public.projects;
 DROP POLICY IF EXISTS "Users can update projects in their organization" ON public.projects;
@@ -539,20 +542,55 @@ DROP POLICY IF EXISTS "Users can delete projects in their organization" ON publi
 
 CREATE POLICY "Users can view projects in their organization"
 ON public.projects FOR SELECT TO authenticated
-USING (organization_id = public.get_user_organization_id());
+USING (
+  organization_id = public.get_user_organization_id()
+  OR organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+);
 
 CREATE POLICY "Users can insert projects in their organization"
 ON public.projects FOR INSERT TO authenticated
-WITH CHECK (organization_id = public.get_user_organization_id());
+WITH CHECK (
+  organization_id = public.get_user_organization_id()
+  OR organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+);
 
 CREATE POLICY "Users can update projects in their organization"
 ON public.projects FOR UPDATE TO authenticated
-USING (organization_id = public.get_user_organization_id())
-WITH CHECK (organization_id = public.get_user_organization_id());
+USING (
+  organization_id = public.get_user_organization_id()
+  OR organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+)
+WITH CHECK (
+  organization_id = public.get_user_organization_id()
+  OR organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+);
 
 CREATE POLICY "Users can delete projects in their organization"
 ON public.projects FOR DELETE TO authenticated
-USING (organization_id = public.get_user_organization_id());
+USING (
+  organization_id = public.get_user_organization_id()
+  OR organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+);
 
 -- 3. Mass Balance Anomalies RLS Policies
 DROP POLICY IF EXISTS "Users can view mass_balance_anomalies in their organization" ON public.mass_balance_anomalies;

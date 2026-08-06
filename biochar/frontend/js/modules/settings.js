@@ -349,12 +349,15 @@ const SettingsModule = {
                         try {
                             await supabase
                                 .from('profiles')
-                                .update({ organization_id: newOrgId })
-                                .eq('id', user.id);
+                                .upsert({
+                                    id: user.id,
+                                    organization_id: newOrgId,
+                                    updated_at: new Date().toISOString()
+                                });
 
                             await supabase
                                 .from('organization_members')
-                                .insert({
+                                .upsert({
                                     organization_id: newOrgId,
                                     user_id: user.id,
                                     role_id: 1, // Owner
