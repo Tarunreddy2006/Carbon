@@ -194,15 +194,26 @@ const ProjectsModule = {
                         .eq('id', projectId);
                     error = err;
                 } else {
-                    // Organization ID check
+                    // Ensure activeOrgId is fully resolved asynchronously
+                    let activeOrgId = orgId || Auth.orgId;
+                    if (!activeOrgId && typeof getOrganizationId === 'function') {
+                        activeOrgId = await getOrganizationId();
+                    }
+
                     const insertPayload = { name };
                     
-                    // If the project schema has organization_id, we attach it.
-                    // Since it has RLS on org, let's include it.
-                    const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) && orgId !== '00000000-0000-0000-0000-000000000000';
+                    const isValidOrgId = activeOrgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(activeOrgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId)) && activeOrgId !== '00000000-0000-0000-0000-000000000000';
                     if (isValidOrgId) {
-                        insertPayload.organization_id = orgId;
+                        insertPayload.organization_id = activeOrgId;
                     }
+
+                    const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine;
+                    console.log('[ProjectsModule Diagnostic]', {
+                        isOnline,
+                        navigatorOnline: navigator.onLine,
+                        activeOrgId,
+                        insertPayload
+                    });
 
                     const { error: err } = await supabase
                         .from('projects')

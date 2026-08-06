@@ -73,6 +73,7 @@ class SupabaseQueryBuilder {
 
     async execute() {
         const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine;
+        console.log(`[SupabaseQueryBuilder Diagnostic] Table: '${this.tableName}', Mutation: '${this.mutationType}', isOnline: ${isOnline}, navigator.onLine: ${navigator.onLine}`);
         
         if (isOnline && window.originalSupabase) {
             try {
@@ -147,7 +148,10 @@ class SupabaseQueryBuilder {
     }
 
     async executeOffline() {
-        console.log(`SupabaseQueryBuilder (OFFLINE): ${this.mutationType} on ${this.tableName}`);
+        const reason = (typeof Connectivity !== 'undefined' && !Connectivity.isOnline)
+            ? 'Connectivity subsystem set isOnline = false'
+            : (!window.originalSupabase ? 'window.originalSupabase is undefined' : 'Network fetch exception/fallback');
+        console.log(`SupabaseQueryBuilder (OFFLINE) Reason [${reason}]: ${this.mutationType} on ${this.tableName}`, this.payload);
         
         if (this.mutationType === 'SELECT') {
             const all = (await OfflineDB.getAll(this.tableName)) || [];

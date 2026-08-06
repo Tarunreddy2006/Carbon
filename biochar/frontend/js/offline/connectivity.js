@@ -22,6 +22,7 @@ const Connectivity = {
 
     async verify() {
         if (!navigator.onLine) {
+            console.log('[Connectivity Diagnostic] navigator.onLine is false. Setting offline mode.');
             this.setOffline();
             this.hasVerified = true;
             return false;
@@ -38,18 +39,28 @@ const Connectivity = {
                 const res = await fetch(testUrl, { method: 'GET', signal: controller.signal });
                 clearTimeout(id);
                 
-                if (res.status === 200 || res.status === 401 || res.status === 403 || res.status === 400 || res.status === 500) {
+                if (res.status >= 200 && res.status < 600) {
+                    console.log(`[Connectivity Diagnostic] Health endpoint returned HTTP status ${res.status}. Setting online mode.`);
                     this.setOnline();
                     this.hasVerified = true;
                     this.verifyPromise = null;
                     return true;
                 } else {
+                    console.warn(`[Connectivity Diagnostic] Health endpoint returned unexpected status ${res.status}. Setting offline mode.`);
                     this.setOffline();
                     this.hasVerified = true;
                     this.verifyPromise = null;
                     return false;
                 }
             } catch (err) {
+                if (navigator.onLine) {
+                    console.log(`[Connectivity Diagnostic] Endpoint fetch failed (${err.message}), but navigator.onLine is true. Fallback: Setting online mode.`);
+                    this.setOnline();
+                    this.hasVerified = true;
+                    this.verifyPromise = null;
+                    return true;
+                }
+                console.warn(`[Connectivity Diagnostic] Network fetch exception and navigator.onLine is false. Setting offline mode:`, err);
                 this.setOffline();
                 this.hasVerified = true;
                 this.verifyPromise = null;
