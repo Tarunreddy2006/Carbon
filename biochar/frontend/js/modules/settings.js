@@ -170,10 +170,8 @@ const SettingsModule = {
         // Initialize setup
         this.initTabs();
         await this.loadProfileData();
-        if (isOwnerOrAdmin) {
-            await this.loadOrgData();
-            await this.loadMembers();
-        }
+        await this.loadOrgData();
+        await this.loadMembers();
         this.initPreferenceTab();
     },
 
