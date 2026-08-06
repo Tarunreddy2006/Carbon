@@ -3,8 +3,8 @@
  * Version: 1.0.0
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'stomata-biochar-v1.0.2';
-const RUNTIME_CACHE = 'stomata-runtime-v1.0.2';
+const CACHE_NAME = 'stomata-biochar-v1.0.3';
+const RUNTIME_CACHE = 'stomata-runtime-v1.0.3';
 
 // Core Application Shell Assets to Pre-cache
 const PRECACHE_ASSETS = [

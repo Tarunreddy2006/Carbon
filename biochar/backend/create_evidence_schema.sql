@@ -513,9 +513,10 @@ CREATE INDEX IF NOT EXISTS idx_coc_events_parent ON public.chain_of_custody_even
 CREATE INDEX IF NOT EXISTS idx_coc_events_child ON public.chain_of_custody_events(child_entity_type, child_entity_id);
 CREATE INDEX IF NOT EXISTS idx_coc_events_event_type ON public.chain_of_custody_events(event_type);
 
--- ──────────────────────────────────────────────────────────────────────────────
--- Row Level Security (RLS) Policies for Projects, Mass Balance Anomalies & Configs
--- ──────────────────────────────────────────────────────────────────────────────
+-- 0. Ensure default fallback organization exists
+INSERT INTO public.organizations (id, name, created_at, updated_at)
+VALUES ('00000000-0000-0000-0000-000000000001', 'Stomata Biochar Primary Org', now(), now())
+ON CONFLICT (id) DO NOTHING;
 
 -- 1. Enable RLS
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;

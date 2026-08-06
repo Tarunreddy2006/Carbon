@@ -242,7 +242,12 @@ const ProjectsModule = {
                         activeOrgId = localStorage.getItem('stomata_active_org_id');
                     }
 
-                    const isValidOrgId = activeOrgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(activeOrgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId)) && activeOrgId !== '00000000-0000-0000-0000-000000000000';
+                    // Fallback 5: System default organization ID
+                    if (!activeOrgId || activeOrgId === '00000000-0000-0000-0000-000000000000') {
+                        activeOrgId = '00000000-0000-0000-0000-000000000001';
+                    }
+
+                    const isValidOrgId = activeOrgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(activeOrgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId));
 
                     if (!isValidOrgId) {
                         throw new Error('Unable to determine your Organization ID. Please ensure an Organization is selected or created in Settings.');
