@@ -102,22 +102,36 @@ class SupabaseQueryBuilder {
 
                 const res = await query;
 
-                const isFetchError = res && res.error && (
-                    !res.data ||
+                // ── Network failure detection ──
+                // ONLY match genuine network/connectivity failures.
+                // Database errors (RLS, constraints, 4xx) are valid server responses
+                // and must NOT flip the app to offline mode.
+                const isNetworkFailure = res && res.error && (
                     (typeof res.error.message === 'string' && (
                         res.error.message.includes('Failed to fetch') ||
-                        res.error.message.includes('Network') ||
-                        res.error.message.includes('ERR_') ||
-                        res.error.message.includes('load failed')
+                        res.error.message.includes('Load failed') ||
+                        res.error.message.includes('NetworkError') ||
+                        res.error.message.includes('ERR_INTERNET_DISCONNECTED') ||
+                        res.error.message.includes('ERR_NETWORK_CHANGED') ||
+                        res.error.message.includes('ERR_CONNECTION_REFUSED') ||
+                        res.error.message.includes('ERR_NAME_NOT_RESOLVED')
                     )) ||
                     res.error.name === 'FetchError' ||
                     res.error.status === 0
                 );
 
-                if (isFetchError) {
-                    console.warn(`[SupabaseQueryBuilder] Network fetch error for ${this.tableName}, switching to offline cache.`);
+                if (isNetworkFailure) {
+                    console.warn(`[SupabaseQueryBuilder] Genuine network failure for '${this.tableName}': ${res.error.message}. Switching to offline mode.`);
                     if (typeof Connectivity !== 'undefined') Connectivity.setOffline();
                     return await this.executeOffline();
+                }
+
+                // Non-network error (RLS, constraint, auth) — log and return as-is
+                // so the calling module can handle it (e.g. display Toast).
+                // Do NOT set offline. The server clearly responded.
+                if (res && res.error) {
+                    console.warn(`[SupabaseQueryBuilder] Database error for '${this.tableName}' (${this.mutationType}): ${res.error.message || res.error.code}. Connectivity unaffected.`);
+                    return res;
                 }
                 
                 if (this.mutationType === 'SELECT' && res && res.data && !res.error) {
@@ -138,9 +152,17 @@ class SupabaseQueryBuilder {
                 
                 return res;
             } catch (netErr) {
-                console.warn(`[SupabaseQueryBuilder] Network exception for ${this.tableName}, executing offline fallback:`, netErr.message || netErr);
-                if (typeof Connectivity !== 'undefined') Connectivity.setOffline();
-                return await this.executeOffline();
+                // True JS-level exception (network unreachable, CORS, timeout).
+                // Only flip to offline if navigator also reports offline.
+                console.warn(`[SupabaseQueryBuilder] Network exception for '${this.tableName}':`, netErr.message || netErr);
+                if (!navigator.onLine) {
+                    if (typeof Connectivity !== 'undefined') Connectivity.setOffline();
+                    return await this.executeOffline();
+                }
+                // navigator.onLine is true but fetch threw — likely a transient error
+                // (CORS, server restart). Do NOT permanently flip to offline mode.
+                // Re-throw so the calling module's catch block can handle it.
+                throw netErr;
             }
         } else {
             return await this.executeOffline();
