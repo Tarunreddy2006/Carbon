@@ -184,7 +184,17 @@ const DashboardModule = {
                     .from('biochar_batches')
                     .select('id, status, weight_kg, produced_weight_kg, calculated_yield_percent, mass_balance_status, anomaly_status, created_at, batch_code, pyrolysis_runs(feedstock_batches(project_id))')
             );
-            if (!error && data) batches = data;
+            if (error && (error.code === '42703' || (error.message && error.message.includes('anomaly_status')))) {
+                console.warn('[DashboardModule] Column anomaly_status missing in database, retrying select without anomaly_status');
+                const fallbackRes = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+                    supabase
+                        .from('biochar_batches')
+                        .select('id, status, weight_kg, produced_weight_kg, calculated_yield_percent, mass_balance_status, created_at, batch_code, pyrolysis_runs(feedstock_batches(project_id))')
+                );
+                if (!fallbackRes.error && fallbackRes.data) batches = fallbackRes.data;
+            } else if (!error && data) {
+                batches = data;
+            }
         } catch (e) {
             console.warn('[DashboardModule] Batches query warning:', e);
         }

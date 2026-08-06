@@ -158,10 +158,20 @@ const LaboratoryModule = {
         if (!container) return;
 
         try {
-            const { data: batches, error } = await supabase
+            let { data: batches, error } = await supabase
                 .from('biochar_batches')
                 .select('id, batch_code, peak_temperature, residence_time_minutes, weight_kg, produced_weight_kg, mass_balance_status, anomaly_status, validation_status, validation_score, laboratory_ready, created_at')
                 .order('created_at', { ascending: false });
+
+            if (error && (error.code === '42703' || (error.message && error.message.includes('anomaly_status')))) {
+                console.warn('[LaboratoryModule] Column anomaly_status missing in database, retrying select without anomaly_status');
+                const fallback = await supabase
+                    .from('biochar_batches')
+                    .select('id, batch_code, peak_temperature, residence_time_minutes, weight_kg, produced_weight_kg, mass_balance_status, validation_status, validation_score, laboratory_ready, created_at')
+                    .order('created_at', { ascending: false });
+                batches = fallback.data;
+                error = fallback.error;
+            }
 
             if (error) throw error;
 

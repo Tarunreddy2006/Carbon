@@ -513,6 +513,101 @@ CREATE INDEX IF NOT EXISTS idx_coc_events_parent ON public.chain_of_custody_even
 CREATE INDEX IF NOT EXISTS idx_coc_events_child ON public.chain_of_custody_events(child_entity_type, child_entity_id);
 CREATE INDEX IF NOT EXISTS idx_coc_events_event_type ON public.chain_of_custody_events(event_type);
 
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Row Level Security (RLS) Policies for Projects, Mass Balance Anomalies & Configs
+-- ──────────────────────────────────────────────────────────────────────────────
 
+-- 1. Enable RLS
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.mass_balance_anomalies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.mass_balance_configs ENABLE ROW LEVEL SECURITY;
 
+-- 2. Projects RLS Policies
+DROP POLICY IF EXISTS "Users can view projects in their organization" ON public.projects;
+DROP POLICY IF EXISTS "Users can insert projects in their organization" ON public.projects;
+DROP POLICY IF EXISTS "Users can update projects in their organization" ON public.projects;
+DROP POLICY IF EXISTS "Users can delete projects in their organization" ON public.projects;
 
+CREATE POLICY "Users can view projects in their organization"
+ON public.projects FOR SELECT TO authenticated
+USING (
+  organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+  OR organization_id IS NULL
+);
+
+CREATE POLICY "Users can insert projects in their organization"
+ON public.projects FOR INSERT TO authenticated
+WITH CHECK (
+  organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+  OR organization_id IS NULL
+);
+
+CREATE POLICY "Users can update projects in their organization"
+ON public.projects FOR UPDATE TO authenticated
+USING (
+  organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+)
+WITH CHECK (
+  organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+);
+
+CREATE POLICY "Users can delete projects in their organization"
+ON public.projects FOR DELETE TO authenticated
+USING (
+  organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+);
+
+-- 3. Mass Balance Anomalies RLS Policies
+DROP POLICY IF EXISTS "Users can view mass_balance_anomalies in their organization" ON public.mass_balance_anomalies;
+DROP POLICY IF EXISTS "Users can insert mass_balance_anomalies in their organization" ON public.mass_balance_anomalies;
+
+CREATE POLICY "Users can view mass_balance_anomalies in their organization"
+ON public.mass_balance_anomalies FOR SELECT TO authenticated
+USING (
+  organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+  OR organization_id IS NULL
+);
+
+CREATE POLICY "Users can insert mass_balance_anomalies in their organization"
+ON public.mass_balance_anomalies FOR INSERT TO authenticated
+WITH CHECK (
+  organization_id IN (
+    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
+    UNION
+    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
+  )
+  OR organization_id IS NULL
+);
+
+-- 4. Grant table access to authenticated role
+GRANT ALL ON public.projects TO authenticated;
+GRANT ALL ON public.mass_balance_anomalies TO authenticated;
+GRANT ALL ON public.mass_balance_configs TO authenticated;
+GRANT ALL ON public.biochar_batches TO authenticated;
+
+-- 5. Force PostgREST schema cache refresh
+NOTIFY pgrst, 'reload schema';

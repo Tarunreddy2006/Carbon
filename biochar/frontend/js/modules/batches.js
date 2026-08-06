@@ -38,12 +38,24 @@ const BatchesModule = {
 
     async loadBatches() {
         try {
-            const { data, error } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+            let { data, error } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
                 supabase
                     .from('biochar_batches')
                     .select('id, pyrolysis_run_id, batch_code, weight_kg, produced_weight_kg, calculated_yield_percent, mass_balance_status, anomaly_status, anomaly_reason, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(project_id, projects(id, name)))')
                     .order('created_at', { ascending: false })
             );
+
+            if (error && (error.code === '42703' || (error.message && error.message.includes('anomaly_status')))) {
+                console.warn('[BatchesModule] Column anomaly_status missing in database, retrying query without anomaly_status');
+                const fallback = await OfflineStorage.fetchWithCache('biochar_batches', () =>
+                    supabase
+                        .from('biochar_batches')
+                        .select('id, pyrolysis_run_id, batch_code, weight_kg, produced_weight_kg, calculated_yield_percent, mass_balance_status, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(project_id, projects(id, name)))')
+                        .order('created_at', { ascending: false })
+                );
+                data = fallback.data;
+                error = fallback.error;
+            }
 
             if (error) throw error;
 

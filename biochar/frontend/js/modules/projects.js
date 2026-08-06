@@ -222,10 +222,34 @@ const ProjectsModule = {
                         }
                     }
 
+                    // Fallback 3: Query organizations table directly
+                    if (!activeOrgId && window.originalSupabase) {
+                        try {
+                            const { data: orgs } = await window.originalSupabase
+                                .from('organizations')
+                                .select('id')
+                                .limit(1);
+                            if (orgs && orgs.length > 0 && orgs[0].id) {
+                                activeOrgId = orgs[0].id;
+                            }
+                        } catch (orgErr) {
+                            console.warn('[ProjectsModule] Failed to resolve org from organizations table:', orgErr);
+                        }
+                    }
+
+                    // Fallback 4: Retrieve from localStorage
+                    if (!activeOrgId && typeof localStorage !== 'undefined') {
+                        activeOrgId = localStorage.getItem('stomata_active_org_id');
+                    }
+
                     const isValidOrgId = activeOrgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(activeOrgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId)) && activeOrgId !== '00000000-0000-0000-0000-000000000000';
 
                     if (!isValidOrgId) {
-                        throw new Error('Unable to determine your organization. Please refresh the page and try again.');
+                        throw new Error('Unable to determine your Organization ID. Please ensure an Organization is selected or created in Settings.');
+                    }
+
+                    if (typeof localStorage !== 'undefined') {
+                        localStorage.setItem('stomata_active_org_id', activeOrgId);
                     }
 
                     const insertPayload = { name, organization_id: activeOrgId };
