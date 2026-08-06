@@ -38,11 +38,10 @@ const BatchesModule = {
 
     async loadBatches() {
         try {
-            // Query specific columns of biochar_batches to explicitly exclude net_sequestration_tco2e
             const { data, error } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
                 supabase
                     .from('biochar_batches')
-                    .select('id, pyrolysis_run_id, batch_code, weight_kg, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(project_id, projects(id, name)))')
+                    .select('id, pyrolysis_run_id, batch_code, weight_kg, produced_weight_kg, calculated_yield_percent, mass_balance_status, anomaly_status, anomaly_reason, storage_location, status, created_at, pyrolysis_runs(run_number, feedstock_batches(project_id, projects(id, name)))')
                     .order('created_at', { ascending: false })
             );
 
@@ -64,10 +63,27 @@ const BatchesModule = {
                         }
                     },
                     { 
-                        key: 'pyrolysis_runs', 
-                        label: 'Pyrolysis Run', 
-                        sortable: false, 
-                        render: (val) => val ? Utils.escapeHtml(val.run_number) : '—'
+                        key: 'produced_weight_kg', 
+                        label: 'Produced Biochar', 
+                        sortable: true, 
+                        render: (val, row) => Utils.formatTons(((val || row.weight_kg) || 0) / 1000)
+                    },
+                    { 
+                        key: 'calculated_yield_percent', 
+                        label: 'Actual Yield', 
+                        sortable: true, 
+                        render: (val) => val != null ? `<strong>${Number(val).toFixed(1)}%</strong>` : '<span class="text-muted">—</span>'
+                    },
+                    { 
+                        key: 'anomaly_status', 
+                        label: 'Mass Balance / Anomaly', 
+                        sortable: true, 
+                        render: (val, row) => {
+                            if (val === 'Flagged' || row.mass_balance_status === 'Anomaly') {
+                                return `<span class="badge badge-danger" title="${Utils.escapeHtml(row.anomaly_reason || 'Anomaly flagged')}"><span class="badge-dot"></span>Anomaly Flagged</span>`;
+                            }
+                            return `<span class="badge badge-success"><span class="badge-dot"></span>Pass</span>`;
+                        } 
                     },
                     { 
                         key: 'status', 
@@ -90,6 +106,7 @@ const BatchesModule = {
                 emptyTitle: 'No production batches',
                 emptyText: 'Start a new biochar carbon-removal batch to log pyrolysis runs and quality assays.',
                 exportFilename: 'biochar_production_batches.csv',
+
                 actions: (row) => {
                     const projectId = row.pyrolysis_runs?.feedstock_batches?.projects?.id || row.pyrolysis_runs?.feedstock_batches?.project_id || '';
                     return `

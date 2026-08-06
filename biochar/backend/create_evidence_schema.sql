@@ -311,3 +311,54 @@ WITH CHECK (
       AND e.organization_id = public.get_user_organization_id()
   )
 );
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Mass Balance & Anomaly Engine Extensions
+-- ──────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS wet_weight_kg double precision;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS dry_weight_kg double precision;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS water_weight_kg double precision;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS expected_yield_percent double precision DEFAULT 30.0;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS moisture_measurement_method text;
+
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS produced_weight_kg double precision;
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS calculated_yield_percent double precision;
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS mass_balance_status text NOT NULL DEFAULT 'Pending';
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS anomaly_status text NOT NULL DEFAULT 'Normal';
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS anomaly_reason text;
+
+CREATE TABLE IF NOT EXISTS public.mass_balance_configs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid UNIQUE,
+  min_yield_percent double precision NOT NULL DEFAULT 15.0,
+  max_yield_percent double precision NOT NULL DEFAULT 50.0,
+  max_moisture_percent double precision NOT NULL DEFAULT 65.0,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT mass_balance_configs_pkey PRIMARY KEY (id),
+  CONSTRAINT mass_balance_configs_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS public.mass_balance_anomalies (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid,
+  project_id uuid,
+  entity_type text NOT NULL,
+  entity_id uuid NOT NULL,
+  severity text NOT NULL,
+  category text NOT NULL,
+  human_readable_explanation text NOT NULL,
+  status text NOT NULL DEFAULT 'Active',
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  resolved_at timestamp with time zone,
+  resolved_by uuid,
+  CONSTRAINT mass_balance_anomalies_pkey PRIMARY KEY (id),
+  CONSTRAINT mass_balance_anomalies_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE,
+  CONSTRAINT mass_balance_anomalies_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE SET NULL,
+  CONSTRAINT mass_balance_anomalies_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.profiles(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mb_anomalies_status ON public.mass_balance_anomalies(status);
+CREATE INDEX IF NOT EXISTS idx_mb_anomalies_org_id ON public.mass_balance_anomalies(organization_id);
+

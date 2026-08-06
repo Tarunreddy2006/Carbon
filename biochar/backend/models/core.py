@@ -158,7 +158,12 @@ class FeedstockBatch(Base):
     origin_location: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     received_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    wet_weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     moisture_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    dry_weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    water_weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    expected_yield_percent: Mapped[Optional[float]] = mapped_column(Float, server_default=text("30.0"), nullable=True)
+    moisture_measurement_method: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     transport_distance_km: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -212,6 +217,11 @@ class BiocharBatch(Base):
     )
     batch_code: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    produced_weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    calculated_yield_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    mass_balance_status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
+    anomaly_status: Mapped[str] = mapped_column(String(50), server_default=text("'Normal'"), nullable=False)
+    anomaly_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     storage_location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(50), server_default=text("'In Storage'"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
@@ -586,3 +596,41 @@ class EvidenceAuditLog(Base):
     ip_address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Mass Balance & Anomaly Models
+# ──────────────────────────────────────────────────────────────────────────────
+
+class MassBalanceConfig(UUIDMixin, TimestampMixin, Base):
+    __tablename__ = "mass_balance_configs"
+
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, unique=True
+    )
+    min_yield_percent: Mapped[float] = mapped_column(Float, server_default=text("15.0"), nullable=False)
+    max_yield_percent: Mapped[float] = mapped_column(Float, server_default=text("50.0"), nullable=False)
+    max_moisture_percent: Mapped[float] = mapped_column(Float, server_default=text("65.0"), nullable=False)
+
+
+class MassBalanceAnomaly(UUIDMixin, Base):
+    __tablename__ = "mass_balance_anomalies"
+
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)  # 'feedstock_batch', 'biochar_batch'
+    entity_id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)  # 'Low', 'Medium', 'High', 'Critical'
+    category: Mapped[str] = mapped_column(String(50), nullable=False)  # 'Yield Anomaly', 'Moisture Anomaly', 'Invalid Input', 'Missing Measurement'
+    human_readable_explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), server_default=text("'Active'"), nullable=False)  # 'Active', 'Resolved'
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+    resolved_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    )
+

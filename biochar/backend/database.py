@@ -16,21 +16,24 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
-DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-
-if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL environment variable is not set. "
-        "The Stomata backend requires a PostgreSQL connection string."
-    )
-
-engine = create_engine(
-    DATABASE_URL,
-    echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true",
-    pool_pre_ping=True,
-    pool_size=int(os.getenv("SQLALCHEMY_POOL_SIZE", "5")),
-    max_overflow=int(os.getenv("SQLALCHEMY_MAX_OVERFLOW", "10")),
+DATABASE_URL: str = os.getenv(
+    "DATABASE_URL",
+    os.getenv("BIOCHAR_DATABASE_URL", "sqlite:///biochar_dev.db")
 )
+
+engine_kwargs = {
+    "echo": os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true",
+}
+
+if "postgresql" in DATABASE_URL:
+    engine_kwargs.update({
+        "pool_pre_ping": True,
+        "pool_size": int(os.getenv("SQLALCHEMY_POOL_SIZE", "5")),
+        "max_overflow": int(os.getenv("SQLALCHEMY_MAX_OVERFLOW", "10")),
+    })
+
+engine = create_engine(DATABASE_URL, **engine_kwargs)
+
 
 SessionLocal = sessionmaker(
     autocommit=False,

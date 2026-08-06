@@ -54,7 +54,20 @@ const FeedstockModule = {
                 columns: [
                     { key: 'batch_code', label: 'Feedstock Batch Code', sortable: true },
                     { key: 'feedstock_type', label: 'Biomass Category', sortable: true, render: (val) => `<span class="badge badge-default">${Utils.formatEnum(val)}</span>` },
-                    { key: 'weight_kg', label: 'Wet Mass (t)', sortable: true, render: (val) => Utils.formatTons((val || 0) / 1000) },
+                    { key: 'weight_kg', label: 'Wet Mass (t)', sortable: true, render: (val, row) => Utils.formatTons(((row.wet_weight_kg || val) || 0) / 1000) },
+                    { key: 'moisture_percent', label: 'Moisture (%)', sortable: true, render: (val, row) => val != null ? `${Number(val).toFixed(1)}% <small class="text-muted">(${row.moisture_measurement_method || 'Oven Drying'})</small>` : '—' },
+                    { key: 'dry_weight_kg', label: 'Dry Mass (t)', sortable: true, render: (val, row) => {
+                        const wet = row.wet_weight_kg || row.weight_kg || 0;
+                        const moist = row.moisture_percent != null ? row.moisture_percent : 0;
+                        const dry = val != null ? val : wet * (1 - moist / 100);
+                        return `<strong>${Utils.formatTons(dry / 1000)}</strong>`;
+                    }},
+                    { key: 'water_weight_kg', label: 'Water Mass (t)', sortable: true, render: (val, row) => {
+                        const wet = row.wet_weight_kg || row.weight_kg || 0;
+                        const moist = row.moisture_percent != null ? row.moisture_percent : 0;
+                        const water = val != null ? val : wet * (moist / 100);
+                        return `<span class="text-muted">${Utils.formatTons(water / 1000)}</span>`;
+                    }},
                     { 
                         key: 'origin_location', 
                         label: 'Origin Coordinates', 
@@ -132,6 +145,8 @@ const FeedstockModule = {
         let latValue = '';
         let lngValue = '';
         let massValue = '';
+        let moistureValue = '15.0';
+        let methodValue = 'Oven Drying (ASTM E1755)';
 
         try {
             // Get active projects for select options
@@ -159,7 +174,9 @@ const FeedstockModule = {
                 projectIdValue = data.project_id;
                 batchCodeValue = data.batch_code;
                 typeValue = data.feedstock_type;
-                massValue = (data.weight_kg || 0) / 1000;
+                massValue = (data.wet_weight_kg || data.weight_kg || 0) / 1000;
+                moistureValue = data.moisture_percent != null ? data.moisture_percent : '15.0';
+                methodValue = data.moisture_measurement_method || 'Oven Drying (ASTM E1755)';
                 
                 if (data.origin_location) {
                     const parts = data.origin_location.split(',');
@@ -200,6 +217,8 @@ const FeedstockModule = {
                                 <option value="rice_husk" ${typeValue === 'rice_husk' ? 'selected' : ''}>Rice Husk</option>
                                 <option value="wood_residue" ${typeValue === 'wood_residue' ? 'selected' : ''}>Wood Residue</option>
                                 <option value="coffee_hulls" ${typeValue === 'coffee_hulls' ? 'selected' : ''}>Coffee Hulls</option>
+                                <option value="corn_cob" ${typeValue === 'corn_cob' ? 'selected' : ''}>Corn Cob</option>
+                                <option value="bamboo_scrap" ${typeValue === 'bamboo_scrap' ? 'selected' : ''}>Bamboo Scrap</option>
                             </select>
                         </div>
                         <div class="form-row">
@@ -212,9 +231,31 @@ const FeedstockModule = {
                                 <input type="text" class="form-input" id="feedstock-lng" name="source_longitude" value="${lngValue}" data-validate="required|number" data-label="Longitude" placeholder="e.g. 77.5946" />
                             </div>
                         </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="feedstock-mass">Gross Wet Mass (Metric Tonnes) <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="feedstock-mass" name="wet_mass_tons" value="${massValue}" data-validate="required|number|positive" data-label="Wet Mass" placeholder="e.g. 12.5" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="feedstock-moisture">Moisture Content (%) <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="feedstock-moisture" name="moisture_percent" value="${moistureValue}" data-validate="required|number" data-label="Moisture %" placeholder="e.g. 15.0" />
+                            </div>
+                        </div>
                         <div class="form-group">
-                            <label class="form-label" for="feedstock-mass">Gross Wet Mass (Metric Tonnes) <span class="required">*</span></label>
-                            <input type="text" class="form-input" id="feedstock-mass" name="wet_mass_tons" value="${massValue}" data-validate="required|number|positive" data-label="Wet Mass" placeholder="e.g. 12.5" />
+                            <label class="form-label" for="feedstock-method">Moisture Measurement Method <span class="required">*</span></label>
+                            <select class="form-select" id="feedstock-method" name="moisture_measurement_method">
+                                <option value="Oven Drying (ASTM E1755)" ${methodValue.includes('Oven') ? 'selected' : ''}>Oven Drying (ASTM E1755)</option>
+                                <option value="Digital Moisture Meter" ${methodValue.includes('Meter') ? 'selected' : ''}>Digital Moisture Meter</option>
+                                <option value="NIR Spectroscopy Analyzer" ${methodValue.includes('NIR') ? 'selected' : ''}>NIR Spectroscopy Analyzer</option>
+                                <option value="Certified Lab Analysis" ${methodValue.includes('Lab') ? 'selected' : ''}>Certified Lab Analysis</option>
+                            </select>
+                        </div>
+                        <div class="card" style="background: rgba(255, 255, 255, 0.03); padding: var(--space-3); border-radius: var(--radius-md); margin-top: var(--space-3);">
+                            <div style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-accent-light); margin-bottom: var(--space-2);">Mass Balance Real-Time Calculations</div>
+                            <div class="form-row" style="margin-bottom: 0;">
+                                <div><small class="text-muted">Dry Biomass Mass:</small> <strong id="calc-dry-mass" class="text-success">— t</strong></div>
+                                <div><small class="text-muted">Water Mass:</small> <strong id="calc-water-mass" class="text-muted">— t</strong></div>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer">
@@ -227,7 +268,25 @@ const FeedstockModule = {
                 </form>
             `;
 
-            Modal.open(html, { width: '480px' });
+            Modal.open(html, { width: '520px' });
+
+            // Setup real-time mass balance calculation listener
+            const wetInput = document.getElementById('feedstock-mass');
+            const moistureInput = document.getElementById('feedstock-moisture');
+            const updateCalcs = () => {
+                const wetTons = parseFloat(wetInput.value) || 0;
+                const moist = parseFloat(moistureInput.value) || 0;
+                const dryTons = wetTons * (1 - moist / 100);
+                const waterTons = wetTons * (moist / 100);
+
+                const dryEl = document.getElementById('calc-dry-mass');
+                const waterEl = document.getElementById('calc-water-mass');
+                if (dryEl) dryEl.innerText = `${dryTons.toFixed(3)} t (${(dryTons * 1000).toFixed(0)} kg)`;
+                if (waterEl) waterEl.innerText = `${waterTons.toFixed(3)} t (${(waterTons * 1000).toFixed(0)} kg)`;
+            };
+            wetInput.addEventListener('input', updateCalcs);
+            moistureInput.addEventListener('input', updateCalcs);
+            updateCalcs();
 
             const form = document.getElementById('feedstock-form');
             form.addEventListener('submit', async (e) => {
@@ -242,13 +301,23 @@ const FeedstockModule = {
                 const lat = document.getElementById('feedstock-lat').value.trim();
                 const lng = document.getElementById('feedstock-lng').value.trim();
                 const massTons = parseFloat(document.getElementById('feedstock-mass').value);
+                const wetKg = massTons * 1000;
+                const moisture = parseFloat(document.getElementById('feedstock-moisture').value);
+                const dryKg = wetKg * (1 - moisture / 100);
+                const waterKg = wetKg * (moisture / 100);
+                const method = document.getElementById('feedstock-method').value;
 
                 const payload = {
                     project_id: document.getElementById('feedstock-project-id').value,
                     batch_code: document.getElementById('feedstock-batch-code').value.trim(),
                     feedstock_type: document.getElementById('feedstock-type').value,
                     origin_location: `${lat},${lng}`,
-                    weight_kg: massTons * 1000,
+                    weight_kg: wetKg,
+                    wet_weight_kg: wetKg,
+                    moisture_percent: moisture,
+                    dry_weight_kg: dryKg,
+                    water_weight_kg: waterKg,
+                    moisture_measurement_method: method,
                     received_date: new Date().toISOString().split('T')[0]
                 };
 

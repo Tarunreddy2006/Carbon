@@ -47,6 +47,8 @@ from biochar.backend.models.core import (
     EvidenceReview,
     EvidenceAIResult,
     EvidenceAuditLog,
+    MassBalanceConfig,
+    MassBalanceAnomaly,
 )
 
 
@@ -114,6 +116,8 @@ __all__ = [
     "EvidenceReview",
     "EvidenceAIResult",
     "EvidenceAuditLog",
+    "MassBalanceConfig",
+    "MassBalanceAnomaly",
     "BatchStatus",
     "VerificationTier",
     "FeedstockIngest",
@@ -121,3 +125,4 @@ __all__ = [
     "LabAssay",
     "DistributionSink",
 ]
+

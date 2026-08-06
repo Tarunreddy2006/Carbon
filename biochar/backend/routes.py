@@ -23,6 +23,7 @@ import hashlib
 from biochar.backend.database import get_db
 from biochar.backend.models import (
     BatchStatus,
+    FeedstockBatch,
     BiocharBatch,
     BiocharApplication,
     BiocharSample,
@@ -38,7 +39,11 @@ from biochar.backend.models import (
     EvidenceReview,
     EvidenceAIResult,
     EvidenceAuditLog,
+    MassBalanceConfig,
+    MassBalanceAnomaly,
 )
+from biochar.backend.mass_balance import MassBalanceService
+
 from biochar.backend.validation import (
     calculate_net_sequestration,
     evaluate_chemical_permanence,
@@ -1629,3 +1634,332 @@ async def download_evidence(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to download evidence file: {exc}"
         )
+
+
+# ─── Mass Balance & Anomaly Engine Endpoints ──────────────────────────────────
+
+class FeedstockEvaluateRequest(BaseModel):
+    batch_code: str
+    project_id: str
+    feedstock_type: str
+    wet_weight_kg: float
+    moisture_percent: float
+    moisture_measurement_method: Optional[str] = "Oven Drying"
+    expected_yield_percent: Optional[float] = 30.0
+    supplier_name: Optional[str] = None
+    origin_location: Optional[str] = None
+    organization_id: Optional[str] = None
+
+
+class BatchEvaluateRequest(BaseModel):
+    batch_code: str
+    pyrolysis_run_id: str
+    produced_weight_kg: float
+    storage_location: Optional[str] = None
+    organization_id: Optional[str] = None
+
+
+class ResolveAlertRequest(BaseModel):
+    user_id: Optional[str] = None
+    comments: Optional[str] = None
+
+
+class MassBalanceConfigRequest(BaseModel):
+    organization_id: Optional[str] = None
+    min_yield_percent: float = Field(15.0, ge=0.0, le=100.0)
+    max_yield_percent: float = Field(50.0, ge=0.0, le=100.0)
+    max_moisture_percent: float = Field(65.0, ge=0.0, le=100.0)
+
+
+@router.post("/mass-balance/feedstock/evaluate", status_code=status.HTTP_200_OK)
+async def evaluate_feedstock_mass_balance(
+    payload: FeedstockEvaluateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Evaluates feedstock mass balance calculations (dry weight & water weight) and detects moisture/input anomalies.
+    Persists or updates FeedstockBatch record.
+    """
+    try:
+        project_uuid = uuid.UUID(payload.project_id)
+        org_uuid = uuid.UUID(payload.organization_id) if payload.organization_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid project_id or organization_id UUID format")
+
+    batch = db.query(FeedstockBatch).filter(FeedstockBatch.batch_code == payload.batch_code).first()
+    if not batch:
+        batch = FeedstockBatch(
+            project_id=project_uuid,
+            batch_code=payload.batch_code,
+            feedstock_type=payload.feedstock_type,
+            supplier_name=payload.supplier_name,
+            origin_location=payload.origin_location,
+        )
+        db.add(batch)
+        db.flush()
+
+    batch.wet_weight_kg = payload.wet_weight_kg
+    batch.weight_kg = payload.wet_weight_kg
+    batch.moisture_percent = payload.moisture_percent
+    batch.moisture_measurement_method = payload.moisture_measurement_method
+    batch.expected_yield_percent = payload.expected_yield_percent
+
+    anomalies = MassBalanceService.evaluate_feedstock(
+        db=db,
+        feedstock_batch=batch,
+        organization_id=org_uuid,
+        project_id=project_uuid,
+    )
+    db.commit()
+
+    return {
+        "status": "success",
+        "batch_id": str(batch.id),
+        "batch_code": batch.batch_code,
+        "wet_weight_kg": batch.wet_weight_kg,
+        "dry_weight_kg": batch.dry_weight_kg,
+        "water_weight_kg": batch.water_weight_kg,
+        "moisture_percent": batch.moisture_percent,
+        "anomalies": [a.to_dict() for a in anomalies],
+    }
+
+
+@router.post("/mass-balance/batch/evaluate", status_code=status.HTTP_200_OK)
+async def evaluate_biochar_batch_mass_balance(
+    payload: BatchEvaluateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Evaluates biochar production yield percentage against dry biomass input and flags yield anomalies.
+    """
+    try:
+        run_uuid = uuid.UUID(payload.pyrolysis_run_id)
+        org_uuid = uuid.UUID(payload.organization_id) if payload.organization_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid pyrolysis_run_id or organization_id UUID format")
+
+    batch = db.query(BiocharBatch).filter(BiocharBatch.batch_code == payload.batch_code).first()
+    if not batch:
+        batch = BiocharBatch(
+            pyrolysis_run_id=run_uuid,
+            batch_code=payload.batch_code,
+            storage_location=payload.storage_location,
+        )
+        db.add(batch)
+        db.flush()
+
+    batch.produced_weight_kg = payload.produced_weight_kg
+    batch.weight_kg = payload.produced_weight_kg
+
+    anomalies = MassBalanceService.evaluate_biochar_batch(
+        db=db,
+        biochar_batch=batch,
+        organization_id=org_uuid,
+    )
+    db.commit()
+
+    return {
+        "status": "success",
+        "batch_id": str(batch.id),
+        "batch_code": batch.batch_code,
+        "produced_weight_kg": batch.produced_weight_kg,
+        "calculated_yield_percent": batch.calculated_yield_percent,
+        "mass_balance_status": batch.mass_balance_status,
+        "anomaly_status": batch.anomaly_status,
+        "anomaly_reason": batch.anomaly_reason,
+        "anomalies": [a.to_dict() for a in anomalies],
+    }
+
+
+@router.get("/mass-balance/dashboard-stats", status_code=status.HTTP_200_OK)
+async def get_mass_balance_dashboard_stats(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns aggregated Mass Balance metrics for Executive Dashboard widgets & Yield Trend chart.
+    """
+    feedstock_query = db.query(FeedstockBatch)
+    batch_query = db.query(BiocharBatch)
+    anomalies_query = db.query(MassBalanceAnomaly).filter(MassBalanceAnomaly.status == "Active")
+
+    if organization_id:
+        try:
+            org_uuid = uuid.UUID(organization_id)
+            anomalies_query = anomalies_query.filter(MassBalanceAnomaly.organization_id == org_uuid)
+        except ValueError:
+            pass
+
+    feedstocks = feedstock_query.all()
+    batches = batch_query.all()
+    active_anomalies = anomalies_query.all()
+
+    total_wet_kg = sum(f.wet_weight_kg or f.weight_kg or 0 for f in feedstocks)
+    total_dry_kg = sum(f.dry_weight_kg or 0 for f in feedstocks)
+
+    valid_moistures = [f.moisture_percent for f in feedstocks if f.moisture_percent is not None]
+    avg_moisture = (sum(valid_moistures) / len(valid_moistures)) if valid_moistures else 0.0
+
+    total_produced_kg = sum(b.produced_weight_kg or b.weight_kg or 0 for b in batches)
+    valid_yields = [b.calculated_yield_percent for b in batches if b.calculated_yield_percent is not None]
+    avg_yield = (sum(valid_yields) / len(valid_yields)) if valid_yields else 0.0
+
+    # Build yield trend timeline (latest 20 batches)
+    yield_trend = []
+    sorted_batches = sorted(batches, key=lambda x: x.created_at or datetime.min)
+    for b in sorted_batches[-20:]:
+        yield_trend.append({
+            "batch_code": b.batch_code,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+            "calculated_yield": b.calculated_yield_percent,
+            "mass_balance_status": b.mass_balance_status,
+            "anomaly_status": b.anomaly_status,
+        })
+
+    return {
+        "status": "success",
+        "total_wet_biomass_kg": round(total_wet_kg, 2),
+        "total_wet_biomass_tonnes": round(total_wet_kg / 1000.0, 3),
+        "total_dry_biomass_kg": round(total_dry_kg, 2),
+        "total_dry_biomass_tonnes": round(total_dry_kg / 1000.0, 3),
+        "average_moisture_percent": round(avg_moisture, 2),
+        "total_biochar_produced_kg": round(total_produced_kg, 2),
+        "total_biochar_produced_tonnes": round(total_produced_kg / 1000.0, 3),
+        "average_yield_percent": round(avg_yield, 2),
+        "active_anomalies_count": len(active_anomalies),
+        "yield_trend": yield_trend,
+    }
+
+
+@router.get("/mass-balance/alerts", status_code=status.HTTP_200_OK)
+async def get_operational_alerts(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves unresolved operational alerts / anomalies for the Operational Alerts panel.
+    """
+    query = db.query(MassBalanceAnomaly).filter(MassBalanceAnomaly.status == "Active")
+    if organization_id:
+        try:
+            org_uuid = uuid.UUID(organization_id)
+            query = query.filter(MassBalanceAnomaly.organization_id == org_uuid)
+        except ValueError:
+            pass
+
+    alerts = query.order_by(MassBalanceAnomaly.created_at.desc()).all()
+
+    results = []
+    for a in alerts:
+        results.append({
+            "id": str(a.id),
+            "organization_id": str(a.organization_id) if a.organization_id else None,
+            "project_id": str(a.project_id) if a.project_id else None,
+            "entity_type": a.entity_type,
+            "entity_id": str(a.entity_id),
+            "severity": a.severity,
+            "category": a.category,
+            "explanation": a.human_readable_explanation,
+            "status": a.status,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        })
+
+    return {"status": "success", "alerts": results, "total_active": len(results)}
+
+
+@router.post("/mass-balance/alerts/{alert_id}/resolve", status_code=status.HTTP_200_OK)
+async def resolve_operational_alert(
+    alert_id: str,
+    payload: ResolveAlertRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Marks an operational anomaly alert as Resolved.
+    """
+    try:
+        alert_uuid = uuid.UUID(alert_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid alert_id UUID format")
+
+    alert = db.query(MassBalanceAnomaly).filter(MassBalanceAnomaly.id == alert_uuid).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    user_uuid = uuid.UUID(payload.user_id) if payload.user_id else None
+
+    alert.status = "Resolved"
+    alert.resolved_at = datetime.now(timezone.utc)
+    alert.resolved_by = user_uuid
+
+    # Log audit record
+    audit_log = EvidenceAuditLog(
+        user_id=user_uuid,
+        action="RESOLVE_MASS_BALANCE_ANOMALY",
+        details={
+            "alert_id": alert_id,
+            "entity_type": alert.entity_type,
+            "entity_id": str(alert.entity_id),
+            "category": alert.category,
+            "comments": payload.comments,
+        }
+    )
+    db.add(audit_log)
+    db.commit()
+
+    return {"status": "success", "message": "Operational alert resolved successfully", "alert_id": alert_id}
+
+
+@router.get("/mass-balance/config", status_code=status.HTTP_200_OK)
+async def get_mass_balance_config(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves mass balance threshold configuration for an organization or default.
+    """
+    org_uuid = uuid.UUID(organization_id) if organization_id else None
+    config = MassBalanceService.get_organization_config(db, org_uuid)
+
+    return {
+        "status": "success",
+        "organization_id": organization_id,
+        "min_yield_percent": config.min_yield_percent,
+        "max_yield_percent": config.max_yield_percent,
+        "max_moisture_percent": config.max_moisture_percent,
+    }
+
+
+@router.post("/mass-balance/config", status_code=status.HTTP_200_OK)
+async def set_mass_balance_config(
+    payload: MassBalanceConfigRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Sets mass balance threshold configuration (min yield, max yield, max moisture).
+    """
+    org_uuid = uuid.UUID(payload.organization_id) if payload.organization_id else None
+    config = None
+    if org_uuid:
+        config = db.query(MassBalanceConfig).filter(MassBalanceConfig.organization_id == org_uuid).first()
+
+    if not config:
+        config = MassBalanceConfig(organization_id=org_uuid)
+        db.add(config)
+
+    config.min_yield_percent = payload.min_yield_percent
+    config.max_yield_percent = payload.max_yield_percent
+    config.max_moisture_percent = payload.max_moisture_percent
+    config.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": "Mass balance threshold configuration updated successfully",
+        "config": {
+            "min_yield_percent": config.min_yield_percent,
+            "max_yield_percent": config.max_yield_percent,
+            "max_moisture_percent": config.max_moisture_percent,
+        }
+    }
+
