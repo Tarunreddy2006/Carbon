@@ -244,86 +244,149 @@ const SettingsModule = {
     },
 
     async loadOrgData() {
-        const orgId = Auth.orgId;
-        if (!orgId) return;
+        let orgId = Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null);
+        
+        // 1. Populate form if org exists
+        if (orgId) {
+            try {
+                const { data } = await OfflineStorage.fetchWithCache('organizations', () => 
+                    supabase
+                        .from('organizations')
+                        .select('*')
+                        .eq('id', orgId)
+                        .maybeSingle()
+                , { isSingle: true, id: orgId });
 
-        try {
-            const { data, error } = await OfflineStorage.fetchWithCache('organizations', () => 
-                supabase
-                    .from('organizations')
-                    .select('*')
-                    .eq('id', orgId)
-                    .single()
-            , { isSingle: true, id: orgId });
+                if (data) {
+                    const nameEl = document.getElementById('org-display-name');
+                    if (nameEl) nameEl.value = data.name || '';
+                    const legalEl = document.getElementById('org-legal-name');
+                    if (legalEl) legalEl.value = data.legal_name || '';
+                    const regEl = document.getElementById('org-reg-num');
+                    if (regEl) regEl.value = data.registration_number || '';
+                    const taxEl = document.getElementById('org-tax-num');
+                    if (taxEl) taxEl.value = data.gst_number || '';
+                    const emailEl = document.getElementById('org-email');
+                    if (emailEl) emailEl.value = data.email || '';
+                    const phoneEl = document.getElementById('org-phone');
+                    if (phoneEl) phoneEl.value = data.phone || '';
+                    const webEl = document.getElementById('org-website');
+                    if (webEl) webEl.value = data.website || '';
+                    const addrEl = document.getElementById('org-address');
+                    if (addrEl) addrEl.value = data.address || '';
+                }
+            } catch (err) {
+                console.warn('[SettingsModule] Failed to populate org details:', err);
+            }
+        }
 
-            if (error) throw error;
-            if (!data) return;
+        // 2. Always bind Form Submit Listener for Create / Update
+        const form = document.getElementById('org-settings-form');
+        if (!form) return;
 
-            const nameEl = document.getElementById('org-display-name');
-            if (nameEl) nameEl.value = data.name || '';
-            const legalEl = document.getElementById('org-legal-name');
-            if (legalEl) legalEl.value = data.legal_name || '';
-            const regEl = document.getElementById('org-reg-num');
-            if (regEl) regEl.value = data.registration_number || '';
-            const taxEl = document.getElementById('org-tax-num');
-            if (taxEl) taxEl.value = data.gst_number || '';
-            const emailEl = document.getElementById('org-email');
-            if (emailEl) emailEl.value = data.email || '';
-            const phoneEl = document.getElementById('org-phone');
-            if (phoneEl) phoneEl.value = data.phone || '';
-            const webEl = document.getElementById('org-website');
-            if (webEl) webEl.value = data.website || '';
-            const addrEl = document.getElementById('org-address');
-            if (addrEl) addrEl.value = data.address || '';
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const { valid } = FormValidator.validate(form);
+            if (!valid) return;
 
-            // Form Submit
-            const form = document.getElementById('org-settings-form');
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const { valid } = FormValidator.validate(form);
-                if (!valid) return;
+            const btn = document.getElementById('save-org-btn');
+            btn.classList.add('loading');
+            btn.disabled = true;
 
-                const btn = document.getElementById('save-org-btn');
-                btn.classList.add('loading');
-                btn.disabled = true;
+            const payload = {
+                name: document.getElementById('org-display-name').value.trim(),
+                legal_name: document.getElementById('org-legal-name').value.trim(),
+                registration_number: document.getElementById('org-reg-num').value.trim(),
+                gst_number: document.getElementById('org-tax-num').value.trim(),
+                email: document.getElementById('org-email').value.trim(),
+                phone: document.getElementById('org-phone').value.trim(),
+                website: document.getElementById('org-website').value.trim(),
+                address: document.getElementById('org-address').value.trim(),
+                updated_at: new Date().toISOString()
+            };
 
-                const payload = {
-                    name: document.getElementById('org-display-name').value.trim(),
-                    legal_name: document.getElementById('org-legal-name').value.trim(),
-                    registration_number: document.getElementById('org-reg-num').value.trim(),
-                    gst_number: document.getElementById('org-tax-num').value.trim(),
-                    email: document.getElementById('org-email').value.trim(),
-                    phone: document.getElementById('org-phone').value.trim(),
-                    website: document.getElementById('org-website').value.trim(),
-                    address: document.getElementById('org-address').value.trim(),
-                    updated_at: new Date().toISOString()
-                };
+            try {
+                let currentOrgId = orgId || Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null);
+                let existingOrg = null;
 
-                try {
+                if (currentOrgId && currentOrgId !== '00000000-0000-0000-0000-000000000000' && currentOrgId !== '00000000-0000-0000-0000-000000000001') {
+                    const { data } = await supabase
+                        .from('organizations')
+                        .select('id')
+                        .eq('id', currentOrgId)
+                        .maybeSingle();
+                    existingOrg = data;
+                }
+
+                if (existingOrg) {
+                    // UPDATE existing organization
                     const { error } = await supabase
                         .from('organizations')
                         .update(payload)
-                        .eq('id', orgId);
+                        .eq('id', currentOrgId);
 
                     if (error) throw error;
+                    Toast.success('Organization details updated successfully');
+                } else {
+                    // CREATE new organization (INSERT)
+                    const newOrgId = (currentOrgId && currentOrgId !== '00000000-0000-0000-0000-000000000000' && currentOrgId !== '00000000-0000-0000-0000-000000000001')
+                        ? currentOrgId
+                        : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'org-' + Date.now());
 
-                    // Reload cache to sync name in sidebar
-                    clearProfileCache();
-                    await Auth.guard();
-                    Auth.populateUI();
+                    const createPayload = {
+                        id: newOrgId,
+                        ...payload,
+                        created_at: new Date().toISOString()
+                    };
 
-                    Toast.success('Organization details updated');
-                } catch (err) {
-                    console.error(err);
-                    Toast.error('Failed to update organization: ' + err.message);
-                } finally {
-                    btn.classList.remove('loading');
-                    btn.disabled = false;
+                    const { error: createErr } = await supabase
+                        .from('organizations')
+                        .insert(createPayload);
+
+                    if (createErr) throw createErr;
+
+                    // Link current user to new organization in profiles and organization_members
+                    const user = typeof getUser === 'function' ? await getUser() : (Auth.user || null);
+                    if (user && user.id) {
+                        try {
+                            await supabase
+                                .from('profiles')
+                                .update({ organization_id: newOrgId })
+                                .eq('id', user.id);
+
+                            await supabase
+                                .from('organization_members')
+                                .insert({
+                                    organization_id: newOrgId,
+                                    user_id: user.id,
+                                    role_id: 1, // Owner
+                                    status: 'Active'
+                                });
+                        } catch (linkErr) {
+                            console.warn('[SettingsModule] Org linkage warning:', linkErr);
+                        }
+                    }
+
+                    if (typeof localStorage !== 'undefined') {
+                        localStorage.setItem('stomata_active_org_id', newOrgId);
+                    }
+
+                    Toast.success('Organization created successfully');
                 }
-            });
-        } catch (err) {
-            console.error('Failed to load org settings:', err);
-        }
+
+                // Reload profile cache & update UI context
+                if (typeof clearProfileCache === 'function') clearProfileCache();
+                if (typeof Auth !== 'undefined' && Auth.guard) await Auth.guard();
+                if (typeof Auth !== 'undefined' && Auth.populateUI) Auth.populateUI();
+
+            } catch (err) {
+                console.error(err);
+                Toast.error('Failed to save organization: ' + err.message);
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        });
     },
 
     _roles: null,
