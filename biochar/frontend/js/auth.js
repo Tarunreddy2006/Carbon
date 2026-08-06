@@ -148,10 +148,16 @@ const Auth = {
     populateUI() {
         const avatarEl = document.getElementById('topbar-avatar');
         const nameEl = document.getElementById('topbar-user-name');
+        const roleBadgeEl = document.getElementById('topbar-user-role');
+        const dropdownRoleEl = document.getElementById('dropdown-user-role');
         const orgNameEl = document.getElementById('sidebar-org-name');
+
+        const roleName = (this.getUserRole() || 'viewer').toUpperCase();
 
         if (avatarEl) avatarEl.textContent = this.initials;
         if (nameEl) nameEl.textContent = this.displayName;
+        if (roleBadgeEl) roleBadgeEl.textContent = roleName;
+        if (dropdownRoleEl) dropdownRoleEl.textContent = `Role: ${roleName}`;
         if (orgNameEl) orgNameEl.textContent = this.orgName;
     },
 };

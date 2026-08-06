@@ -224,11 +224,13 @@
                     <div class="topbar-user relative" id="topbar-user-btn">
                         <div class="topbar-avatar" id="topbar-avatar">?</div>
                         <span class="topbar-user-name" id="topbar-user-name">User</span>
+                        <span class="badge badge-primary" id="topbar-user-role" style="font-size: 0.7rem; padding: 2px 6px; text-transform: uppercase; margin-left: 4px;">OWNER</span>
                         <!-- User dropdown -->
                         <div class="user-dropdown" id="user-dropdown">
                             <div class="user-dropdown-header">
                                 <div class="user-dropdown-name" id="dropdown-user-name"></div>
                                 <div class="user-dropdown-email" id="dropdown-user-email"></div>
+                                <div class="user-dropdown-role text-xs text-muted mt-1" id="dropdown-user-role" style="font-size: 0.75rem; color: var(--color-text-muted);">Role: OWNER</div>
                             </div>
                             <button class="user-dropdown-item" onclick="Router.navigate('/settings')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
