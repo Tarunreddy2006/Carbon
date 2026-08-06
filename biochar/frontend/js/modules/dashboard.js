@@ -72,7 +72,16 @@ const DashboardModule = {
                     <div class="kpi-card-value text-danger" id="kpi-active-anomalies">—</div>
                     <small>Unresolved mass balance alerts</small>
                 </div>
+                <div class="kpi-card">
+                    <div class="kpi-card-header">
+                        <span class="kpi-card-label">Chain of Custody</span>
+                        <span class="kpi-card-icon">🛡️</span>
+                    </div>
+                    <div class="kpi-card-value text-success" id="kpi-custody-completion">100%</div>
+                    <small>Immutable traceability rate</small>
+                </div>
             </div>
+
 
             <!-- Charts & Alerts Grid -->
             <div class="charts-grid animate-fade-up" style="margin-bottom: var(--space-6);">

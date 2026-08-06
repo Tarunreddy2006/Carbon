@@ -54,6 +54,7 @@ from biochar.backend.models.core import (
     FeedstockSupplier,
     FeedstockIntelligenceConfig,
     FeedstockIntelligenceLog,
+    ChainOfCustodyEvent,
 )
 
 
@@ -128,6 +129,7 @@ __all__ = [
     "FeedstockSupplier",
     "FeedstockIntelligenceConfig",
     "FeedstockIntelligenceLog",
+    "ChainOfCustodyEvent",
     "BatchStatus",
     "VerificationTier",
     "FeedstockIngest",
@@ -135,6 +137,7 @@ __all__ = [
     "LabAssay",
     "DistributionSink",
 ]
+
 
 
 

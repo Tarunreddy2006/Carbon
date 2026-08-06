@@ -774,4 +774,34 @@ class FeedstockIntelligenceLog(UUIDMixin, Base):
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Chain of Custody & Traceability Models (Phase 4)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class ChainOfCustodyEvent(UUIDMixin, Base):
+    __tablename__ = "chain_of_custody_events"
+
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    parent_entity_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    parent_entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(pgUUID(as_uuid=True), nullable=True)
+    child_entity_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    child_entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(pgUUID(as_uuid=True), nullable=True)
+    quantity: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    quantity_unit: Mapped[str] = mapped_column(String(20), server_default=text("'kg'"), nullable=False)
+    operator_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    site_id: Mapped[Optional[uuid.UUID]] = mapped_column(pgUUID(as_uuid=True), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), server_default=text("'Verified'"), nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+
 

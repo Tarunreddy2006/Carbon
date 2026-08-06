@@ -486,5 +486,33 @@ CREATE TABLE IF NOT EXISTS public.feedstock_intelligence_logs (
 
 CREATE INDEX IF NOT EXISTS idx_fs_intel_logs_fs ON public.feedstock_intelligence_logs(feedstock_id);
 
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Phase 4 Chain of Custody Engine Extensions
+-- ──────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.chain_of_custody_events (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid REFERENCES public.organizations(id) ON DELETE CASCADE,
+  project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL,
+  event_type text NOT NULL,
+  parent_entity_type text,
+  parent_entity_id uuid,
+  child_entity_type text,
+  child_entity_id uuid,
+  quantity double precision,
+  quantity_unit text NOT NULL DEFAULT 'kg',
+  operator_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  site_id uuid,
+  timestamp timestamp with time zone NOT NULL DEFAULT now(),
+  status text NOT NULL DEFAULT 'Verified',
+  notes text,
+  CONSTRAINT chain_of_custody_events_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_coc_events_parent ON public.chain_of_custody_events(parent_entity_type, parent_entity_id);
+CREATE INDEX IF NOT EXISTS idx_coc_events_child ON public.chain_of_custody_events(child_entity_type, child_entity_id);
+CREATE INDEX IF NOT EXISTS idx_coc_events_event_type ON public.chain_of_custody_events(event_type);
+
+
 
 

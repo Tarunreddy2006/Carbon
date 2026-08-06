@@ -58,6 +58,15 @@ from biochar.backend.feedstock_intelligence import (
     FeedstockRecommendationService,
     FeedstockDashboardService,
 )
+from biochar.backend.chain_of_custody import (
+    ChainOfCustodyService,
+    MaterialTraceabilityService,
+    CustodyValidationService,
+    MaterialTimelineService,
+    BatchPassportService,
+    ChainDashboardService,
+)
+
 
 
 
@@ -2456,6 +2465,198 @@ async def set_feedstock_intelligence_config(
             "quality_weights": config.quality_weights,
         }
     }
+
+
+# ─── Chain of Custody & Traceability Engine Endpoints (Phase 4) ───────────────
+
+@router.get("/chain-of-custody/timeline/{entity_type}/{entity_id}", status_code=status.HTTP_200_OK)
+async def get_chain_of_custody_timeline(
+    entity_type: str,
+    entity_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns visual step-by-step timeline view from Reception to Customer Delivery.
+    """
+    try:
+        uuid_val = uuid.UUID(entity_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid entity_id UUID format")
+
+    steps = MaterialTimelineService.get_timeline(db, entity_type, uuid_val)
+    return {"status": "success", "entity_type": entity_type, "entity_id": entity_id, "timeline": steps}
+
+
+@router.get("/chain-of-custody/history/{entity_type}/{entity_id}", status_code=status.HTTP_200_OK)
+async def get_chain_of_custody_history(
+    entity_type: str,
+    entity_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns complete upstream origin and downstream distribution material history graph.
+    """
+    try:
+        uuid_val = uuid.UUID(entity_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid entity_id UUID format")
+
+    upstream = MaterialTraceabilityService.trace_upstream(db, entity_type, uuid_val)
+    downstream = MaterialTraceabilityService.trace_downstream(db, entity_type, uuid_val)
+    events = ChainOfCustodyService.get_events_for_entity(db, entity_type, uuid_val)
+
+    event_list = [
+        {
+            "id": str(e.id),
+            "event_type": e.event_type,
+            "parent": f"{e.parent_entity_type}:{e.parent_entity_id}",
+            "child": f"{e.child_entity_type}:{e.child_entity_id}",
+            "quantity": e.quantity,
+            "quantity_unit": e.quantity_unit,
+            "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+            "status": e.status,
+            "notes": e.notes,
+        }
+        for e in events
+    ]
+
+    return {
+        "status": "success",
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+        "upstream": upstream,
+        "downstream": downstream,
+        "events": event_list,
+    }
+
+
+@router.get("/chain-of-custody/passport/{batch_id}", status_code=status.HTTP_200_OK)
+async def get_digital_batch_passport(
+    batch_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Generates complete Digital Batch Passport summary & JSON artifact.
+    """
+    try:
+        batch_uuid = uuid.UUID(batch_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid batch_id UUID format")
+
+    try:
+        passport = BatchPassportService.get_passport(db, batch_uuid)
+        return passport
+    except ValueError as val_err:
+        raise HTTPException(status_code=404, detail=str(val_err))
+
+
+@router.get("/chain-of-custody/validation/{entity_type}/{entity_id}", status_code=status.HTTP_200_OK)
+async def validate_chain_of_custody(
+    entity_type: str,
+    entity_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Validates custody chain for missing links, uncertified lab samples, missing evidence, or quantity mismatch.
+    """
+    try:
+        uuid_val = uuid.UUID(entity_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid entity_id UUID format")
+
+    res = CustodyValidationService.validate_chain(db, entity_type, uuid_val)
+    return res
+
+
+@router.get("/chain-of-custody/search", status_code=status.HTTP_200_OK)
+async def global_traceability_search(
+    query: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Global material traceability search across Batch ID, Feedstock Lot, Sample ID, Supplier, or Customer.
+    """
+    if not query or len(query.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Search query must be at least 2 characters")
+
+    q_str = query.strip()
+    results = []
+
+    # Search Biochar Batches
+    batches = db.query(BiocharBatch).filter(BiocharBatch.batch_code.ilike(f"%{q_str}%")).all()
+    for b in batches:
+        results.append({
+            "type": "Biochar Batch",
+            "id": str(b.id),
+            "code": b.batch_code,
+            "title": f"Batch Lot #{b.batch_code}",
+            "status": b.validation_status,
+            "link": f"/chain-of-custody/passport/{b.id}",
+        })
+
+    # Search Feedstock Batches
+    feedstocks = db.query(FeedstockBatch).filter(
+        or_(FeedstockBatch.batch_code.ilike(f"%{q_str}%"), FeedstockBatch.feedstock_lot_number.ilike(f"%{q_str}%"), FeedstockBatch.supplier_name.ilike(f"%{q_str}%"))
+    ).all()
+    for fs in feedstocks:
+        results.append({
+            "type": "Feedstock Lot",
+            "id": str(fs.id),
+            "code": fs.feedstock_lot_number or fs.batch_code,
+            "title": f"Biomass Lot #{fs.feedstock_lot_number or fs.batch_code} ({fs.supplier_name or 'General'})",
+            "status": fs.quality_status,
+            "link": f"/chain-of-custody/timeline/feedstock_batch/{fs.id}",
+        })
+
+    # Search Samples
+    samples = db.query(BiocharSample).filter(BiocharSample.sample_code.ilike(f"%{q_str}%")).all()
+    for s in samples:
+        results.append({
+            "type": "Laboratory Sample",
+            "id": str(s.id),
+            "code": s.sample_code,
+            "title": f"Lab Sample #{s.sample_code}",
+            "status": s.laboratory_status,
+            "link": f"/chain-of-custody/timeline/biochar_sample/{s.id}",
+        })
+
+    return {"status": "success", "query": q_str, "results": results, "total_matches": len(results)}
+
+
+@router.get("/chain-of-custody/broken-chains", status_code=status.HTTP_200_OK)
+async def get_broken_custody_chains(
+    db: Session = Depends(get_db)
+):
+    """
+    Lists broken or incomplete custody chains requiring resolution.
+    """
+    batches = db.query(BiocharBatch).all()
+    broken_list = []
+
+    for b in batches:
+        val = CustodyValidationService.validate_chain(db, "biochar_batch", b.id)
+        if val["status"] in ("Broken", "Warning", "High Risk"):
+            broken_list.append({
+                "batch_id": str(b.id),
+                "batch_code": b.batch_code,
+                "status": val["status"],
+                "verification_badge": val["verification_badge"],
+                "issues": val["issues"],
+                "total_issues": val["total_issues"],
+            })
+
+    return {"status": "success", "broken_chains": broken_list, "count": len(broken_list)}
+
+
+@router.get("/chain-of-custody/dashboard-stats", status_code=status.HTTP_200_OK)
+async def get_chain_of_custody_dashboard_stats(
+    db: Session = Depends(get_db)
+):
+    """
+    Returns aggregated metrics for Chain of Custody Dashboard.
+    """
+    return ChainDashboardService.get_dashboard_metrics(db)
+
 
 
 
