@@ -160,7 +160,7 @@ const AuthRepository = {
     createFallbackProfile(user, orgId = null) {
         const meta = user.user_metadata || {};
         const isValidUuid = (str) => typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(str) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-        const validOrgId = isValidUuid(orgId) ? orgId : (isValidUuid(meta.org_id) ? meta.org_id : '00000000-0000-0000-0000-000000000000');
+        const validOrgId = isValidUuid(orgId) ? orgId : (isValidUuid(meta.org_id) ? meta.org_id : null);
         return {
             id: user.id,
             first_name: meta.first_name || 'Offline',

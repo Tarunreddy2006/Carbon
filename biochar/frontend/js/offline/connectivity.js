@@ -32,7 +32,8 @@ const Connectivity = {
 
         this.verifyPromise = (async () => {
             try {
-                const testUrl = '/api/v1/biochar/evidence/list?organization_id=00000000-0000-0000-0000-000000000000&page_size=1';
+                const activeOrgId = (typeof Auth !== 'undefined' && Auth.orgId) ? Auth.orgId : '';
+                const testUrl = activeOrgId ? `/api/v1/biochar/evidence/list?organization_id=${activeOrgId}&page_size=1` : '/api/v1/biochar/evidence/list?page_size=1';
                 const controller = new AbortController();
                 const id = setTimeout(() => controller.abort(), 3000);
                 

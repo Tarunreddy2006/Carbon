@@ -513,17 +513,25 @@ CREATE INDEX IF NOT EXISTS idx_coc_events_parent ON public.chain_of_custody_even
 CREATE INDEX IF NOT EXISTS idx_coc_events_child ON public.chain_of_custody_events(child_entity_type, child_entity_id);
 CREATE INDEX IF NOT EXISTS idx_coc_events_event_type ON public.chain_of_custody_events(event_type);
 
--- 0. Ensure default fallback organization exists
-INSERT INTO public.organizations (id, name, created_at, updated_at)
-VALUES ('00000000-0000-0000-0000-000000000001', 'Stomata Biochar Primary Org', now(), now())
-ON CONFLICT (id) DO NOTHING;
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Row Level Security (RLS) Policies & Helper Function (matching editor.sql)
+-- ──────────────────────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.get_user_organization_id()
+RETURNS uuid
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT organization_id FROM public.profiles WHERE id = auth.uid();
+$$;
 
 -- 1. Enable RLS
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mass_balance_anomalies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.mass_balance_configs ENABLE ROW LEVEL SECURITY;
 
--- 2. Projects RLS Policies
+-- 2. Projects RLS Policies (matching editor.sql)
 DROP POLICY IF EXISTS "Users can view projects in their organization" ON public.projects;
 DROP POLICY IF EXISTS "Users can insert projects in their organization" ON public.projects;
 DROP POLICY IF EXISTS "Users can update projects in their organization" ON public.projects;
@@ -531,52 +539,20 @@ DROP POLICY IF EXISTS "Users can delete projects in their organization" ON publi
 
 CREATE POLICY "Users can view projects in their organization"
 ON public.projects FOR SELECT TO authenticated
-USING (
-  organization_id IN (
-    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
-    UNION
-    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
-  )
-  OR organization_id IS NULL
-);
+USING (organization_id = public.get_user_organization_id());
 
 CREATE POLICY "Users can insert projects in their organization"
 ON public.projects FOR INSERT TO authenticated
-WITH CHECK (
-  organization_id IN (
-    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
-    UNION
-    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
-  )
-  OR organization_id IS NULL
-);
+WITH CHECK (organization_id = public.get_user_organization_id());
 
 CREATE POLICY "Users can update projects in their organization"
 ON public.projects FOR UPDATE TO authenticated
-USING (
-  organization_id IN (
-    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
-    UNION
-    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
-  )
-)
-WITH CHECK (
-  organization_id IN (
-    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
-    UNION
-    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
-  )
-);
+USING (organization_id = public.get_user_organization_id())
+WITH CHECK (organization_id = public.get_user_organization_id());
 
 CREATE POLICY "Users can delete projects in their organization"
 ON public.projects FOR DELETE TO authenticated
-USING (
-  organization_id IN (
-    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
-    UNION
-    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
-  )
-);
+USING (organization_id = public.get_user_organization_id());
 
 -- 3. Mass Balance Anomalies RLS Policies
 DROP POLICY IF EXISTS "Users can view mass_balance_anomalies in their organization" ON public.mass_balance_anomalies;
@@ -585,26 +561,21 @@ DROP POLICY IF EXISTS "Users can insert mass_balance_anomalies in their organiza
 CREATE POLICY "Users can view mass_balance_anomalies in their organization"
 ON public.mass_balance_anomalies FOR SELECT TO authenticated
 USING (
-  organization_id IN (
-    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
-    UNION
-    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
-  )
+  organization_id = public.get_user_organization_id()
   OR organization_id IS NULL
 );
 
 CREATE POLICY "Users can insert mass_balance_anomalies in their organization"
 ON public.mass_balance_anomalies FOR INSERT TO authenticated
 WITH CHECK (
-  organization_id IN (
-    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
-    UNION
-    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
-  )
+  organization_id = public.get_user_organization_id()
   OR organization_id IS NULL
 );
 
 -- 4. Grant table access to authenticated role
+GRANT ALL ON public.organizations TO authenticated;
+GRANT ALL ON public.profiles TO authenticated;
+GRANT ALL ON public.organization_members TO authenticated;
 GRANT ALL ON public.projects TO authenticated;
 GRANT ALL ON public.mass_balance_anomalies TO authenticated;
 GRANT ALL ON public.mass_balance_configs TO authenticated;

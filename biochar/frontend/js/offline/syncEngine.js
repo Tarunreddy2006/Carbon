@@ -164,7 +164,7 @@ const SyncEngine = {
                 let query = originalSupabase.from(table).select('*');
                 
                 // If valid org context available, filter relevant tables
-                const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) && orgId !== '00000000-0000-0000-0000-000000000000';
+                const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId));
                 if (isValidOrgId && ['projects', 'feedstock_batches', 'pyrolysis_runs', 'biochar_batches', 'laboratory_tests', 'shipments', 'evidence'].includes(table)) {
                     if (table === 'projects') {
                         query = query.eq('organization_id', orgId);

@@ -540,7 +540,7 @@ const EvidenceModule = {
                 if (typeof Connectivity !== 'undefined' && !Connectivity.isOnline) {
                     const projIdVal = context?.project_id || document.getElementById('ems-project').value || null;
                     const entityTypeVal = context?.entity_type || 'unlinked';
-                    const entityIdVal = context?.entity_id || '00000000-0000-0000-0000-000000000000';
+                    const entityIdVal = context?.entity_id || null;
                     const activityVal = context?.activity || document.getElementById('ems-activity').value;
 
                     await UploadQueue.queueFileUpload(file, {
@@ -565,7 +565,7 @@ const EvidenceModule = {
 
                 const projIdVal = context?.project_id || document.getElementById('ems-project').value || null;
                 const entityTypeVal = context?.entity_type || 'unlinked';
-                const entityIdVal = context?.entity_id || '00000000-0000-0000-0000-000000000000';
+                const entityIdVal = context?.entity_id || null;
                 const activityVal = context?.activity || document.getElementById('ems-activity').value;
 
                 // 1. Request presigned upload URL from backend

@@ -309,7 +309,7 @@ const SettingsModule = {
                 let currentOrgId = orgId || Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null);
                 let existingOrg = null;
 
-                if (currentOrgId && currentOrgId !== '00000000-0000-0000-0000-000000000000' && currentOrgId !== '00000000-0000-0000-0000-000000000001') {
+                if (currentOrgId) {
                     const { data } = await supabase
                         .from('organizations')
                         .select('id')
@@ -329,9 +329,7 @@ const SettingsModule = {
                     Toast.success('Organization details updated successfully');
                 } else {
                     // CREATE new organization (INSERT)
-                    const newOrgId = (currentOrgId && currentOrgId !== '00000000-0000-0000-0000-000000000000' && currentOrgId !== '00000000-0000-0000-0000-000000000001')
-                        ? currentOrgId
-                        : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'org-' + Date.now());
+                    const newOrgId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'org-' + Date.now();
 
                     const createPayload = {
                         id: newOrgId,
@@ -393,7 +391,7 @@ const SettingsModule = {
 
     async loadMembers() {
         const orgId = Auth.orgId;
-        const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) && orgId !== '00000000-0000-0000-0000-000000000000';
+        const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId));
 
         try {
             // Load roles if not loaded
@@ -681,7 +679,7 @@ const SettingsModule = {
 
             try {
                 const orgId = Auth.orgId;
-                const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId)) && orgId !== '00000000-0000-0000-0000-000000000000';
+                const isValidOrgId = orgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(orgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId));
                 if (!isValidOrgId) {
                     throw new Error('Valid organization context is required to invite users.');
                 }
