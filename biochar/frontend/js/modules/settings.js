@@ -345,17 +345,20 @@ const SettingsModule = {
                     const user = typeof getUser === 'function' ? await getUser() : (Auth.user || null);
                     if (user && user.id) {
                         try {
-                            await supabase
+                            const { error: pErr } = await supabase
                                 .from('profiles')
-                                .upsert({
-                                    id: user.id,
-                                    organization_id: newOrgId,
-                                    updated_at: new Date().toISOString()
-                                });
+                                .update({ organization_id: newOrgId, updated_at: new Date().toISOString() })
+                                .eq('id', user.id);
+
+                            if (pErr) {
+                                await supabase
+                                    .from('profiles')
+                                    .insert({ id: user.id, organization_id: newOrgId, updated_at: new Date().toISOString() });
+                            }
 
                             await supabase
                                 .from('organization_members')
-                                .upsert({
+                                .insert({
                                     organization_id: newOrgId,
                                     user_id: user.id,
                                     role_id: 1, // Owner

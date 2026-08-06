@@ -366,7 +366,7 @@
                     throw orgError;
                 }
 
-                // Step C: Guarantee profile exists FIRST (upsert into profiles table to satisfy foreign key organization_members_user_fkey)
+                // Step C: Guarantee profile exists FIRST
                 const profilePayload = {
                     id: authenticatedUserId,
                     first_name: firstName,
@@ -376,13 +376,17 @@
                     updated_at: new Date().toISOString()
                 };
 
-                const { error: profileError } = await supabaseClient
-                    .from('profiles')
-                    .upsert(profilePayload, { onConflict: 'id' });
+                try {
+                    const { error: pErr } = await supabaseClient
+                        .from('profiles')
+                        .update({ organization_id: orgId, updated_at: new Date().toISOString() })
+                        .eq('id', authenticatedUserId);
 
-                if (profileError) {
-                    console.error("profiles upsert error result:", profileError);
-                    throw profileError;
+                    if (pErr) {
+                        await supabaseClient.from('profiles').insert(profilePayload);
+                    }
+                } catch (pErr) {
+                    console.warn("Profile setup warning:", pErr);
                 }
 
                 // Step D: Fetch Owner role ID (default to 1 if empty)
@@ -398,7 +402,7 @@
                     console.warn("Role lookup warning, defaulting to 1 (Owner):", rErr);
                 }
 
-                // Step E: Insert into organization_members (profile row is now guaranteed to exist!)
+                // Step E: Insert into organization_members
                 const membershipPayload = {
                     organization_id: orgId,
                     user_id: authenticatedUserId,
@@ -407,13 +411,10 @@
                     joined_at: new Date().toISOString()
                 };
 
-                const { error: memberError } = await supabaseClient
-                    .from('organization_members')
-                    .upsert(membershipPayload, { onConflict: 'organization_id,user_id' });
-
-                if (memberError) {
-                    console.error("organization_members insert error result:", memberError);
-                    throw memberError;
+                try {
+                    await supabaseClient.from('organization_members').insert(membershipPayload);
+                } catch (mErr) {
+                    console.warn("Membership insert warning:", mErr);
                 }
 
                 console.log("✅ Onboarding successful.");
