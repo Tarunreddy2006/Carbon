@@ -222,6 +222,18 @@ class BiocharBatch(Base):
     mass_balance_status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
     anomaly_status: Mapped[str] = mapped_column(String(50), server_default=text("'Normal'"), nullable=False)
     anomaly_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Phase 2 Laboratory Validation Fields
+    peak_temperature: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    average_temperature: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    residence_time_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cooling_duration: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    quality_status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
+    validation_status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
+    laboratory_ready: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    anomaly_count: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    validation_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
     storage_location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(50), server_default=text("'In Storage'"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
@@ -262,8 +274,17 @@ class BiocharSample(Base):
         pgUUID(as_uuid=True), ForeignKey("biochar_batches.id", ondelete="CASCADE"), nullable=False
     )
     sample_code: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    sample_collection_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    sample_collected_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    )
     collection_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     sampling_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    laboratory_status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
+    validation_status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), server_default=text("'Low'"), nullable=False)
+    validation_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    laboratory_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     biochar_batch: Mapped["BiocharBatch"] = relationship(back_populates="samples")
@@ -285,9 +306,12 @@ class LaboratoryTest(Base):
     completed_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     analyst_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
+    validation_status: Mapped[str] = mapped_column(String(50), server_default=text("'Pending'"), nullable=False)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     sample: Mapped["BiocharSample"] = relationship(back_populates="tests")
+    certificates: Mapped[list["LaboratoryCertificate"]] = relationship(back_populates="laboratory_test")
+    results: Mapped[list["LaboratoryResult"]] = relationship(back_populates="laboratory_test")
     certificates: Mapped[list["LaboratoryCertificate"]] = relationship(back_populates="laboratory_test")
     results: Mapped[list["LaboratoryResult"]] = relationship(back_populates="laboratory_test")
 
@@ -633,4 +657,46 @@ class MassBalanceAnomaly(UUIDMixin, Base):
     resolved_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Laboratory Validation Models
+# ──────────────────────────────────────────────────────────────────────────────
+
+class LaboratoryValidationConfig(UUIDMixin, TimestampMixin, Base):
+    __tablename__ = "laboratory_validation_configs"
+
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, unique=True
+    )
+    min_peak_temperature: Mapped[float] = mapped_column(Float, server_default=text("450.0"), nullable=False)
+    min_residence_time_minutes: Mapped[int] = mapped_column(Integer, server_default=text("30"), nullable=False)
+    max_moisture_percent: Mapped[float] = mapped_column(Float, server_default=text("65.0"), nullable=False)
+    required_evidence_types: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    required_laboratory_fields: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+
+class LaboratoryValidationLog(UUIDMixin, Base):
+    __tablename__ = "laboratory_validation_logs"
+
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("biochar_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    rule_triggered: Mapped[str] = mapped_column(String(100), nullable=False)
+    previous_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    validation_score: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), nullable=False)
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    evaluated_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
+
 

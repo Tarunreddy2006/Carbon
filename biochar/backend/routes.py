@@ -41,8 +41,16 @@ from biochar.backend.models import (
     EvidenceAuditLog,
     MassBalanceConfig,
     MassBalanceAnomaly,
+    LaboratoryValidationConfig,
+    LaboratoryValidationLog,
 )
 from biochar.backend.mass_balance import MassBalanceService
+from biochar.backend.lab_validation import (
+    LaboratoryValidationService,
+    LaboratoryDashboardService,
+    DEFAULT_REQUIRED_EVIDENCE,
+)
+
 
 from biochar.backend.validation import (
     calculate_net_sequestration,
@@ -1962,4 +1970,269 @@ async def set_mass_balance_config(
             "max_moisture_percent": config.max_moisture_percent,
         }
     }
+
+
+# ─── Laboratory Validation & Anomaly Engine Endpoints (Phase 2) ───────────────
+
+class LabEvaluateRequest(BaseModel):
+    batch_id: str
+    organization_id: Optional[str] = None
+    user_id: Optional[str] = None
+
+
+class LabStatusUpdateRequest(BaseModel):
+    validation_status: str = Field(..., description="Pass, Warning, High Risk, or Hold Batch")
+    user_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class LabValidationConfigRequest(BaseModel):
+    organization_id: Optional[str] = None
+    min_peak_temperature: float = Field(450.0, ge=0.0)
+    min_residence_time_minutes: int = Field(30, ge=0)
+    max_moisture_percent: float = Field(65.0, ge=0.0, le=100.0)
+    required_evidence_types: Optional[List[str]] = None
+    required_laboratory_fields: Optional[List[str]] = None
+
+
+@router.post("/laboratory-validation/rules/evaluate", status_code=status.HTTP_200_OK)
+async def evaluate_laboratory_validation_rules(
+    payload: LabEvaluateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Evaluates rule-based laboratory pre-validation for a production batch.
+    Returns readiness checklist, validation score, warnings, and status.
+    """
+    try:
+        batch_uuid = uuid.UUID(payload.batch_id)
+        org_uuid = uuid.UUID(payload.organization_id) if payload.organization_id else None
+        user_uuid = uuid.UUID(payload.user_id) if payload.user_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    try:
+        result = LaboratoryValidationService.validate_batch(
+            db=db,
+            batch_id=batch_uuid,
+            organization_id=org_uuid,
+            user_id=user_uuid,
+        )
+        return result
+    except ValueError as val_err:
+        raise HTTPException(status_code=404, detail=str(val_err))
+    except Exception as exc:
+        logger.error("Failed to evaluate lab validation rules: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to evaluate lab validation rules: {exc}")
+
+
+@router.get("/laboratory-validation/summary/{batch_id}", status_code=status.HTTP_200_OK)
+async def get_laboratory_validation_summary(
+    batch_id: str,
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Fetches laboratory pre-validation summary report for a batch.
+    """
+    try:
+        batch_uuid = uuid.UUID(batch_id)
+        org_uuid = uuid.UUID(organization_id) if organization_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    try:
+        result = LaboratoryValidationService.validate_batch(
+            db=db,
+            batch_id=batch_uuid,
+            organization_id=org_uuid,
+        )
+        return result
+    except ValueError as val_err:
+        raise HTTPException(status_code=404, detail=str(val_err))
+
+
+@router.get("/laboratory-validation/score/{batch_id}", status_code=status.HTTP_200_OK)
+async def get_laboratory_validation_score(
+    batch_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Fetches Laboratory Validation Score and sub-component breakdown.
+    """
+    try:
+        batch_uuid = uuid.UUID(batch_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid batch_id UUID format")
+
+    batch = db.query(BiocharBatch).filter(BiocharBatch.id == batch_uuid).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Biochar batch not found")
+
+    return {
+        "status": "success",
+        "batch_id": batch_id,
+        "batch_code": batch.batch_code,
+        "validation_score": batch.validation_score or 0.0,
+        "validation_status": batch.validation_status,
+        "quality_status": batch.quality_status,
+        "laboratory_ready": batch.laboratory_ready,
+    }
+
+
+@router.get("/laboratory-validation/warnings", status_code=status.HTTP_200_OK)
+async def get_laboratory_validation_warnings(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Lists active pre-validation warnings and high-risk flags across production batches.
+    """
+    query = db.query(BiocharBatch).filter(BiocharBatch.validation_status.in_(["Warning", "High Risk", "Hold Batch"]))
+    batches = query.all()
+
+    warning_list = []
+    for b in batches:
+        warning_list.append({
+            "batch_id": str(b.id),
+            "batch_code": b.batch_code,
+            "validation_status": b.validation_status,
+            "risk_level": "Critical" if b.validation_status == "Hold Batch" else ("High" if b.validation_status == "High Risk" else "Medium"),
+            "validation_score": b.validation_score,
+            "anomaly_count": b.anomaly_count,
+            "laboratory_ready": b.laboratory_ready,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+        })
+
+    return {"status": "success", "warnings": warning_list, "total_warnings": len(warning_list)}
+
+
+@router.post("/laboratory-validation/status/{batch_id}", status_code=status.HTTP_200_OK)
+async def update_laboratory_validation_status(
+    batch_id: str,
+    payload: LabStatusUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Manually sets laboratory validation status for a batch (e.g. Hold Batch, Pass).
+    """
+    try:
+        batch_uuid = uuid.UUID(batch_id)
+        user_uuid = uuid.UUID(payload.user_id) if payload.user_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid batch_id UUID format")
+
+    batch = db.query(BiocharBatch).filter(BiocharBatch.id == batch_uuid).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Biochar batch not found")
+
+    valid_statuses = {"Pass", "Warning", "High Risk", "Hold Batch"}
+    if payload.validation_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid validation status. Must be one of {valid_statuses}")
+
+    prev = batch.validation_status
+    batch.validation_status = payload.validation_status
+    batch.quality_status = payload.validation_status
+    batch.laboratory_ready = payload.validation_status in ("Pass", "Warning")
+
+    # Audit log
+    audit_log = EvidenceAuditLog(
+        user_id=user_uuid,
+        action="MANUAL_LAB_STATUS_UPDATE",
+        details={
+            "batch_id": batch_id,
+            "batch_code": batch.batch_code,
+            "previous_status": prev,
+            "new_status": payload.validation_status,
+            "notes": payload.notes,
+        }
+    )
+    db.add(audit_log)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Laboratory validation status updated to {payload.validation_status}",
+        "batch_id": batch_id,
+        "validation_status": batch.validation_status,
+    }
+
+
+@router.get("/laboratory-validation/dashboard-stats", status_code=status.HTTP_200_OK)
+async def get_laboratory_dashboard_stats(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns aggregated metrics for Laboratory Quality Dashboard.
+    """
+    org_uuid = uuid.UUID(organization_id) if organization_id else None
+    metrics = LaboratoryDashboardService.get_dashboard_metrics(db, org_uuid)
+    return metrics
+
+
+@router.get("/laboratory-validation/config", status_code=status.HTTP_200_OK)
+async def get_laboratory_validation_config(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Gets organization lab validation thresholds.
+    """
+    org_uuid = uuid.UUID(organization_id) if organization_id else None
+    config = LaboratoryValidationService.get_config(db, org_uuid)
+
+    return {
+        "status": "success",
+        "organization_id": organization_id,
+        "min_peak_temperature": config.min_peak_temperature,
+        "min_residence_time_minutes": config.min_residence_time_minutes,
+        "max_moisture_percent": config.max_moisture_percent,
+        "required_evidence_types": config.required_evidence_types or DEFAULT_REQUIRED_EVIDENCE,
+        "required_laboratory_fields": config.required_laboratory_fields or ["sample_code", "collection_date"],
+    }
+
+
+@router.post("/laboratory-validation/config", status_code=status.HTTP_200_OK)
+async def set_laboratory_validation_config(
+    payload: LabValidationConfigRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Sets organization lab validation thresholds.
+    """
+    org_uuid = uuid.UUID(payload.organization_id) if payload.organization_id else None
+    config = None
+    if org_uuid:
+        config = db.query(LaboratoryValidationConfig).filter(
+            LaboratoryValidationConfig.organization_id == org_uuid
+        ).first()
+
+    if not config:
+        config = LaboratoryValidationConfig(organization_id=org_uuid)
+        db.add(config)
+
+    config.min_peak_temperature = payload.min_peak_temperature
+    config.min_residence_time_minutes = payload.min_residence_time_minutes
+    config.max_moisture_percent = payload.max_moisture_percent
+    if payload.required_evidence_types is not None:
+        config.required_evidence_types = payload.required_evidence_types
+    if payload.required_laboratory_fields is not None:
+        config.required_laboratory_fields = payload.required_laboratory_fields
+
+    config.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": "Laboratory validation configuration updated successfully",
+        "config": {
+            "min_peak_temperature": config.min_peak_temperature,
+            "min_residence_time_minutes": config.min_residence_time_minutes,
+            "max_moisture_percent": config.max_moisture_percent,
+            "required_evidence_types": config.required_evidence_types,
+            "required_laboratory_fields": config.required_laboratory_fields,
+        }
+    }
+
 

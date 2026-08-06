@@ -362,3 +362,59 @@ CREATE TABLE IF NOT EXISTS public.mass_balance_anomalies (
 CREATE INDEX IF NOT EXISTS idx_mb_anomalies_status ON public.mass_balance_anomalies(status);
 CREATE INDEX IF NOT EXISTS idx_mb_anomalies_org_id ON public.mass_balance_anomalies(organization_id);
 
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Phase 2 Laboratory Validation Engine Extensions
+-- ──────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS peak_temperature double precision;
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS average_temperature double precision;
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS residence_time_minutes integer;
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS cooling_duration integer;
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS quality_status text NOT NULL DEFAULT 'Pending';
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS validation_status text NOT NULL DEFAULT 'Pending';
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS laboratory_ready boolean NOT NULL DEFAULT false;
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS anomaly_count integer NOT NULL DEFAULT 0;
+ALTER TABLE public.biochar_batches ADD COLUMN IF NOT EXISTS validation_score double precision;
+
+ALTER TABLE public.biochar_samples ADD COLUMN IF NOT EXISTS sample_collection_date date;
+ALTER TABLE public.biochar_samples ADD COLUMN IF NOT EXISTS sample_collected_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL;
+ALTER TABLE public.biochar_samples ADD COLUMN IF NOT EXISTS laboratory_status text NOT NULL DEFAULT 'Pending';
+ALTER TABLE public.biochar_samples ADD COLUMN IF NOT EXISTS validation_status text NOT NULL DEFAULT 'Pending';
+ALTER TABLE public.biochar_samples ADD COLUMN IF NOT EXISTS risk_level text NOT NULL DEFAULT 'Low';
+ALTER TABLE public.biochar_samples ADD COLUMN IF NOT EXISTS validation_score double precision;
+ALTER TABLE public.biochar_samples ADD COLUMN IF NOT EXISTS laboratory_notes text;
+
+ALTER TABLE public.laboratory_tests ADD COLUMN IF NOT EXISTS validation_status text NOT NULL DEFAULT 'Pending';
+
+CREATE TABLE IF NOT EXISTS public.laboratory_validation_configs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid UNIQUE REFERENCES public.organizations(id) ON DELETE CASCADE,
+  min_peak_temperature double precision NOT NULL DEFAULT 450.0,
+  min_residence_time_minutes integer NOT NULL DEFAULT 30,
+  max_moisture_percent double precision NOT NULL DEFAULT 65.0,
+  required_evidence_types jsonb,
+  required_laboratory_fields jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT laboratory_validation_configs_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.laboratory_validation_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid REFERENCES public.organizations(id) ON DELETE CASCADE,
+  project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL,
+  batch_id uuid NOT NULL REFERENCES public.biochar_batches(id) ON DELETE CASCADE,
+  rule_triggered text NOT NULL,
+  previous_status text,
+  new_status text NOT NULL,
+  validation_score double precision NOT NULL,
+  risk_level text NOT NULL,
+  details jsonb,
+  evaluated_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT laboratory_validation_logs_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lab_val_logs_batch ON public.laboratory_validation_logs(batch_id);
+
+

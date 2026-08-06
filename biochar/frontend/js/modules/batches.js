@@ -175,6 +175,11 @@ const BatchesModule = {
 
             if (runErr) throw runErr;
 
+            let peakTempValue = '460';
+            let avgTempValue = '450';
+            let residenceTimeValue = '35';
+            let coolingDurationValue = '120';
+
             if (batchId) {
                 title = 'Edit Production Batch';
                 const { data, error } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
@@ -189,9 +194,13 @@ const BatchesModule = {
 
                 codeValue = data.batch_code;
                 runIdValue = data.pyrolysis_run_id;
-                weightValue = data.weight_kg;
+                weightValue = data.produced_weight_kg || data.weight_kg || '1000';
                 storageValue = data.storage_location || 'Warehouse-1';
                 statusValue = data.status;
+                peakTempValue = data.peak_temperature != null ? data.peak_temperature : '460';
+                avgTempValue = data.average_temperature != null ? data.average_temperature : '450';
+                residenceTimeValue = data.residence_time_minutes != null ? data.residence_time_minutes : '35';
+                coolingDurationValue = data.cooling_duration != null ? data.cooling_duration : '120';
             } else {
                 const now = new Date();
                 const d = now.toISOString().slice(0,10).replace(/-/g,'');
@@ -223,7 +232,7 @@ const BatchesModule = {
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label class="form-label" for="batch-weight">Weight (kg)</label>
+                                <label class="form-label" for="batch-weight">Produced Biochar Weight (kg) <span class="required">*</span></label>
                                 <input type="text" class="form-input" id="batch-weight" name="weight_kg" value="${weightValue}" data-validate="required|number|positive" data-label="Weight" />
                             </div>
                             <div class="form-group">
@@ -231,6 +240,32 @@ const BatchesModule = {
                                 <input type="text" class="form-input" id="batch-storage" name="storage_location" value="${Utils.escapeHtml(storageValue)}" data-validate="required" data-label="Storage Location" />
                             </div>
                         </div>
+
+                        <!-- Phase 2 Laboratory Pre-Validation Parameters -->
+                        <div style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-accent-light); margin-top: var(--space-3); margin-bottom: var(--space-2);">
+                            Pyrolysis Parameters (Lab Pre-Validation Engine)
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="batch-peak-temp">Peak Temp (°C) <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="batch-peak-temp" name="peak_temperature" value="${peakTempValue}" data-validate="required|number" placeholder="e.g. 460" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="batch-avg-temp">Avg Temp (°C)</label>
+                                <input type="text" class="form-input" id="batch-avg-temp" name="average_temperature" value="${avgTempValue}" data-validate="number" placeholder="e.g. 450" />
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="batch-residence">Residence Time (mins) <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="batch-residence" name="residence_time_minutes" value="${residenceTimeValue}" data-validate="required|number" placeholder="e.g. 35" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="batch-cooling">Cooling Duration (mins)</label>
+                                <input type="text" class="form-input" id="batch-cooling" name="cooling_duration" value="${coolingDurationValue}" data-validate="number" placeholder="e.g. 120" />
+                            </div>
+                        </div>
+
                         <div class="form-group">
                             <label class="form-label" for="batch-status">Lifecycle Status</label>
                             <select class="form-select" id="batch-status" name="status">
@@ -252,7 +287,7 @@ const BatchesModule = {
                 </form>
             `;
 
-            Modal.open(html, { width: '450px' });
+            Modal.open(html, { width: '520px' });
 
             const form = document.getElementById('batch-form');
             form.addEventListener('submit', async (e) => {
@@ -264,12 +299,24 @@ const BatchesModule = {
                 saveBtn.classList.add('loading');
                 saveBtn.disabled = true;
 
+                const weight = parseFloat(document.getElementById('batch-weight').value);
+                const peakTemp = parseFloat(document.getElementById('batch-peak-temp').value);
+                const avgTemp = parseFloat(document.getElementById('batch-avg-temp').value) || peakTemp;
+                const residence = parseInt(document.getElementById('batch-residence').value, 10);
+                const cooling = parseInt(document.getElementById('batch-cooling').value, 10) || 60;
+
                 const payload = {
                     batch_code: document.getElementById('batch-code').value.trim(),
                     pyrolysis_run_id: document.getElementById('batch-run-id').value,
-                    weight_kg: parseFloat(document.getElementById('batch-weight').value || 0),
+                    weight_kg: weight,
+                    produced_weight_kg: weight,
                     storage_location: document.getElementById('batch-storage').value.trim(),
-                    status: document.getElementById('batch-status').value
+                    status: document.getElementById('batch-status').value,
+                    peak_temperature: peakTemp,
+                    average_temperature: avgTemp,
+                    residence_time_minutes: residence,
+                    cooling_duration: cooling,
+                    laboratory_ready: peakTemp >= 450 && residence >= 30,
                 };
 
                 try {
