@@ -194,22 +194,44 @@ const ProjectsModule = {
                         .eq('id', projectId);
                     error = err;
                 } else {
-                    // Ensure activeOrgId is fully resolved asynchronously
+                    // Resolve organization_id through all available sources
                     let activeOrgId = orgId || Auth.orgId;
+
+                    // Fallback 1: getOrganizationId() fetches from profile/cache
                     if (!activeOrgId && typeof getOrganizationId === 'function') {
                         activeOrgId = await getOrganizationId();
                     }
 
-                    const insertPayload = { name };
-                    
-                    const isValidOrgId = activeOrgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(activeOrgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId)) && activeOrgId !== '00000000-0000-0000-0000-000000000000';
-                    if (isValidOrgId) {
-                        insertPayload.organization_id = activeOrgId;
+                    // Fallback 2: Query organization_members directly
+                    if (!activeOrgId && window.originalSupabase) {
+                        try {
+                            const user = await getUser();
+                            if (user) {
+                                const { data: memberData } = await window.originalSupabase
+                                    .from('organization_members')
+                                    .select('organization_id')
+                                    .eq('user_id', user.id)
+                                    .limit(1)
+                                    .maybeSingle();
+                                if (memberData?.organization_id) {
+                                    activeOrgId = memberData.organization_id;
+                                }
+                            }
+                        } catch (orgErr) {
+                            console.warn('[ProjectsModule] Failed to resolve org from members:', orgErr);
+                        }
                     }
 
-                    const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine;
+                    const isValidOrgId = activeOrgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(activeOrgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId)) && activeOrgId !== '00000000-0000-0000-0000-000000000000';
+
+                    if (!isValidOrgId) {
+                        throw new Error('Unable to determine your organization. Please refresh the page and try again.');
+                    }
+
+                    const insertPayload = { name, organization_id: activeOrgId };
+
                     console.log('[ProjectsModule Diagnostic]', {
-                        isOnline,
+                        isOnline: typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine,
                         navigatorOnline: navigator.onLine,
                         activeOrgId,
                         insertPayload
