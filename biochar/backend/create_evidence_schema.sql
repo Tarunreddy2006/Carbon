@@ -417,4 +417,74 @@ CREATE TABLE IF NOT EXISTS public.laboratory_validation_logs (
 
 CREATE INDEX IF NOT EXISTS idx_lab_val_logs_batch ON public.laboratory_validation_logs(batch_id);
 
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Phase 3 Feedstock Intelligence Engine Extensions
+-- ──────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS feedstock_lot_number text;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS feedstock_category text;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS biomass_species text;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS biomass_source_type text;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS harvest_date date;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS collection_date date;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS storage_days integer NOT NULL DEFAULT 0;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS storage_location text;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS contamination_status boolean NOT NULL DEFAULT false;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS contamination_notes text;
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS visual_quality_grade text NOT NULL DEFAULT 'Grade A';
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS quality_status text NOT NULL DEFAULT 'Optimal';
+ALTER TABLE public.feedstock_batches ADD COLUMN IF NOT EXISTS quality_score double precision;
+
+CREATE INDEX IF NOT EXISTS idx_fs_batches_lot_num ON public.feedstock_batches(feedstock_lot_number);
+
+CREATE TABLE IF NOT EXISTS public.feedstock_suppliers (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid REFERENCES public.organizations(id) ON DELETE CASCADE,
+  supplier_name text NOT NULL,
+  supplier_type text NOT NULL DEFAULT 'Biomass Aggregator',
+  contact_information jsonb,
+  operating_region text,
+  gps_location jsonb,
+  sustainability_documents jsonb,
+  certification_status text NOT NULL DEFAULT 'Self-Attested',
+  active_status boolean NOT NULL DEFAULT true,
+  overall_quality_score double precision NOT NULL DEFAULT 100.0,
+  reliability_rating text NOT NULL DEFAULT 'Excellent',
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT feedstock_suppliers_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.feedstock_intelligence_configs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid UNIQUE REFERENCES public.organizations(id) ON DELETE CASCADE,
+  max_moisture_percent double precision NOT NULL DEFAULT 25.0,
+  max_storage_days integer NOT NULL DEFAULT 60,
+  min_supplier_score double precision NOT NULL DEFAULT 70.0,
+  contamination_strict boolean NOT NULL DEFAULT true,
+  quality_weights jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT feedstock_intelligence_configs_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE IF NOT EXISTS public.feedstock_intelligence_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  organization_id uuid REFERENCES public.organizations(id) ON DELETE CASCADE,
+  project_id uuid REFERENCES public.projects(id) ON DELETE SET NULL,
+  feedstock_id uuid NOT NULL REFERENCES public.feedstock_batches(id) ON DELETE CASCADE,
+  supplier_id uuid REFERENCES public.feedstock_suppliers(id) ON DELETE SET NULL,
+  rule_triggered text NOT NULL,
+  quality_score double precision NOT NULL,
+  quality_status text NOT NULL,
+  recommendation text,
+  details jsonb,
+  evaluated_by uuid REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT feedstock_intelligence_logs_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fs_intel_logs_fs ON public.feedstock_intelligence_logs(feedstock_id);
+
+
 

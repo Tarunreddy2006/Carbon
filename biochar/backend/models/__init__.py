@@ -51,6 +51,9 @@ from biochar.backend.models.core import (
     MassBalanceAnomaly,
     LaboratoryValidationConfig,
     LaboratoryValidationLog,
+    FeedstockSupplier,
+    FeedstockIntelligenceConfig,
+    FeedstockIntelligenceLog,
 )
 
 
@@ -122,6 +125,9 @@ __all__ = [
     "MassBalanceAnomaly",
     "LaboratoryValidationConfig",
     "LaboratoryValidationLog",
+    "FeedstockSupplier",
+    "FeedstockIntelligenceConfig",
+    "FeedstockIntelligenceLog",
     "BatchStatus",
     "VerificationTier",
     "FeedstockIngest",
@@ -129,5 +135,6 @@ __all__ = [
     "LabAssay",
     "DistributionSink",
 ]
+
 
 

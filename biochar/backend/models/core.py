@@ -166,6 +166,22 @@ class FeedstockBatch(Base):
     moisture_measurement_method: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     transport_distance_km: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Phase 3 Feedstock Intelligence Fields
+    feedstock_lot_number: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    feedstock_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    biomass_species: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    biomass_source_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    harvest_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    collection_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    storage_days: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    storage_location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    contamination_status: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    contamination_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    visual_quality_grade: Mapped[str] = mapped_column(String(50), server_default=text("'Grade A'"), nullable=False)
+    quality_status: Mapped[str] = mapped_column(String(50), server_default=text("'Optimal'"), nullable=False)
+    quality_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
     )
@@ -173,6 +189,7 @@ class FeedstockBatch(Base):
 
     project: Mapped["Project"] = relationship(back_populates="feedstock_batches")
     pyrolysis_runs: Mapped[list["PyrolysisRun"]] = relationship(back_populates="feedstock_batch")
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -422,10 +439,23 @@ class FeedstockQuality(Base):
     id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     batch_id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), ForeignKey("feedstock_batches.id"))
 
-class FeedstockSupplier(Base):
+class FeedstockSupplier(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "feedstock_suppliers"
-    id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    organization_id: Mapped[uuid.UUID] = mapped_column(pgUUID(as_uuid=True))
+
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    supplier_name: Mapped[str] = mapped_column(String(255), server_default=text("'Biomass Supplier'"), nullable=False)
+    supplier_type: Mapped[str] = mapped_column(String(100), server_default=text("'Biomass Aggregator'"), nullable=False)
+    contact_information: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    operating_region: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    gps_location: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    sustainability_documents: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    certification_status: Mapped[str] = mapped_column(String(100), server_default=text("'Self-Attested'"), nullable=False)
+    active_status: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    overall_quality_score: Mapped[float] = mapped_column(Float, server_default=text("100.0"), nullable=False)
+    reliability_rating: Mapped[str] = mapped_column(String(50), server_default=text("'Excellent'"), nullable=False)
+
 
 class FeedstockType(Base):
     __tablename__ = "feedstock_types"
@@ -698,5 +728,50 @@ class LaboratoryValidationLog(UUIDMixin, Base):
         pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Feedstock Intelligence & Supplier Models
+# ──────────────────────────────────────────────────────────────────────────────
+
+class FeedstockIntelligenceConfig(UUIDMixin, TimestampMixin, Base):
+
+    __tablename__ = "feedstock_intelligence_configs"
+
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, unique=True
+    )
+    max_moisture_percent: Mapped[float] = mapped_column(Float, server_default=text("25.0"), nullable=False)
+    max_storage_days: Mapped[int] = mapped_column(Integer, server_default=text("60"), nullable=False)
+    min_supplier_score: Mapped[float] = mapped_column(Float, server_default=text("70.0"), nullable=False)
+    contamination_strict: Mapped[bool] = mapped_column(Boolean, server_default=text("true"), nullable=False)
+    quality_weights: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+
+class FeedstockIntelligenceLog(UUIDMixin, Base):
+    __tablename__ = "feedstock_intelligence_logs"
+
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    feedstock_id: Mapped[uuid.UUID] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("feedstock_batches.id", ondelete="CASCADE"), nullable=False
+    )
+    supplier_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("feedstock_suppliers.id", ondelete="SET NULL"), nullable=True
+    )
+    rule_triggered: Mapped[str] = mapped_column(String(100), nullable=False)
+    quality_score: Mapped[float] = mapped_column(Float, nullable=False)
+    quality_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    recommendation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    evaluated_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        pgUUID(as_uuid=True), ForeignKey("profiles.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
+
 
 

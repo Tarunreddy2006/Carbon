@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional,Dict
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Form, File, UploadFile
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
@@ -37,12 +37,14 @@ from biochar.backend.models import (
     Evidence,
     EvidenceFile,
     EvidenceReview,
-    EvidenceAIResult,
     EvidenceAuditLog,
     MassBalanceConfig,
     MassBalanceAnomaly,
     LaboratoryValidationConfig,
     LaboratoryValidationLog,
+    FeedstockSupplier,
+    FeedstockIntelligenceConfig,
+    FeedstockIntelligenceLog,
 )
 from biochar.backend.mass_balance import MassBalanceService
 from biochar.backend.lab_validation import (
@@ -50,6 +52,13 @@ from biochar.backend.lab_validation import (
     LaboratoryDashboardService,
     DEFAULT_REQUIRED_EVIDENCE,
 )
+from biochar.backend.feedstock_intelligence import (
+    FeedstockIntelligenceService,
+    SupplierAnalyticsService,
+    FeedstockRecommendationService,
+    FeedstockDashboardService,
+)
+
 
 
 from biochar.backend.validation import (
@@ -2234,5 +2243,219 @@ async def set_laboratory_validation_config(
             "required_laboratory_fields": config.required_laboratory_fields,
         }
     }
+
+
+# ─── Feedstock Intelligence Engine Endpoints (Phase 3) ────────────────────────
+
+class FeedstockEvaluateRequest(BaseModel):
+    organization_id: Optional[str] = None
+    user_id: Optional[str] = None
+
+
+class FeedstockIntelConfigRequest(BaseModel):
+    organization_id: Optional[str] = None
+    max_moisture_percent: float = Field(25.0, ge=0.0, le=100.0)
+    max_storage_days: int = Field(60, ge=0)
+    min_supplier_score: float = Field(70.0, ge=0.0, le=100.0)
+    contamination_strict: bool = True
+    quality_weights: Optional[Dict[str, float]] = None
+
+
+@router.get("/feedstock-intelligence/dashboard-stats", status_code=status.HTTP_200_OK)
+async def get_feedstock_dashboard_stats(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns aggregated KPI metrics for Feedstock Intelligence Dashboard.
+    """
+    org_uuid = uuid.UUID(organization_id) if organization_id else None
+    return FeedstockDashboardService.get_dashboard_metrics(db, org_uuid)
+
+
+@router.get("/feedstock-intelligence/supplier-analytics", status_code=status.HTTP_200_OK)
+async def get_supplier_analytics(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns supplier analytics, quality scores, and reliability ratings.
+    """
+    org_uuid = uuid.UUID(organization_id) if organization_id else None
+    suppliers = SupplierAnalyticsService.get_supplier_analytics(db, org_uuid)
+    return {"status": "success", "suppliers": suppliers, "total_suppliers": len(suppliers)}
+
+
+@router.get("/feedstock-intelligence/trends", status_code=status.HTTP_200_OK)
+async def get_feedstock_trends(
+    db: Session = Depends(get_db)
+):
+    """
+    Returns trend timelines for moisture, dry matter, and yield breakdown.
+    """
+    return FeedstockDashboardService.get_trends(db)
+
+
+@router.get("/feedstock-intelligence/score/{feedstock_id}", status_code=status.HTTP_200_OK)
+async def get_feedstock_quality_score(
+    feedstock_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns Feedstock Quality Score and factor breakdown for a lot.
+    """
+    try:
+        fs_uuid = uuid.UUID(feedstock_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid feedstock_id UUID format")
+
+    batch = db.query(FeedstockBatch).filter(FeedstockBatch.id == fs_uuid).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Feedstock batch not found")
+
+    return {
+        "status": "success",
+        "feedstock_id": feedstock_id,
+        "lot_number": batch.feedstock_lot_number or batch.batch_code,
+        "quality_score": batch.quality_score or 90.0,
+        "quality_status": batch.quality_status,
+        "visual_quality_grade": batch.visual_quality_grade,
+        "contamination_status": batch.contamination_status,
+    }
+
+
+@router.post("/feedstock-intelligence/evaluate/{feedstock_id}", status_code=status.HTTP_200_OK)
+async def evaluate_feedstock_lot(
+    feedstock_id: str,
+    payload: FeedstockEvaluateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Runs rule engine evaluation and updates quality score for a feedstock lot.
+    """
+    try:
+        fs_uuid = uuid.UUID(feedstock_id)
+        org_uuid = uuid.UUID(payload.organization_id) if payload.organization_id else None
+        user_uuid = uuid.UUID(payload.user_id) if payload.user_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    try:
+        res = FeedstockIntelligenceService.evaluate_feedstock(
+            db=db,
+            feedstock_id=fs_uuid,
+            organization_id=org_uuid,
+            user_id=user_uuid,
+        )
+        return res
+    except ValueError as val_err:
+        raise HTTPException(status_code=404, detail=str(val_err))
+
+
+@router.get("/feedstock-intelligence/recommendations", status_code=status.HTTP_200_OK)
+async def get_feedstock_recommendations(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Returns automated decision-support recommendations.
+    """
+    org_uuid = uuid.UUID(organization_id) if organization_id else None
+    recs = FeedstockRecommendationService.generate_recommendations(db, org_uuid)
+    return {"status": "success", "recommendations": recs, "count": len(recs)}
+
+
+@router.get("/feedstock-intelligence/alerts", status_code=status.HTTP_200_OK)
+async def get_feedstock_active_alerts(
+    db: Session = Depends(get_db)
+):
+    """
+    Returns active feedstock alerts (high moisture, long storage, contamination).
+    """
+    query = db.query(FeedstockBatch).filter(
+        (FeedstockBatch.contamination_status == True) | (FeedstockBatch.quality_status.in_(["Warning", "High Risk"]))
+    )
+    batches = query.all()
+
+    alert_list = []
+    for b in batches:
+        alert_list.append({
+            "feedstock_id": str(b.id),
+            "lot_number": b.feedstock_lot_number or b.batch_code,
+            "supplier_name": b.supplier_name,
+            "moisture_percent": b.moisture_percent,
+            "storage_days": b.storage_days,
+            "contamination_status": b.contamination_status,
+            "quality_status": b.quality_status,
+            "quality_score": b.quality_score,
+            "received_date": b.received_date.isoformat() if b.received_date else None,
+        })
+
+    return {"status": "success", "alerts": alert_list, "total_alerts": len(alert_list)}
+
+
+@router.get("/feedstock-intelligence/config", status_code=status.HTTP_200_OK)
+async def get_feedstock_intelligence_config(
+    organization_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Gets organization feedstock intelligence thresholds.
+    """
+    org_uuid = uuid.UUID(organization_id) if organization_id else None
+    config = FeedstockIntelligenceService.get_config(db, org_uuid)
+
+    return {
+        "status": "success",
+        "organization_id": organization_id,
+        "max_moisture_percent": config.max_moisture_percent,
+        "max_storage_days": config.max_storage_days,
+        "min_supplier_score": config.min_supplier_score,
+        "contamination_strict": config.contamination_strict,
+        "quality_weights": config.quality_weights or {"moisture": 35, "contamination": 35, "storage": 15, "dry_matter": 15},
+    }
+
+
+@router.post("/feedstock-intelligence/config", status_code=status.HTTP_200_OK)
+async def set_feedstock_intelligence_config(
+    payload: FeedstockIntelConfigRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Sets organization feedstock intelligence thresholds.
+    """
+    org_uuid = uuid.UUID(payload.organization_id) if payload.organization_id else None
+    config = None
+    if org_uuid:
+        config = db.query(FeedstockIntelligenceConfig).filter(
+            FeedstockIntelligenceConfig.organization_id == org_uuid
+        ).first()
+
+    if not config:
+        config = FeedstockIntelligenceConfig(organization_id=org_uuid)
+        db.add(config)
+
+    config.max_moisture_percent = payload.max_moisture_percent
+    config.max_storage_days = payload.max_storage_days
+    config.min_supplier_score = payload.min_supplier_score
+    config.contamination_strict = payload.contamination_strict
+    if payload.quality_weights is not None:
+        config.quality_weights = payload.quality_weights
+
+    config.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": "Feedstock intelligence configuration updated successfully",
+        "config": {
+            "max_moisture_percent": config.max_moisture_percent,
+            "max_storage_days": config.max_storage_days,
+            "min_supplier_score": config.min_supplier_score,
+            "contamination_strict": config.contamination_strict,
+            "quality_weights": config.quality_weights,
+        }
+    }
+
 
 
