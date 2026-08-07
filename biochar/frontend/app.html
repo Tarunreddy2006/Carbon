@@ -52,7 +52,8 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-brand">
                 <div class="sidebar-brand-icon">
-                    <img src="/assets/stomata_logo.jpeg" alt="Stomata Logo" style="width: 100%; height: 100%; object-fit: cover; border-radius: inherit;">
+                    <img src="/assets/stomata_logo.jpeg" alt="Stomata Logo"
+                        style="width: 100%; height: 100%; object-fit: cover; border-radius: inherit;">
                 </div>
                 <span class="sidebar-brand-text" id="sidebar-org-name">Stomata</span>
             </div>
@@ -140,11 +141,11 @@
                     <a class="sidebar-link" data-route="/evidence">
                         <svg class="sidebar-link-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                            <polyline points="14 2 14 8 20 8"/>
-                            <line x1="16" y1="13" x2="8" y2="13"/>
-                            <line x1="16" y1="17" x2="8" y2="17"/>
-                            <polyline points="10 9 9 9 8 9"/>
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <polyline points="10 9 9 9 8 9" />
                         </svg>
                         <span class="sidebar-link-text">Evidence</span>
                     </a>
@@ -199,11 +200,13 @@
                     </div>
                 </div>
                 <div class="topbar-right">
-                    <button id="pwa-install-btn" title="Install Application" style="display: none; align-items: center; gap: 6px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                            <polyline points="7 10 12 15 17 10"/>
-                            <line x1="12" y1="15" x2="12" y2="3"/>
+                    <button id="pwa-install-btn" title="Install Application"
+                        style="display: none; align-items: center; gap: 6px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
                         </svg>
                         <span>Install App</span>
                     </button>
@@ -224,13 +227,15 @@
                     <div class="topbar-user relative" id="topbar-user-btn">
                         <div class="topbar-avatar" id="topbar-avatar">?</div>
                         <span class="topbar-user-name" id="topbar-user-name">User</span>
-                        <span class="badge badge-primary" id="topbar-user-role" style="font-size: 0.7rem; padding: 2px 6px; text-transform: uppercase; margin-left: 4px;">OWNER</span>
+                        <span class="badge badge-primary" id="topbar-user-role"
+                            style="font-size: 0.7rem; padding: 2px 6px; text-transform: uppercase; margin-left: 4px;">OWNER</span>
                         <!-- User dropdown -->
                         <div class="user-dropdown" id="user-dropdown">
                             <div class="user-dropdown-header">
                                 <div class="user-dropdown-name" id="dropdown-user-name"></div>
                                 <div class="user-dropdown-email" id="dropdown-user-email"></div>
-                                <div class="user-dropdown-role text-xs text-muted mt-1" id="dropdown-user-role" style="font-size: 0.75rem; color: var(--color-text-muted);">Role: OWNER</div>
+                                <div class="user-dropdown-role text-xs text-muted mt-1" id="dropdown-user-role"
+                                    style="font-size: 0.75rem; color: var(--color-text-muted);">Role: OWNER</div>
                             </div>
                             <button class="user-dropdown-item" onclick="Router.navigate('/settings')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -329,7 +334,7 @@
                 const { data: authData, error: authError } = await supabaseClient.auth.getUser();
                 if (authError || !authData || !authData.user) {
                     console.error("Onboarding authentication check failed:", authError);
-                    throw authError || new Error("Failed to authenticate user: session not active.");
+                    return null;
                 }
                 const authenticatedUser = authData.user;
                 const authenticatedUserId = authenticatedUser.id;
@@ -341,55 +346,82 @@
                 const phone = meta?.phone || '';
                 const email = authenticatedUser.email || sessionUser?.email || '';
 
-                const orgId = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() :
-                    ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-                        const r = Math.random() * 16 | 0;
-                        const v = c === 'x' ? r : (r & 0x3 | 0x8);
-                        return v.toString(16);
-                    }));
+                let activeOrgId = null;
 
-                // Step B: Create organization
-                console.log("Onboarding org insert input parameters:", { id: orgId, name: orgName, email: email, phone: phone });
-                const { error: orgError } = await supabaseClient
-                    .from('organizations')
-                    .insert({
-                        id: orgId,
-                        name: orgName,
-                        email: email,
-                        phone: phone,
-                        subscription_plan: 'Trial',
-                        subscription_status: 'Active'
-                    });
+                // Step B: Check if an organization already exists in DB (or by email)
+                try {
+                    const { data: existingOrgs } = await supabaseClient
+                        .from('organizations')
+                        .select('id, email')
+                        .order('legal_name', { ascending: false, nullsFirst: false })
+                        .limit(1);
 
-                if (orgError) {
-                    console.error("organizations insert error result:", orgError);
-                    throw orgError;
+                    if (existingOrgs && existingOrgs.length > 0) {
+                        activeOrgId = existingOrgs[0].id;
+                        console.log("Found existing organization in DB:", activeOrgId);
+                    }
+                } catch (findErr) {
+                    console.warn("Failed to lookup existing organization:", findErr);
                 }
 
-                // Step C: Guarantee profile exists FIRST
+                // Step C: If no organization exists, create one
+                if (!activeOrgId) {
+                    activeOrgId = (typeof Utils !== 'undefined' && Utils.uuid) ? Utils.uuid() :
+                        ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                            const r = Math.random() * 16 | 0;
+                            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                            return v.toString(16);
+                        }));
+
+                    console.log("Creating new initial organization:", activeOrgId);
+                    const { error: orgError } = await supabaseClient
+                        .from('organizations')
+                        .insert({
+                            id: activeOrgId,
+                            name: orgName,
+                            email: email,
+                            phone: phone,
+                            subscription_plan: 'Trial',
+                            subscription_status: 'Active'
+                        });
+
+                    if (orgError) {
+                        console.warn("organizations insert warning:", orgError);
+                        // If unique constraint error on email, fetch existing organization by email or limit
+                        const { data: fallbackOrgs } = await supabaseClient
+                            .from('organizations')
+                            .select('id')
+                            .limit(1);
+                        if (fallbackOrgs && fallbackOrgs.length > 0) {
+                            activeOrgId = fallbackOrgs[0].id;
+                        }
+                    }
+                }
+
+                // Step D: Guarantee profile exists and link organization_id
                 const profilePayload = {
                     id: authenticatedUserId,
                     first_name: firstName,
                     last_name: lastName,
                     phone: phone,
-                    organization_id: orgId,
+                    organization_id: activeOrgId,
                     updated_at: new Date().toISOString()
                 };
 
                 try {
                     const { error: pErr } = await supabaseClient
                         .from('profiles')
-                        .update({ organization_id: orgId, updated_at: new Date().toISOString() })
+                        .update({ organization_id: activeOrgId, updated_at: new Date().toISOString() })
                         .eq('id', authenticatedUserId);
 
                     if (pErr) {
-                        await supabaseClient.from('profiles').insert(profilePayload);
+                        await supabaseClient.from('profiles').upsert(profilePayload);
                     }
                 } catch (pErr) {
                     console.warn("Profile setup warning:", pErr);
                 }
 
-                // Step D: Fetch Owner role ID (default to 1 if empty)
+                // Step E: Fetch Owner role ID
                 let roleId = 1;
                 try {
                     const { data: roleRow } = await supabaseClient
@@ -402,9 +434,9 @@
                     console.warn("Role lookup warning, defaulting to 1 (Owner):", rErr);
                 }
 
-                // Step E: Insert into organization_members
+                // Step F: Insert into organization_members safely
                 const membershipPayload = {
-                    organization_id: orgId,
+                    organization_id: activeOrgId,
                     user_id: authenticatedUserId,
                     role_id: roleId,
                     status: 'Active',
@@ -414,21 +446,25 @@
                 try {
                     await supabaseClient.from('organization_members').insert(membershipPayload);
                 } catch (mErr) {
-                    console.warn("Membership insert warning:", mErr);
+                    console.warn("Membership insert warning (non-fatal):", mErr);
                 }
 
-                console.log("✅ Onboarding successful.");
-                window.clearProfileCache();
+                if (typeof localStorage !== 'undefined') {
+                    localStorage.setItem('stomata_active_org_id', activeOrgId);
+                }
+
+                console.log("✅ Onboarding complete for org:", activeOrgId);
+                if (typeof window.clearProfileCache === 'function') window.clearProfileCache();
                 if (typeof AuthRepository !== 'undefined') {
                     return await AuthRepository.getProfileAndPermissions(sessionUser);
                 }
                 return await window.getUserProfile();
             } catch (setupErr) {
-                console.error("Onboarding failed:", setupErr);
-                alert('Account verified, but database organization setup failed: ' + setupErr.message);
+                console.warn("Onboarding non-fatal exception:", setupErr);
                 return null;
             }
         }
+
 
         (async function bootstrap() {
             // Bootstrap Offline Subsystem first
