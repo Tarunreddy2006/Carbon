@@ -390,23 +390,47 @@ const SettingsModule = {
                     const user = typeof getUser === 'function' ? await getUser() : (Auth.user || null);
                     if (user && user.id) {
                         try {
-                            await supabase
+                            // Ensure user profile exists in public.profiles table before FK reference
+                            const { data: existingProf } = await supabase
                                 .from('profiles')
-                                .update({ organization_id: newOrgId, updated_at: new Date().toISOString() })
-                                .eq('id', user.id);
+                                .select('id')
+                                .eq('id', user.id)
+                                .maybeSingle();
 
-                            await supabase
-                                .from('organization_members')
-                                .insert({
-                                    organization_id: newOrgId,
-                                    user_id: user.id,
-                                    role_id: 1, // Owner
-                                    status: 'Active'
-                                });
+                            if (!existingProf) {
+                                await supabase
+                                    .from('profiles')
+                                    .upsert({
+                                        id: user.id,
+                                        first_name: user.user_metadata?.first_name || user.email?.split('@')[0] || 'User',
+                                        organization_id: newOrgId,
+                                        updated_at: new Date().toISOString()
+                                    });
+                            } else {
+                                await supabase
+                                    .from('profiles')
+                                    .update({ organization_id: newOrgId, updated_at: new Date().toISOString() })
+                                    .eq('id', user.id);
+                            }
+
+                            // Safely insert into organization_members
+                            try {
+                                await supabase
+                                    .from('organization_members')
+                                    .insert({
+                                        organization_id: newOrgId,
+                                        user_id: user.id,
+                                        role_id: 1, // Owner
+                                        status: 'Active'
+                                    });
+                            } catch (mErr) {
+                                console.warn('[SettingsModule] organization_members insert warning (non-fatal):', mErr);
+                            }
                         } catch (linkErr) {
                             console.warn('[SettingsModule] Org linkage warning:', linkErr);
                         }
                     }
+
 
                     if (typeof localStorage !== 'undefined') {
                         localStorage.setItem('stomata_active_org_id', newOrgId);

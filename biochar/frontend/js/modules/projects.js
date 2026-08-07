@@ -245,8 +245,17 @@ const ProjectsModule = {
                                 activeOrgId = newOrgId;
                                 const user = typeof getUser === 'function' ? await getUser() : (Auth.user || null);
                                 if (user && user.id) {
-                                    await client.from('profiles').update({ organization_id: newOrgId }).eq('id', user.id);
+                                    try {
+                                        await client.from('profiles').upsert({
+                                            id: user.id,
+                                            organization_id: newOrgId,
+                                            updated_at: new Date().toISOString()
+                                        });
+                                    } catch (pErr) {
+                                        console.warn('[ProjectsModule] Profile upsert warning:', pErr);
+                                    }
                                 }
+
                             }
                         } catch (createErr) {
                             console.warn('[ProjectsModule] Auto org creation warning:', createErr);
