@@ -89,13 +89,47 @@ const Auth = {
     },
 
     get orgId() {
-        const raw = this._profile?.organization_id || this._profile?.organization_members?.[0]?.organization_id || null;
+        let raw = this._profile?.organization_id || this._profile?.organization_members?.[0]?.organization_id || null;
+        if (!raw && typeof localStorage !== 'undefined') {
+            raw = localStorage.getItem('stomata_active_org_id');
+        }
         if (!raw || raw === 'offline-org') return null;
         const isValid = typeof Utils !== 'undefined' && Utils.isValidUuid
             ? Utils.isValidUuid(raw)
             : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
         return isValid ? raw : null;
     },
+
+    async getOrFetchOrgId() {
+        const direct = this.orgId;
+        if (direct) return direct;
+
+        if (typeof getOrganizationId === 'function') {
+            const fetched = await getOrganizationId();
+            if (fetched) {
+                if (typeof localStorage !== 'undefined') localStorage.setItem('stomata_active_org_id', fetched);
+                if (this._profile) this._profile.organization_id = fetched;
+                return fetched;
+            }
+        }
+
+        if (window.supabase) {
+            try {
+                const { data: orgs } = await window.supabase.from('organizations').select('id').limit(1);
+                if (orgs && orgs.length > 0 && orgs[0].id) {
+                    const fetchedId = orgs[0].id;
+                    if (typeof localStorage !== 'undefined') localStorage.setItem('stomata_active_org_id', fetchedId);
+                    if (this._profile) this._profile.organization_id = fetchedId;
+                    return fetchedId;
+                }
+            } catch (e) {
+                console.warn('[Auth] getOrFetchOrgId query failed:', e);
+            }
+        }
+
+        return null;
+    },
+
 
     getUserRole() {
         const profile = this._profile;

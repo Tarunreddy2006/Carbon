@@ -243,39 +243,63 @@ const SettingsModule = {
 
     async loadOrgData() {
         let orgId = Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null);
-        
-        // 1. Populate form if org exists
+        if (!orgId && typeof Auth.getOrFetchOrgId === 'function') {
+            orgId = await Auth.getOrFetchOrgId();
+        }
+
+        let orgData = null;
+
+        // 1. Populate form if org exists or query fallback
         if (orgId) {
             try {
-                const { data } = await OfflineStorage.fetchWithCache('organizations', () => 
-                    supabase
-                        .from('organizations')
-                        .select('*')
-                        .eq('id', orgId)
-                        .maybeSingle()
-                , { isSingle: true, id: orgId });
+                const { data } = await supabase
+                    .from('organizations')
+                    .select('*')
+                    .eq('id', orgId)
+                    .maybeSingle();
+                orgData = data;
+            } catch (err) {
+                console.warn('[SettingsModule] Failed to fetch org by orgId:', err);
+            }
+        }
 
-                if (data) {
-                    const nameEl = document.getElementById('org-display-name');
-                    if (nameEl) nameEl.value = data.name || '';
-                    const legalEl = document.getElementById('org-legal-name');
-                    if (legalEl) legalEl.value = data.legal_name || '';
-                    const regEl = document.getElementById('org-reg-num');
-                    if (regEl) regEl.value = data.registration_number || '';
-                    const taxEl = document.getElementById('org-tax-num');
-                    if (taxEl) taxEl.value = data.gst_number || '';
-                    const emailEl = document.getElementById('org-email');
-                    if (emailEl) emailEl.value = data.email || '';
-                    const phoneEl = document.getElementById('org-phone');
-                    if (phoneEl) phoneEl.value = data.phone || '';
-                    const webEl = document.getElementById('org-website');
-                    if (webEl) webEl.value = data.website || '';
-                    const addrEl = document.getElementById('org-address');
-                    if (addrEl) addrEl.value = data.address || '';
+        // Fallback: Query first organization in database if orgId was not set
+        if (!orgData) {
+            try {
+                const { data: orgs } = await supabase
+                    .from('organizations')
+                    .select('*')
+                    .limit(1);
+                if (orgs && orgs.length > 0) {
+                    orgData = orgs[0];
+                    orgId = orgData.id;
+                    if (typeof localStorage !== 'undefined') {
+                        localStorage.setItem('stomata_active_org_id', orgId);
+                    }
+                    if (Auth._profile) Auth._profile.organization_id = orgId;
                 }
             } catch (err) {
-                console.warn('[SettingsModule] Failed to populate org details:', err);
+                console.warn('[SettingsModule] Failed fallback org query:', err);
             }
+        }
+
+        if (orgData) {
+            const nameEl = document.getElementById('org-display-name');
+            if (nameEl) nameEl.value = orgData.name || '';
+            const legalEl = document.getElementById('org-legal-name');
+            if (legalEl) legalEl.value = orgData.legal_name || '';
+            const regEl = document.getElementById('org-reg-num');
+            if (regEl) regEl.value = orgData.registration_number || '';
+            const taxEl = document.getElementById('org-tax-num');
+            if (taxEl) taxEl.value = orgData.gst_number || '';
+            const emailEl = document.getElementById('org-email');
+            if (emailEl) emailEl.value = orgData.email || '';
+            const phoneEl = document.getElementById('org-phone');
+            if (phoneEl) phoneEl.value = orgData.phone || '';
+            const webEl = document.getElementById('org-website');
+            if (webEl) webEl.value = orgData.website || '';
+            const addrEl = document.getElementById('org-address');
+            if (addrEl) addrEl.value = orgData.address || '';
         }
 
         // 2. Always bind Form Submit Listener for Create / Update
@@ -305,6 +329,10 @@ const SettingsModule = {
 
             try {
                 let currentOrgId = orgId || Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null);
+                if (!currentOrgId && typeof Auth.getOrFetchOrgId === 'function') {
+                    currentOrgId = await Auth.getOrFetchOrgId();
+                }
+
                 let existingOrg = null;
 
                 if (currentOrgId) {
@@ -316,7 +344,18 @@ const SettingsModule = {
                     existingOrg = data;
                 }
 
-                if (existingOrg) {
+                if (!existingOrg) {
+                    const { data: fallbackOrgs } = await supabase
+                        .from('organizations')
+                        .select('id')
+                        .limit(1);
+                    if (fallbackOrgs && fallbackOrgs.length > 0) {
+                        existingOrg = fallbackOrgs[0];
+                        currentOrgId = existingOrg.id;
+                    }
+                }
+
+                if (existingOrg && currentOrgId) {
                     // UPDATE existing organization
                     const { error } = await supabase
                         .from('organizations')
@@ -324,6 +363,12 @@ const SettingsModule = {
                         .eq('id', currentOrgId);
 
                     if (error) throw error;
+
+                    if (typeof localStorage !== 'undefined') {
+                        localStorage.setItem('stomata_active_org_id', currentOrgId);
+                    }
+                    if (Auth._profile) Auth._profile.organization_id = currentOrgId;
+
                     Toast.success('Organization details updated successfully');
                 } else {
                     // CREATE new organization (INSERT)
@@ -345,16 +390,10 @@ const SettingsModule = {
                     const user = typeof getUser === 'function' ? await getUser() : (Auth.user || null);
                     if (user && user.id) {
                         try {
-                            const { error: pErr } = await supabase
+                            await supabase
                                 .from('profiles')
                                 .update({ organization_id: newOrgId, updated_at: new Date().toISOString() })
                                 .eq('id', user.id);
-
-                            if (pErr) {
-                                await supabase
-                                    .from('profiles')
-                                    .insert({ id: user.id, organization_id: newOrgId, updated_at: new Date().toISOString() });
-                            }
 
                             await supabase
                                 .from('organization_members')
@@ -372,6 +411,7 @@ const SettingsModule = {
                     if (typeof localStorage !== 'undefined') {
                         localStorage.setItem('stomata_active_org_id', newOrgId);
                     }
+                    if (Auth._profile) Auth._profile.organization_id = newOrgId;
 
                     Toast.success('Organization created successfully');
                 }
@@ -379,7 +419,9 @@ const SettingsModule = {
                 // Reload profile cache & update UI context
                 if (typeof clearProfileCache === 'function') clearProfileCache();
                 if (typeof Auth !== 'undefined' && Auth.guard) await Auth.guard();
-                if (typeof Auth !== 'undefined' && Auth.populateUI) Auth.populateUI();
+
+                // Re-populate Settings form fields with saved values
+                await this.loadOrgData();
 
             } catch (err) {
                 console.error(err);
@@ -390,6 +432,7 @@ const SettingsModule = {
             }
         });
     },
+
 
     _roles: null,
 

@@ -308,8 +308,39 @@ async function getUserProfile() {
 async function getOrganizationId() {
     if (_cachedOrgId) return _cachedOrgId;
     const profile = await getUserProfile();
-    return profile?.organization_id || null;
+    if (profile?.organization_id) {
+        _cachedOrgId = profile.organization_id;
+        if (typeof localStorage !== 'undefined') localStorage.setItem('stomata_active_org_id', _cachedOrgId);
+        return _cachedOrgId;
+    }
+
+    if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem('stomata_active_org_id');
+        if (stored && stored !== 'null' && stored !== 'undefined') {
+            _cachedOrgId = stored;
+            return stored;
+        }
+    }
+
+    // Direct fallback query on organizations table
+    try {
+        const client = window.originalSupabase || window.supabaseClient || window.supabase;
+        if (client) {
+            const { data: orgs } = await client.from('organizations').select('id').limit(1);
+            if (orgs && orgs.length > 0 && orgs[0].id) {
+                _cachedOrgId = orgs[0].id;
+                if (typeof localStorage !== 'undefined') localStorage.setItem('stomata_active_org_id', _cachedOrgId);
+                if (profile) profile.organization_id = _cachedOrgId;
+                return _cachedOrgId;
+            }
+        }
+    } catch (e) {
+        console.warn('[supabase.js] Failed to query organizations in getOrganizationId:', e);
+    }
+
+    return null;
 }
+
 
 /**
  * Reset local application context memory limits.
