@@ -135,7 +135,6 @@ const ProjectsModule = {
     async openProjectModal(projectId = null) {
         let title = 'Add New Project';
         let nameValue = '';
-        let orgId = Auth.orgId;
 
         if (projectId) {
             title = 'Edit Project';
@@ -200,68 +199,66 @@ const ProjectsModule = {
                         .eq('id', projectId);
                     error = err;
                 } else {
-                    // Resolve organization_id through all available sources
-                    let activeOrgId = orgId;
+                    // Resolve organization_id fresh — fully self-contained, no outer-scope dependencies
+                    let activeOrgId = null;
 
-                    // Fallback 1: Auth.getOrFetchOrgId()
-                    if (!activeOrgId && typeof Auth !== 'undefined' && Auth.getOrFetchOrgId) {
-                        activeOrgId = await Auth.getOrFetchOrgId();
+                    // Source 1: Auth.orgId (cached profile)
+                    if (typeof Auth !== 'undefined' && Auth.orgId) {
+                        activeOrgId = Auth.orgId;
                     }
 
-                    // Fallback 2: getOrganizationId()
+                    // Source 2: Auth.getOrFetchOrgId() (queries DB if needed)
+                    if (!activeOrgId && typeof Auth !== 'undefined' && typeof Auth.getOrFetchOrgId === 'function') {
+                        try { activeOrgId = await Auth.getOrFetchOrgId(); } catch (e) { console.warn('[ProjectsModule] Auth.getOrFetchOrgId failed:', e); }
+                    }
+
+                    // Source 3: getOrganizationId() global helper
                     if (!activeOrgId && typeof getOrganizationId === 'function') {
-                        activeOrgId = await getOrganizationId();
+                        try { activeOrgId = await getOrganizationId(); } catch (e) { console.warn('[ProjectsModule] getOrganizationId failed:', e); }
                     }
 
-                    // Fallback 3: Query organizations table directly via supabase client prioritizing populated record
+                    // Source 4: localStorage
+                    if (!activeOrgId && typeof localStorage !== 'undefined') {
+                        activeOrgId = localStorage.getItem('stomata_active_org_id');
+                    }
+
+                    // Source 5: Direct DB query for any organization
                     if (!activeOrgId) {
                         try {
-                            const client = window.supabase || window.originalSupabase;
+                            const client = window.originalSupabase || window.supabaseClient || window.supabase;
                             if (client) {
                                 const { data: orgs } = await client
                                     .from('organizations')
-                                    .select('id, legal_name')
-                                    .order('legal_name', { ascending: false, nullsFirst: false })
+                                    .select('id')
+                                    .order('created_at', { ascending: false })
                                     .limit(1);
                                 if (orgs && orgs.length > 0 && orgs[0].id) {
                                     activeOrgId = orgs[0].id;
                                 }
                             }
                         } catch (orgErr) {
-                            console.warn('[ProjectsModule] Failed to resolve org from organizations table:', orgErr);
+                            console.warn('[ProjectsModule] Failed to resolve org from DB:', orgErr);
                         }
                     }
 
-                    // Fallback 4: Retrieve from localStorage
-                    if (!activeOrgId && typeof localStorage !== 'undefined') {
-                        activeOrgId = localStorage.getItem('stomata_active_org_id');
-                    }
-
-
-                    const isValidOrgId = activeOrgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(activeOrgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId));
+                    // Validate UUID format
+                    const isValidOrgId = activeOrgId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId);
 
                     if (!isValidOrgId) {
-                        throw new Error('No active Organization found. Please go to Settings > Organization to create or select your organization first.');
+                        throw new Error('No active Organization found. Please go to Settings → Organization to create or select your organization first.');
                     }
 
+                    // Persist resolved org ID
                     if (typeof localStorage !== 'undefined') {
                         localStorage.setItem('stomata_active_org_id', activeOrgId);
                     }
-                    if (Auth._profile) Auth._profile.organization_id = activeOrgId;
-
-                    const insertPayload = { name, organization_id: activeOrgId };
-
-
-                    console.log('[ProjectsModule Diagnostic]', {
-                        isOnline: typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine,
-                        navigatorOnline: navigator.onLine,
-                        activeOrgId,
-                        insertPayload
-                    });
+                    if (typeof Auth !== 'undefined' && Auth._profile) {
+                        Auth._profile.organization_id = activeOrgId;
+                    }
 
                     const { error: err } = await supabase
                         .from('projects')
-                        .insert(insertPayload);
+                        .insert({ name, organization_id: activeOrgId });
                     error = err;
                 }
 

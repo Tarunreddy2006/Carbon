@@ -438,121 +438,112 @@ const SettingsModule = {
                 updated_at: new Date().toISOString()
             };
 
+            // Use original client to avoid proxy issues
+            const dbClient = window.originalSupabase || window.supabaseClient || window.supabase;
+
             try {
                 let currentOrgId = orgId || Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null);
                 if (!currentOrgId && typeof Auth.getOrFetchOrgId === 'function') {
                     currentOrgId = await Auth.getOrFetchOrgId();
                 }
 
-                let existingOrg = null;
+                let resolvedOrg = null;
 
+                // Step 1: Try to find existing org by ID
                 if (currentOrgId) {
-                    const { data } = await supabase
+                    const { data } = await dbClient
                         .from('organizations')
                         .select('id')
                         .eq('id', currentOrgId)
                         .maybeSingle();
-                    existingOrg = data;
+                    if (data) resolvedOrg = data;
                 }
 
-                if (!existingOrg) {
-                    const { data: fallbackOrgs } = await supabase
+                // Step 2: Try to find existing org by email (prevents duplicate key violation)
+                if (!resolvedOrg && payload.email) {
+                    const { data: emailOrg } = await dbClient
                         .from('organizations')
                         .select('id')
-                        .order('legal_name', { ascending: false, nullsFirst: false })
-                        .limit(1);
-                    if (fallbackOrgs && fallbackOrgs.length > 0) {
-                        existingOrg = fallbackOrgs[0];
-                        currentOrgId = existingOrg.id;
+                        .eq('email', payload.email)
+                        .maybeSingle();
+                    if (emailOrg) {
+                        resolvedOrg = emailOrg;
+                        currentOrgId = emailOrg.id;
                     }
                 }
 
-                if (existingOrg && currentOrgId) {
+                // Step 3: Fallback — find any org in the database
+                if (!resolvedOrg) {
+                    const { data: fallbackOrgs } = await dbClient
+                        .from('organizations')
+                        .select('id')
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    if (fallbackOrgs && fallbackOrgs.length > 0) {
+                        resolvedOrg = fallbackOrgs[0];
+                        currentOrgId = resolvedOrg.id;
+                    }
+                }
+
+                if (resolvedOrg && currentOrgId) {
                     // UPDATE existing organization
-                    const { error } = await supabase
+                    const { error } = await dbClient
                         .from('organizations')
                         .update(payload)
                         .eq('id', currentOrgId);
 
                     if (error) throw error;
+                    Toast.success('Organization details updated successfully');
+                } else {
+                    // CREATE new organization
+                    const newOrgId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'org-' + Date.now();
 
+                    const createPayload = {
+                        id: newOrgId,
+                        ...payload,
+                        created_at: new Date().toISOString()
+                    };
+
+                    const { data: createdOrg, error: createErr } = await dbClient
+                        .from('organizations')
+                        .insert(createPayload)
+                        .select()
+                        .single();
+
+                    // HALT: Do NOT proceed to membership if org creation failed
+                    if (createErr) {
+                        console.error('[SettingsModule] Organization creation failed:', createErr);
+                        throw createErr;
+                    }
+
+                    currentOrgId = createdOrg ? createdOrg.id : newOrgId;
+                    Toast.success('Organization created successfully');
+                }
+
+                // Persist org ID to localStorage and Auth profile
+                if (currentOrgId) {
                     if (typeof localStorage !== 'undefined') {
                         localStorage.setItem('stomata_active_org_id', currentOrgId);
                     }
                     if (Auth._profile) Auth._profile.organization_id = currentOrgId;
+                }
 
-                    Toast.success('Organization details updated successfully');
-                } else {
-
-                    // Check if an organization with this email already exists before inserting
-                    if (payload.email) {
-                        const { data: emailOrg } = await supabase
-                            .from('organizations')
-                            .select('id')
-                            .eq('email', payload.email)
-                            .maybeSingle();
-
-                        if (emailOrg) {
-                            currentOrgId = emailOrg.id;
-                            const { error: upErr } = await supabase
-                                .from('organizations')
-                                .update(payload)
-                                .eq('id', currentOrgId);
-                            if (upErr) throw upErr;
-                            existingOrg = emailOrg;
-                        }
-                    }
-
-                    if (!existingOrg) {
-                        // CREATE new organization (INSERT)
-                        const newOrgId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'org-' + Date.now();
-
-                        const createPayload = {
-                            id: newOrgId,
-                            ...payload,
-                            created_at: new Date().toISOString()
-                        };
-
-                        const { error: createErr } = await supabase
-                            .from('organizations')
-                            .insert(createPayload);
-
-                        // HALT REQUIREMENT: Halt membership logic if org creation fails
-                        if (createErr) {
-                            console.error('[SettingsModule] Organization creation failed:', createErr);
-                            throw createErr;
-                        }
-                        currentOrgId = newOrgId;
-                    }
-
-                    // Link current user to organization in profiles and organization_members only after org is confirmed
+                // Link current user to organization (only after org is confirmed to exist)
+                if (currentOrgId) {
                     const user = typeof getUser === 'function' ? await getUser() : (Auth.user || null);
-                    if (user && user.id && currentOrgId) {
+                    if (user && user.id) {
                         try {
-                            const { data: existingProf } = await supabase
+                            // Update profile with org link
+                            await dbClient
                                 .from('profiles')
-                                .select('id')
-                                .eq('id', user.id)
-                                .maybeSingle();
+                                .upsert({
+                                    id: user.id,
+                                    organization_id: currentOrgId,
+                                    updated_at: new Date().toISOString()
+                                }, { onConflict: 'id' });
 
-                            if (!existingProf) {
-                                await supabase
-                                    .from('profiles')
-                                    .upsert({
-                                        id: user.id,
-                                        first_name: user.user_metadata?.first_name || user.email?.split('@')[0] || 'User',
-                                        organization_id: currentOrgId,
-                                        updated_at: new Date().toISOString()
-                                    });
-                            } else {
-                                await supabase
-                                    .from('profiles')
-                                    .update({ organization_id: currentOrgId, updated_at: new Date().toISOString() })
-                                    .eq('id', user.id);
-                            }
-
-                            // Check membership before inserting
-                            const { data: existingMember } = await supabase
+                            // Check membership before inserting to avoid duplicates
+                            const { data: existingMember } = await dbClient
                                 .from('organization_members')
                                 .select('id')
                                 .eq('organization_id', currentOrgId)
@@ -560,7 +551,7 @@ const SettingsModule = {
                                 .maybeSingle();
 
                             if (!existingMember) {
-                                await supabase
+                                const { error: memberErr } = await dbClient
                                     .from('organization_members')
                                     .insert({
                                         organization_id: currentOrgId,
@@ -568,20 +559,15 @@ const SettingsModule = {
                                         role_id: 1, // Owner
                                         status: 'Active'
                                     });
+                                if (memberErr) {
+                                    console.warn('[SettingsModule] Membership insert warning:', memberErr);
+                                }
                             }
                         } catch (linkErr) {
                             console.warn('[SettingsModule] Org linkage warning:', linkErr);
                         }
                     }
-
-                    if (typeof localStorage !== 'undefined') {
-                        localStorage.setItem('stomata_active_org_id', currentOrgId);
-                    }
-                    if (Auth._profile) Auth._profile.organization_id = currentOrgId;
-
-                    Toast.success('Organization saved successfully');
                 }
-
 
                 // Reload profile cache & update UI context
                 if (typeof clearProfileCache === 'function') clearProfileCache();
@@ -591,7 +577,7 @@ const SettingsModule = {
                 await this.loadOrgData();
 
             } catch (err) {
-                console.error(err);
+                console.error('[SettingsModule] Org save error:', err);
                 Toast.error('Failed to save organization: ' + err.message);
             } finally {
                 btn.classList.remove('loading');
