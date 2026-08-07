@@ -192,16 +192,48 @@ const SettingsModule = {
     },
 
     async loadProfileData() {
-        const profile = Auth.profile;
-        if (!profile) return;
+        let profile = Auth.profile;
+        const user = Auth.user || (typeof getUser === 'function' ? await getUser() : null);
 
-        document.getElementById('profile-first-name').value = profile.first_name || '';
-        document.getElementById('profile-last-name').value = profile.last_name || '';
-        document.getElementById('profile-phone').value = profile.phone || '';
-        document.getElementById('profile-email-readonly').value = Auth.user?.email || '';
+        // Fetch fresh profile from database table
+        if (user && user.id) {
+            try {
+                const { data: dbProfile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', user.id)
+                    .maybeSingle();
+                if (dbProfile) {
+                    profile = { ...profile, ...dbProfile };
+                    if (Auth._profile) {
+                        Auth._profile.first_name = dbProfile.first_name || Auth._profile.first_name;
+                        Auth._profile.last_name = dbProfile.last_name || Auth._profile.last_name;
+                        Auth._profile.phone = dbProfile.phone || Auth._profile.phone;
+                    }
+                }
+            } catch (e) {
+                console.warn('[SettingsModule] Profile DB fetch warning:', e);
+            }
+        }
 
-        // Form Submit
+        const meta = user?.user_metadata || {};
+        const firstName = profile?.first_name || meta.first_name || '';
+        const lastName = profile?.last_name || meta.last_name || '';
+        const phone = profile?.phone || meta.phone || '';
+
+        const firstEl = document.getElementById('profile-first-name');
+        if (firstEl) firstEl.value = firstName;
+        const lastEl = document.getElementById('profile-last-name');
+        if (lastEl) lastEl.value = lastName;
+        const phoneEl = document.getElementById('profile-phone');
+        if (phoneEl) phoneEl.value = phone;
+        const emailEl = document.getElementById('profile-email-readonly');
+        if (emailEl) emailEl.value = user?.email || profile?.email || '';
+
+        // Form Submit Listener
         const form = document.getElementById('profile-settings-form');
+        if (!form) return;
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const { valid } = FormValidator.validate(form);
@@ -211,28 +243,64 @@ const SettingsModule = {
             btn.classList.add('loading');
             btn.disabled = true;
 
+            const activeUser = Auth.user || (typeof getUser === 'function' ? await getUser() : null);
+            if (!activeUser || !activeUser.id) {
+                Toast.error('User session not found');
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                return;
+            }
+
+            const firstNameVal = document.getElementById('profile-first-name').value.trim();
+            const lastNameVal = document.getElementById('profile-last-name').value.trim();
+            const phoneVal = document.getElementById('profile-phone').value.trim();
+
             const payload = {
-                first_name: document.getElementById('profile-first-name').value.trim(),
-                last_name: document.getElementById('profile-last-name').value.trim(),
-                phone: document.getElementById('profile-phone').value.trim(),
+                id: activeUser.id,
+                first_name: firstNameVal,
+                last_name: lastNameVal,
+                phone: phoneVal,
+                organization_id: Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null),
                 updated_at: new Date().toISOString()
             };
 
             try {
+                // Guaranteed persistence into public.profiles DB table using upsert
                 const { error } = await supabase
                     .from('profiles')
-                    .update(payload)
-                    .eq('id', Auth.user.id);
+                    .upsert(payload, { onConflict: 'id' });
 
                 if (error) throw error;
 
-                // Reload profile data cache
-                clearProfileCache();
-                await Auth.guard(); // refetch
-                Auth.populateUI(); // update sidebar/topbar
+                // Sync Auth user metadata
+                const client = window.originalSupabase || window.supabaseClient || window.supabase;
+                if (client && client.auth) {
+                    try {
+                        await client.auth.updateUser({
+                            data: {
+                                first_name: firstNameVal,
+                                last_name: lastNameVal,
+                                phone: phoneVal
+                            }
+                        });
+                    } catch (authErr) {
+                        console.warn('[SettingsModule] Auth metadata update warning:', authErr);
+                    }
+                }
+
+                // Reload profile data cache and update UI
+                if (typeof clearProfileCache === 'function') clearProfileCache();
+                if (typeof Auth !== 'undefined' && Auth.guard) await Auth.guard();
+                if (typeof Auth !== 'undefined' && Auth.populateUI) Auth.populateUI();
+
+                const topbarName = document.getElementById('topbar-user-name');
+                if (topbarName) topbarName.textContent = `${firstNameVal} ${lastNameVal}`.trim() || activeUser.email;
+                const dropdownName = document.getElementById('dropdown-user-name');
+                if (dropdownName) dropdownName.textContent = `${firstNameVal} ${lastNameVal}`.trim() || activeUser.email;
+
                 Toast.success('Profile updated successfully');
             } catch (err) {
-                console.error(err);
+                console.error('[SettingsModule] Profile save error:', err);
                 Toast.error('Failed to update profile: ' + err.message);
             } finally {
                 btn.classList.remove('loading');
@@ -240,6 +308,7 @@ const SettingsModule = {
             }
         });
     },
+
 
     async loadOrgData() {
         let orgId = Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null);
