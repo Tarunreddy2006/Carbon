@@ -37,6 +37,31 @@ const SyncEngine = {
             return;
         }
 
+        const originalSupabase = window.originalSupabase || window.supabaseClient;
+        if (!originalSupabase) {
+            this.isSyncing = false;
+            this.updateStats();
+            return;
+        }
+
+        // Purge any pending duplicate CREATE organization items if an organization already exists remotely
+        try {
+            const { data: existingOrgs } = await originalSupabase
+                .from('organizations')
+                .select('id')
+                .limit(1);
+            if (existingOrgs && existingOrgs.length > 0) {
+                const pendingItems = await SyncQueue.getPending();
+                for (const qItem of pendingItems) {
+                    if (qItem.entity_type === 'organizations' && qItem.operation_type === 'CREATE') {
+                        await SyncQueue.remove(qItem.local_uuid);
+                    }
+                }
+            }
+        } catch (purgeErr) {
+            console.warn('[SyncEngine] Org queue purge warning:', purgeErr);
+        }
+
         const queue = await SyncQueue.getPending();
         if (queue.length === 0) {
             this.isSyncing = false;
@@ -44,17 +69,11 @@ const SyncEngine = {
             return;
         }
 
+
         this.isSyncing = true;
         this.updateStats();
         
         console.log(`SyncEngine: Starting synchronization of ${queue.length} items...`);
-        
-        const originalSupabase = window.originalSupabase;
-        if (!originalSupabase) {
-            this.isSyncing = false;
-            this.updateStats();
-            return;
-        }
         
         for (const item of queue) {
             if (!Connectivity.isOnline) {
@@ -66,6 +85,28 @@ const SyncEngine = {
                 await SyncQueue.updateStatus(item.local_uuid, { sync_status: 'syncing' });
                 
                 if (item.operation_type === 'CREATE') {
+                    // Prevent creating duplicate organizations
+                    if (item.entity_type === 'organizations') {
+                        const { data: existingOrgs } = await originalSupabase
+                            .from('organizations')
+                            .select('id')
+                            .limit(1);
+                        if (existingOrgs && existingOrgs.length > 0) {
+                            const mainOrgId = existingOrgs[0].id;
+                            const updatePayload = { ...item.payload };
+                            delete updatePayload.id;
+                            delete updatePayload.created_at;
+                            if (Object.keys(updatePayload).length > 0) {
+                                await originalSupabase
+                                    .from('organizations')
+                                    .update(updatePayload)
+                                    .eq('id', mainOrgId);
+                            }
+                            await SyncQueue.remove(item.local_uuid);
+                            continue;
+                        }
+                    }
+
                     // Check if it already exists remotely
                     const { data: existing } = await originalSupabase
                         .from(item.entity_type)
