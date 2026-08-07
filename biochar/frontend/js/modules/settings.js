@@ -426,7 +426,6 @@ const SettingsModule = {
                     }
                 }
 
-
                 if (existingOrg && currentOrgId) {
                     // UPDATE existing organization
                     const { error } = await supabase
@@ -443,26 +442,52 @@ const SettingsModule = {
 
                     Toast.success('Organization details updated successfully');
                 } else {
-                    // CREATE new organization (INSERT)
-                    const newOrgId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'org-' + Date.now();
 
-                    const createPayload = {
-                        id: newOrgId,
-                        ...payload,
-                        created_at: new Date().toISOString()
-                    };
+                    // Check if an organization with this email already exists before inserting
+                    if (payload.email) {
+                        const { data: emailOrg } = await supabase
+                            .from('organizations')
+                            .select('id')
+                            .eq('email', payload.email)
+                            .maybeSingle();
 
-                    const { error: createErr } = await supabase
-                        .from('organizations')
-                        .insert(createPayload);
+                        if (emailOrg) {
+                            currentOrgId = emailOrg.id;
+                            const { error: upErr } = await supabase
+                                .from('organizations')
+                                .update(payload)
+                                .eq('id', currentOrgId);
+                            if (upErr) throw upErr;
+                            existingOrg = emailOrg;
+                        }
+                    }
 
-                    if (createErr) throw createErr;
+                    if (!existingOrg) {
+                        // CREATE new organization (INSERT)
+                        const newOrgId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'org-' + Date.now();
 
-                    // Link current user to new organization in profiles and organization_members
+                        const createPayload = {
+                            id: newOrgId,
+                            ...payload,
+                            created_at: new Date().toISOString()
+                        };
+
+                        const { error: createErr } = await supabase
+                            .from('organizations')
+                            .insert(createPayload);
+
+                        // HALT REQUIREMENT: Halt membership logic if org creation fails
+                        if (createErr) {
+                            console.error('[SettingsModule] Organization creation failed:', createErr);
+                            throw createErr;
+                        }
+                        currentOrgId = newOrgId;
+                    }
+
+                    // Link current user to organization in profiles and organization_members only after org is confirmed
                     const user = typeof getUser === 'function' ? await getUser() : (Auth.user || null);
-                    if (user && user.id) {
+                    if (user && user.id && currentOrgId) {
                         try {
-                            // Ensure user profile exists in public.profiles table before FK reference
                             const { data: existingProf } = await supabase
                                 .from('profiles')
                                 .select('id')
@@ -475,42 +500,47 @@ const SettingsModule = {
                                     .upsert({
                                         id: user.id,
                                         first_name: user.user_metadata?.first_name || user.email?.split('@')[0] || 'User',
-                                        organization_id: newOrgId,
+                                        organization_id: currentOrgId,
                                         updated_at: new Date().toISOString()
                                     });
                             } else {
                                 await supabase
                                     .from('profiles')
-                                    .update({ organization_id: newOrgId, updated_at: new Date().toISOString() })
+                                    .update({ organization_id: currentOrgId, updated_at: new Date().toISOString() })
                                     .eq('id', user.id);
                             }
 
-                            // Safely insert into organization_members
-                            try {
+                            // Check membership before inserting
+                            const { data: existingMember } = await supabase
+                                .from('organization_members')
+                                .select('id')
+                                .eq('organization_id', currentOrgId)
+                                .eq('user_id', user.id)
+                                .maybeSingle();
+
+                            if (!existingMember) {
                                 await supabase
                                     .from('organization_members')
                                     .insert({
-                                        organization_id: newOrgId,
+                                        organization_id: currentOrgId,
                                         user_id: user.id,
                                         role_id: 1, // Owner
                                         status: 'Active'
                                     });
-                            } catch (mErr) {
-                                console.warn('[SettingsModule] organization_members insert warning (non-fatal):', mErr);
                             }
                         } catch (linkErr) {
                             console.warn('[SettingsModule] Org linkage warning:', linkErr);
                         }
                     }
 
-
                     if (typeof localStorage !== 'undefined') {
-                        localStorage.setItem('stomata_active_org_id', newOrgId);
+                        localStorage.setItem('stomata_active_org_id', currentOrgId);
                     }
-                    if (Auth._profile) Auth._profile.organization_id = newOrgId;
+                    if (Auth._profile) Auth._profile.organization_id = currentOrgId;
 
-                    Toast.success('Organization created successfully');
+                    Toast.success('Organization saved successfully');
                 }
+
 
                 // Reload profile cache & update UI context
                 if (typeof clearProfileCache === 'function') clearProfileCache();
