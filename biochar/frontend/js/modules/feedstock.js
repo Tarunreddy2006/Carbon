@@ -292,6 +292,17 @@ const FeedstockModule = {
 
             if (projectsErr) throw projectsErr;
 
+            let supplierNameValue = '';
+            let supplierContactValue = '';
+            let vehicleNumberValue = '';
+            let driverDetailsValue = '';
+            let sourceTypeValue = 'Aggregator';
+            let lotNumValue = '';
+            let speciesValue = '';
+            let storageDaysValue = '';
+            let contamStatusValue = 'false';
+            let contamNotesValue = '';
+
             if (feedstockId) {
                 title = 'Edit Feedstock Ingest';
                 const { data, error } = await OfflineStorage.fetchWithCache('feedstock_batches', () =>
@@ -308,9 +319,19 @@ const FeedstockModule = {
                 batchCodeValue = data.batch_code;
                 typeValue = data.feedstock_type;
                 massValue = (data.wet_weight_kg || data.weight_kg || 0) / 1000;
-                moistureValue = data.moisture_percent != null ? data.moisture_percent : '15.0';
+                moistureValue = data.moisture_percent != null ? data.moisture_percent : '';
                 methodValue = data.moisture_measurement_method || 'Oven Drying (ASTM E1755)';
-                
+                supplierNameValue = data.supplier_name || '';
+                supplierContactValue = data.supplier_contact || '';
+                vehicleNumberValue = data.vehicle_number || '';
+                driverDetailsValue = data.driver_details || '';
+                sourceTypeValue = data.biomass_source_type || 'Aggregator';
+                lotNumValue = data.feedstock_lot_number || '';
+                speciesValue = data.biomass_species || '';
+                storageDaysValue = data.storage_days != null ? data.storage_days : '';
+                contamStatusValue = data.contamination_status ? 'true' : 'false';
+                contamNotesValue = data.contamination_notes || '';
+
                 if (data.origin_location) {
                     const parts = data.origin_location.split(',');
                     if (parts.length === 2) {
@@ -384,52 +405,70 @@ const FeedstockModule = {
                             </select>
                         </div>
 
-                        <!-- Biomass Sourcing & Supplier Metadata -->
+                        <!-- Biomass Sourcing & Transport Details -->
                         <div style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-accent-light); margin-top: var(--space-3); margin-bottom: var(--space-2);">
-                            Biomass Sourcing & Supplier Metadata
+                            Biomass Sourcing & Transport Logistics
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label" for="feedstock-supplier">Biomass Supplier Name <span class="required">*</span></label>
-                                <input type="text" class="form-input" id="feedstock-supplier" name="supplier_name" value="Green Biomass Pvt Ltd" data-validate="required" data-label="Supplier Name" placeholder="e.g. Green Biomass Pvt Ltd" />
+                                <input type="text" class="form-input" id="feedstock-supplier" name="supplier_name" value="${Utils.escapeHtml(supplierNameValue)}" data-validate="required" data-label="Supplier Name" placeholder="e.g. Green Biomass Pvt Ltd" />
                             </div>
                             <div class="form-group">
-                                <label class="form-label" for="feedstock-source-type">Biomass Source Type</label>
-                                <select class="form-select" id="feedstock-source-type" name="biomass_source_type">
-                                    <option value="Aggregator">Biomass Aggregator</option>
-                                    <option value="Farm Direct">Farm Direct</option>
-                                    <option value="Sawmill">Sawmill / Forestry Scrap</option>
-                                    <option value="Food Processor">Food Processing Residue</option>
-                                </select>
+                                <label class="form-label" for="feedstock-supplier-contact">Supplier Phone / Contact</label>
+                                <input type="text" class="form-input" id="feedstock-supplier-contact" name="supplier_contact" value="${Utils.escapeHtml(supplierContactValue)}" placeholder="e.g. +91 98765 43210" />
                             </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="feedstock-vehicle">Transport Vehicle Number</label>
+                                <input type="text" class="form-input" id="feedstock-vehicle" name="vehicle_number" value="${Utils.escapeHtml(vehicleNumberValue)}" placeholder="e.g. KA-05-EV-4321" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="feedstock-driver">Driver Name / Details</label>
+                                <input type="text" class="form-input" id="feedstock-driver" name="driver_details" value="${Utils.escapeHtml(driverDetailsValue)}" placeholder="e.g. Ramesh Kumar" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="feedstock-source-type">Biomass Source Category</label>
+                            <select class="form-select" id="feedstock-source-type" name="biomass_source_type">
+                                <option value="Aggregator" ${sourceTypeValue === 'Aggregator' ? 'selected' : ''}>Biomass Aggregator</option>
+                                <option value="Farm Direct" ${sourceTypeValue === 'Farm Direct' ? 'selected' : ''}>Farm Direct</option>
+                                <option value="Sawmill" ${sourceTypeValue === 'Sawmill' ? 'selected' : ''}>Sawmill / Forestry Scrap</option>
+                                <option value="Food Processor" ${sourceTypeValue === 'Food Processor' ? 'selected' : ''}>Food Processing Residue</option>
+                            </select>
                         </div>
 
                         <!-- Phase 3 Feedstock Intelligence Parameters -->
                         <div style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-accent-light); margin-top: var(--space-3); margin-bottom: var(--space-2);">
-                            Feedstock Intelligence & Reliability Metadata
+                            Feedstock Intelligence & Quality Parameters
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label" for="feedstock-lot-num">Feedstock Lot Number</label>
-                                <input type="text" class="form-input" id="feedstock-lot-num" name="feedstock_lot_number" value="LOT-${batchCodeValue}" placeholder="e.g. LOT-2026-0801" />
+                                <input type="text" class="form-input" id="feedstock-lot-num" name="feedstock_lot_number" value="${Utils.escapeHtml(lotNumValue)}" placeholder="e.g. LOT-2026-0801" />
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="feedstock-species">Biomass Species</label>
-                                <input type="text" class="form-input" id="feedstock-species" name="biomass_species" value="Oryza sativa (Rice Husk)" placeholder="e.g. Rice Husk / Coconut Shell" />
+                                <input type="text" class="form-input" id="feedstock-species" name="biomass_species" value="${Utils.escapeHtml(speciesValue)}" placeholder="e.g. Oryza sativa (Rice Husk)" />
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label class="form-label" for="feedstock-storage-days">Storage Duration (Days)</label>
-                                <input type="text" class="form-input" id="feedstock-storage-days" name="storage_days" value="14" data-validate="number" placeholder="e.g. 14" />
+                                <input type="text" class="form-input" id="feedstock-storage-days" name="storage_days" value="${storageDaysValue}" data-validate="number" placeholder="e.g. 14" />
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="feedstock-contam">Contamination Status</label>
                                 <select class="form-select" id="feedstock-contam" name="contamination_status">
-                                    <option value="false">Clean / No Contamination</option>
-                                    <option value="true">Flagged / Contaminated</option>
+                                    <option value="false" ${contamStatusValue === 'false' ? 'selected' : ''}>Clean / No Contamination</option>
+                                    <option value="true" ${contamStatusValue === 'true' ? 'selected' : ''}>Flagged / Contaminated</option>
                                 </select>
                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="feedstock-contam-notes">Contamination / Quality Notes</label>
+                            <input type="text" class="form-input" id="feedstock-contam-notes" name="contamination_notes" value="${Utils.escapeHtml(contamNotesValue)}" placeholder="e.g. Clean biomass delivery, no visible plastic or mold" />
                         </div>
 
                         <!-- Phase 1 Live Mass Balance Calculator Display -->
@@ -490,13 +529,17 @@ const FeedstockModule = {
                 const waterKg = wetKg * (moisture / 100);
                 const method = document.getElementById('feedstock-method').value;
 
-                // Sourcing & Intelligence inputs
-                const supplierName = document.getElementById('feedstock-supplier').value.trim() || 'Green Biomass Pvt Ltd';
+                // Sourcing & Transport Logistics inputs
+                const supplierName = document.getElementById('feedstock-supplier').value.trim();
+                const supplierContact = document.getElementById('feedstock-supplier-contact').value.trim();
+                const vehicleNumber = document.getElementById('feedstock-vehicle').value.trim();
+                const driverDetails = document.getElementById('feedstock-driver').value.trim();
                 const sourceType = document.getElementById('feedstock-source-type').value;
                 const lotNum = document.getElementById('feedstock-lot-num').value.trim() || `LOT-${batchCodeValue}`;
-                const species = document.getElementById('feedstock-species').value.trim() || 'Oryza sativa (Rice Husk)';
+                const species = document.getElementById('feedstock-species').value.trim();
                 const storageDays = parseInt(document.getElementById('feedstock-storage-days').value, 10) || 0;
                 const contamStatus = document.getElementById('feedstock-contam').value === 'true';
+                const contamNotes = document.getElementById('feedstock-contam-notes').value.trim();
 
                 // Quality score calculation
                 let mScore = moisture <= 15 ? 35 : (moisture <= 25 ? 25 : 10);
@@ -523,14 +566,19 @@ const FeedstockModule = {
                     moisture_measurement_method: method,
                     received_date: new Date().toISOString().split('T')[0],
                     supplier_name: supplierName,
+                    supplier_contact: supplierContact,
+                    vehicle_number: vehicleNumber,
+                    driver_details: driverDetails,
                     biomass_source_type: sourceType,
                     feedstock_lot_number: lotNum,
                     biomass_species: species,
                     storage_days: storageDays,
                     contamination_status: contamStatus,
+                    contamination_notes: contamNotes,
                     quality_score: qScore,
                     quality_status: qStatus,
                 };
+
 
                 try {
                     let error;

@@ -263,12 +263,13 @@ const SettingsModule = {
             }
         }
 
-        // Fallback: Query first organization in database if orgId was not set
+        // Fallback: Query populated organization in database if orgId was not set
         if (!orgData) {
             try {
                 const { data: orgs } = await supabase
                     .from('organizations')
                     .select('*')
+                    .order('legal_name', { ascending: false, nullsFirst: false })
                     .limit(1);
                 if (orgs && orgs.length > 0) {
                     orgData = orgs[0];
@@ -348,12 +349,14 @@ const SettingsModule = {
                     const { data: fallbackOrgs } = await supabase
                         .from('organizations')
                         .select('id')
+                        .order('legal_name', { ascending: false, nullsFirst: false })
                         .limit(1);
                     if (fallbackOrgs && fallbackOrgs.length > 0) {
                         existingOrg = fallbackOrgs[0];
                         currentOrgId = existingOrg.id;
                     }
                 }
+
 
                 if (existingOrg && currentOrgId) {
                     // UPDATE existing organization

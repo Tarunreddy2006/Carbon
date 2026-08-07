@@ -211,12 +211,16 @@ const ProjectsModule = {
                         activeOrgId = await getOrganizationId();
                     }
 
-                    // Fallback 3: Query organizations table directly via supabase client
+                    // Fallback 3: Query organizations table directly via supabase client prioritizing populated record
                     if (!activeOrgId) {
                         try {
                             const client = window.supabase || window.originalSupabase;
                             if (client) {
-                                const { data: orgs } = await client.from('organizations').select('id').limit(1);
+                                const { data: orgs } = await client
+                                    .from('organizations')
+                                    .select('id, legal_name')
+                                    .order('legal_name', { ascending: false, nullsFirst: false })
+                                    .limit(1);
                                 if (orgs && orgs.length > 0 && orgs[0].id) {
                                     activeOrgId = orgs[0].id;
                                 }
@@ -231,36 +235,6 @@ const ProjectsModule = {
                         activeOrgId = localStorage.getItem('stomata_active_org_id');
                     }
 
-                    // Fallback 5: Auto-create a default Organization if database is completely fresh
-                    if (!activeOrgId || activeOrgId === 'null' || activeOrgId === 'undefined') {
-                        try {
-                            const newOrgId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'org-' + Date.now();
-                            const client = window.supabase || window.originalSupabase;
-                            if (client) {
-                                await client.from('organizations').insert({
-                                    id: newOrgId,
-                                    name: 'My Biochar Organization',
-                                    created_at: new Date().toISOString()
-                                });
-                                activeOrgId = newOrgId;
-                                const user = typeof getUser === 'function' ? await getUser() : (Auth.user || null);
-                                if (user && user.id) {
-                                    try {
-                                        await client.from('profiles').upsert({
-                                            id: user.id,
-                                            organization_id: newOrgId,
-                                            updated_at: new Date().toISOString()
-                                        });
-                                    } catch (pErr) {
-                                        console.warn('[ProjectsModule] Profile upsert warning:', pErr);
-                                    }
-                                }
-
-                            }
-                        } catch (createErr) {
-                            console.warn('[ProjectsModule] Auto org creation warning:', createErr);
-                        }
-                    }
 
                     const isValidOrgId = activeOrgId && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(activeOrgId) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeOrgId));
 

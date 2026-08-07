@@ -322,11 +322,15 @@ async function getOrganizationId() {
         }
     }
 
-    // Direct fallback query on organizations table
+    // Direct fallback query on organizations table prioritizing populated record
     try {
         const client = window.originalSupabase || window.supabaseClient || window.supabase;
         if (client) {
-            const { data: orgs } = await client.from('organizations').select('id').limit(1);
+            const { data: orgs } = await client
+                .from('organizations')
+                .select('id, legal_name')
+                .order('legal_name', { ascending: false, nullsFirst: false })
+                .limit(1);
             if (orgs && orgs.length > 0 && orgs[0].id) {
                 _cachedOrgId = orgs[0].id;
                 if (typeof localStorage !== 'undefined') localStorage.setItem('stomata_active_org_id', _cachedOrgId);
@@ -340,6 +344,7 @@ async function getOrganizationId() {
 
     return null;
 }
+
 
 
 /**
