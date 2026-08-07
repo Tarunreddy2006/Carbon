@@ -260,20 +260,34 @@ const SettingsModule = {
                 first_name: firstNameVal,
                 last_name: lastNameVal,
                 phone: phoneVal,
-                organization_id: Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null),
                 updated_at: new Date().toISOString()
             };
 
-            try {
-                // Guaranteed persistence into public.profiles DB table using upsert
-                const { error } = await supabase
-                    .from('profiles')
-                    .upsert(payload, { onConflict: 'id' });
+            // Only include organization_id if it's a valid UUID to avoid FK constraint violations
+            const resolvedOrgId = Auth.orgId || (typeof localStorage !== 'undefined' ? localStorage.getItem('stomata_active_org_id') : null);
+            const isValidOrgId = resolvedOrgId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(resolvedOrgId);
+            if (isValidOrgId) {
+                payload.organization_id = resolvedOrgId;
+            }
 
-                if (error) throw error;
+            try {
+                // Use the original supabase client to avoid proxy issues
+                const client = window.originalSupabase || window.supabaseClient || window.supabase;
+
+                // Guaranteed persistence into public.profiles DB table using upsert
+                const { data: upsertData, error } = await client
+                    .from('profiles')
+                    .upsert(payload, { onConflict: 'id' })
+                    .select();
+
+                if (error) {
+                    console.error('[SettingsModule] Profile upsert DB error:', error);
+                    throw error;
+                }
+
+                console.log('[SettingsModule] Profile upsert success:', upsertData);
 
                 // Sync Auth user metadata
-                const client = window.originalSupabase || window.supabaseClient || window.supabase;
                 if (client && client.auth) {
                     try {
                         await client.auth.updateUser({
@@ -316,29 +330,56 @@ const SettingsModule = {
             orgId = await Auth.getOrFetchOrgId();
         }
 
+        // Use original client to avoid proxy issues
+        const client = window.originalSupabase || window.supabaseClient || window.supabase;
         let orgData = null;
 
-        // 1. Populate form if org exists or query fallback
+        // 1. Populate form if org exists by direct ID lookup
         if (orgId) {
             try {
-                const { data } = await supabase
+                const { data, error } = await client
                     .from('organizations')
                     .select('*')
                     .eq('id', orgId)
                     .maybeSingle();
-                orgData = data;
+                if (!error) orgData = data;
             } catch (err) {
                 console.warn('[SettingsModule] Failed to fetch org by orgId:', err);
             }
         }
 
-        // Fallback: Query populated organization in database if orgId was not set
+        // Fallback 2: Query via user's organization_members record
         if (!orgData) {
             try {
-                const { data: orgs } = await supabase
+                const user = Auth.user || (typeof getUser === 'function' ? await getUser() : null);
+                if (user && user.id) {
+                    const { data: memberData } = await client
+                        .from('organization_members')
+                        .select('organization_id, organizations(*)')
+                        .eq('user_id', user.id)
+                        .limit(1)
+                        .maybeSingle();
+                    if (memberData && memberData.organizations) {
+                        orgData = memberData.organizations;
+                        orgId = orgData.id;
+                        if (typeof localStorage !== 'undefined') {
+                            localStorage.setItem('stomata_active_org_id', orgId);
+                        }
+                        if (Auth._profile) Auth._profile.organization_id = orgId;
+                    }
+                }
+            } catch (err) {
+                console.warn('[SettingsModule] Failed to fetch org via membership:', err);
+            }
+        }
+
+        // Fallback 3: Query any organization in database
+        if (!orgData) {
+            try {
+                const { data: orgs } = await client
                     .from('organizations')
                     .select('*')
-                    .order('legal_name', { ascending: false, nullsFirst: false })
+                    .order('created_at', { ascending: false })
                     .limit(1);
                 if (orgs && orgs.length > 0) {
                     orgData = orgs[0];

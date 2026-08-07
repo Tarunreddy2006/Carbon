@@ -85,6 +85,9 @@ let _cachedProfile = null;
 
 // Instrument diagnostic proxy on supabaseClient.from
 if (typeof window !== 'undefined' && supabaseClient) {
+    // Preserve a reference to the original un-proxied client for direct DB operations
+    window.originalSupabase = supabaseClient;
+
     const originalFrom = supabaseClient.from;
     supabaseClient.from = function(tableName) {
         const isOnline = typeof Connectivity !== 'undefined' ? Connectivity.isOnline : navigator.onLine;

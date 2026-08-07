@@ -201,6 +201,8 @@ const ProjectsModule = {
                     error = err;
                 } else {
                     // Resolve organization_id through all available sources
+                    let activeOrgId = orgId;
+
                     // Fallback 1: Auth.getOrFetchOrgId()
                     if (!activeOrgId && typeof Auth !== 'undefined' && Auth.getOrFetchOrgId) {
                         activeOrgId = await Auth.getOrFetchOrgId();
