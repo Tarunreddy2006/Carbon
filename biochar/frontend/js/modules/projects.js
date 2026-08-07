@@ -40,21 +40,26 @@ const ProjectsModule = {
 
     async loadProjects() {
         try {
-            const { data: projectsData, error: projectsError } = await OfflineStorage.fetchWithCache('projects', () =>
-                supabase
-                    .from('projects')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-            );
+            // Direct query with fallback for responsive rendering
+            let projectsData = [];
+            const { data: remoteProjects, error: projectsError } = await supabase
+                .from('projects')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-            if (projectsError) throw projectsError;
+            if (!projectsError && remoteProjects) {
+                projectsData = remoteProjects;
+            } else {
+                const { data: cachedProjects } = await OfflineStorage.fetchWithCache('projects', () =>
+                    supabase.from('projects').select('*').order('created_at', { ascending: false })
+                );
+                projectsData = cachedProjects || [];
+            }
 
             // Fetch batches to resolve project counts in memory since projects -> biochar_batches is an indirect relationship
-            const { data: batchesData, error: batchesError } = await OfflineStorage.fetchWithCache('biochar_batches', () =>
-                supabase
-                    .from('biochar_batches')
-                    .select('id, pyrolysis_runs(feedstock_batches(project_id))')
-            );
+            const { data: batchesData } = await supabase
+                .from('biochar_batches')
+                .select('id, pyrolysis_runs(feedstock_batches(project_id))');
 
             const projectBatchCounts = {};
             if (batchesData) {
@@ -77,7 +82,7 @@ const ProjectsModule = {
 
             this._table = DataTable.render(container, {
                 columns: [
-                    { key: 'name', label: 'Project Name', sortable: true },
+                    { key: 'name', label: 'Project Name', sortable: true, render: (val) => `<strong>${Utils.escapeHtml(val || 'Unnamed Project')}</strong>` },
                     { key: 'batch_count', label: 'Batches Count', sortable: true, render: (val) => `<span class="badge badge-primary">${val} batch${val !== 1 ? 'es' : ''}</span>` },
                     { key: 'created_at', label: 'Created At', sortable: true, render: (val) => Utils.formatDateTime(val) },
                     { key: 'updated_at', label: 'Updated At', sortable: true, render: (val) => Utils.formatDateTime(val) },
@@ -107,6 +112,7 @@ const ProjectsModule = {
             Toast.error('Failed to load projects: ' + err.message);
         }
     },
+
 
     toggleMenu(e, id) {
         e.stopPropagation();

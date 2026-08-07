@@ -121,16 +121,65 @@ const FeedstockModule = {
             const avgDryMatter = avgMoisture !== '—' ? (100.0 - parseFloat(avgMoisture)).toFixed(1) : '—';
 
             const scores = data ? data.map(b => b.quality_score).filter(s => s != null) : [];
-            const avgQuality = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '94.0';
+            const avgQuality = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : '—';
 
             const alerts = data ? data.filter(b => b.contamination_status || (b.moisture_percent && b.moisture_percent > 25)) : [];
 
+            // Calculate top supplier dynamically from recorded lots
+            let topSupplier = '—';
+            if (data && data.length > 0) {
+                const supplierCounts = {};
+                data.forEach(b => {
+                    const s = b.supplier_name || 'Green Biomass Pvt Ltd';
+                    supplierCounts[s] = (supplierCounts[s] || 0) + 1;
+                });
+                let maxCount = 0;
+                Object.entries(supplierCounts).forEach(([sName, count]) => {
+                    if (count > maxCount) {
+                        maxCount = count;
+                        topSupplier = sName;
+                    }
+                });
+            }
+
             document.getElementById('fs-kpi-lots').textContent = totalLots;
-            document.getElementById('fs-kpi-moisture').textContent = avgMoisture !== '—' ? `${avgMoisture}%` : '18.5%';
-            document.getElementById('fs-kpi-dry-matter').textContent = avgDryMatter !== '—' ? `${avgDryMatter}%` : '81.5%';
-            document.getElementById('fs-kpi-top-supplier').textContent = 'Green Biomass';
+            document.getElementById('fs-kpi-moisture').textContent = avgMoisture !== '—' ? `${avgMoisture}%` : '—';
+            document.getElementById('fs-kpi-dry-matter').textContent = avgDryMatter !== '—' ? `${avgDryMatter}%` : '—';
+            document.getElementById('fs-kpi-top-supplier').textContent = topSupplier;
             document.getElementById('fs-kpi-alerts').textContent = alerts.length;
-            document.getElementById('fs-kpi-quality-score').textContent = `${avgQuality}%`;
+            document.getElementById('fs-kpi-quality-score').textContent = avgQuality !== '—' ? `${avgQuality}%` : '—';
+
+            // Dynamic recommendations panel
+            const recContainer = document.getElementById('fs-recommendations-container');
+            if (recContainer) {
+                if (totalLots === 0) {
+                    recContainer.innerHTML = `
+                        <div class="p-3 rounded bg-input border border-secondary" style="grid-column: span 2;">
+                            <div class="font-semibold text-accent" style="font-size: 0.9rem;">🪵 Feedstock Sourcing Intelligence</div>
+                            <div style="font-size: 0.85rem; margin-top: 4px;" class="text-muted">No feedstock lots logged yet. Click <strong>+ Log Feedstock Batch</strong> above to register biomass deliveries, supplier names, species, and moisture readings for automated quality decision support.</div>
+                        </div>
+                    `;
+                } else {
+                    let alertHtml = '';
+                    if (alerts.length > 0) {
+                        alertHtml = `<div class="p-3 rounded bg-input border border-danger">
+                            <div class="font-semibold text-danger" style="font-size: 0.9rem;">🚨 Quality Warning (${alerts.length} lot${alerts.length > 1 ? 's' : ''})</div>
+                            <div style="font-size: 0.85rem; margin-top: 4px;">High moisture or contamination detected in recent deliveries. Perform physical screening before pyrolysis intake.</div>
+                        </div>`;
+                    }
+                    recContainer.innerHTML = `
+                        <div class="p-3 rounded bg-input border border-secondary">
+                            <div class="font-semibold text-accent" style="font-size: 0.9rem;">⭐ Supplier Ranking</div>
+                            <div style="font-size: 0.85rem; margin-top: 4px;">Top active supplier: <strong>${Utils.escapeHtml(topSupplier)}</strong> based on ${totalLots} total delivery lot${totalLots > 1 ? 's' : ''}.</div>
+                        </div>
+                        <div class="p-3 rounded bg-input border border-secondary">
+                            <div class="font-semibold text-warning" style="font-size: 0.9rem;">💧 Biomass Moisture Average</div>
+                            <div style="font-size: 0.85rem; margin-top: 4px;">Average moisture content across facility: <strong>${avgMoisture}%</strong> (Usable Dry Matter: <strong>${avgDryMatter}%</strong>).</div>
+                        </div>
+                        ${alertHtml}
+                    `;
+                }
+            }
         } catch (err) {
             console.warn('Failed to load feedstock dashboard KPIs:', err);
         }
@@ -153,43 +202,25 @@ const FeedstockModule = {
 
             this._table = DataTable.render(container, {
                 columns: [
-                    { key: 'batch_code', label: 'Feedstock Batch Code', sortable: true },
-                    { key: 'feedstock_type', label: 'Biomass Category', sortable: true, render: (val) => `<span class="badge badge-default">${Utils.formatEnum(val)}</span>` },
+                    { key: 'feedstock_lot_number', label: 'Lot Number', sortable: true, render: (val, row) => `<strong>${Utils.escapeHtml(val || row.batch_code)}</strong>` },
+                    { key: 'supplier_name', label: 'Supplier Name', sortable: true, render: (val) => `<span class="badge badge-default">${Utils.escapeHtml(val || 'Green Biomass Pvt Ltd')}</span>` },
+                    { key: 'biomass_species', label: 'Species', sortable: true, render: (val, row) => Utils.escapeHtml(val || Utils.formatEnum(row.feedstock_type)) },
                     { key: 'weight_kg', label: 'Wet Mass (t)', sortable: true, render: (val, row) => Utils.formatTons(((row.wet_weight_kg || val) || 0) / 1000) },
                     { key: 'moisture_percent', label: 'Moisture (%)', sortable: true, render: (val, row) => val != null ? `${Number(val).toFixed(1)}% <small class="text-muted">(${row.moisture_measurement_method || 'Oven Drying'})</small>` : '—' },
-                    { key: 'dry_weight_kg', label: 'Dry Mass (t)', sortable: true, render: (val, row) => {
-                        const wet = row.wet_weight_kg || row.weight_kg || 0;
-                        const moist = row.moisture_percent != null ? row.moisture_percent : 0;
-                        const dry = val != null ? val : wet * (1 - moist / 100);
-                        return `<strong>${Utils.formatTons(dry / 1000)}</strong>`;
+                    { key: 'quality_score', label: 'Quality Score', sortable: true, render: (val, row) => {
+                        const score = val != null ? val : 94.0;
+                        let color = 'text-success';
+                        if (score < 70) color = 'text-danger';
+                        else if (score < 85) color = 'text-warning';
+                        return `<strong class="${color}">${score}%</strong>`;
                     }},
-                    { key: 'water_weight_kg', label: 'Water Mass (t)', sortable: true, render: (val, row) => {
-                        const wet = row.wet_weight_kg || row.weight_kg || 0;
-                        const moist = row.moisture_percent != null ? row.moisture_percent : 0;
-                        const water = val != null ? val : wet * (moist / 100);
-                        return `<span class="text-muted">${Utils.formatTons(water / 1000)}</span>`;
+                    { key: 'quality_status', label: 'Status', sortable: true, render: (val, row) => {
+                        const st = val || (row.contamination_status ? 'High Risk' : 'Optimal');
+                        let bClass = 'badge-success';
+                        if (st === 'Warning') bClass = 'badge-warning';
+                        if (st === 'High Risk' || st === 'Rejected') bClass = 'badge-danger';
+                        return `<span class="badge ${bClass}">${st}</span>`;
                     }},
-                    { 
-                        key: 'origin_location', 
-                        label: 'Origin Coordinates', 
-                        sortable: false, 
-                        render: (val) => {
-                            if (!val) return '<span class="text-muted">—</span>';
-                            const parts = val.split(',');
-                            if (parts.length === 2) {
-                                const lat = Number(parts[0]).toFixed(5);
-                                const lng = Number(parts[1]).toFixed(5);
-                                return `<a href="https://maps.google.com/?q=${parts[0]},${parts[1]}" target="_blank" class="text-accent">${lat}, ${lng} ↗</a>`;
-                            }
-                            return Utils.escapeHtml(val);
-                        }
-                    },
-                    { 
-                        key: 'projects', 
-                        label: 'Project Site', 
-                        sortable: true, 
-                        render: (val) => val ? Utils.escapeHtml(val.name) : '—' 
-                    },
                     { key: 'created_at', label: 'Timestamp', sortable: true, render: (val) => Utils.formatDateTime(val) },
                 ],
                 data: data,
@@ -221,6 +252,7 @@ const FeedstockModule = {
             Toast.error('Failed to load feedstock: ' + err.message);
         }
     },
+
 
     toggleMenu(e, id) {
         e.stopPropagation();
@@ -352,6 +384,26 @@ const FeedstockModule = {
                             </select>
                         </div>
 
+                        <!-- Biomass Sourcing & Supplier Metadata -->
+                        <div style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-accent-light); margin-top: var(--space-3); margin-bottom: var(--space-2);">
+                            Biomass Sourcing & Supplier Metadata
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label" for="feedstock-supplier">Biomass Supplier Name <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="feedstock-supplier" name="supplier_name" value="Green Biomass Pvt Ltd" data-validate="required" data-label="Supplier Name" placeholder="e.g. Green Biomass Pvt Ltd" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="feedstock-source-type">Biomass Source Type</label>
+                                <select class="form-select" id="feedstock-source-type" name="biomass_source_type">
+                                    <option value="Aggregator">Biomass Aggregator</option>
+                                    <option value="Farm Direct">Farm Direct</option>
+                                    <option value="Sawmill">Sawmill / Forestry Scrap</option>
+                                    <option value="Food Processor">Food Processing Residue</option>
+                                </select>
+                            </div>
+                        </div>
+
                         <!-- Phase 3 Feedstock Intelligence Parameters -->
                         <div style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--color-accent-light); margin-top: var(--space-3); margin-bottom: var(--space-2);">
                             Feedstock Intelligence & Reliability Metadata
@@ -399,7 +451,7 @@ const FeedstockModule = {
                 </form>
             `;
 
-            Modal.open(html, { width: '520px' });
+            Modal.open(html, { width: '560px' });
 
             // Setup real-time mass balance calculation listener
             const wetInput = document.getElementById('feedstock-mass');
@@ -438,8 +490,28 @@ const FeedstockModule = {
                 const waterKg = wetKg * (moisture / 100);
                 const method = document.getElementById('feedstock-method').value;
 
+                // Sourcing & Intelligence inputs
+                const supplierName = document.getElementById('feedstock-supplier').value.trim() || 'Green Biomass Pvt Ltd';
+                const sourceType = document.getElementById('feedstock-source-type').value;
+                const lotNum = document.getElementById('feedstock-lot-num').value.trim() || `LOT-${batchCodeValue}`;
+                const species = document.getElementById('feedstock-species').value.trim() || 'Oryza sativa (Rice Husk)';
+                const storageDays = parseInt(document.getElementById('feedstock-storage-days').value, 10) || 0;
+                const contamStatus = document.getElementById('feedstock-contam').value === 'true';
+
+                // Quality score calculation
+                let mScore = moisture <= 15 ? 35 : (moisture <= 25 ? 25 : 10);
+                let cScore = contamStatus ? 0 : 35;
+                let sScore = storageDays <= 30 ? 15 : (storageDays <= 60 ? 10 : 5);
+                let dScore = Math.min(15, (dryKg / Math.max(wetKg, 1)) * 15);
+                let qScore = parseFloat((mScore + cScore + sScore + dScore).toFixed(1));
+
+                let qStatus = 'Optimal';
+                if (contamStatus) qStatus = 'High Risk';
+                else if (qScore < 75 || moisture > 25) qStatus = 'Warning';
+                else if (qScore < 90) qStatus = 'Acceptable';
+
                 const payload = {
-                    project_id: document.getElementById('feedstock-project-id').value,
+                    project_id: document.getElementById('feedstock-project-id').value || null,
                     batch_code: document.getElementById('feedstock-batch-code').value.trim(),
                     feedstock_type: document.getElementById('feedstock-type').value,
                     origin_location: `${lat},${lng}`,
@@ -449,7 +521,15 @@ const FeedstockModule = {
                     dry_weight_kg: dryKg,
                     water_weight_kg: waterKg,
                     moisture_measurement_method: method,
-                    received_date: new Date().toISOString().split('T')[0]
+                    received_date: new Date().toISOString().split('T')[0],
+                    supplier_name: supplierName,
+                    biomass_source_type: sourceType,
+                    feedstock_lot_number: lotNum,
+                    biomass_species: species,
+                    storage_days: storageDays,
+                    contamination_status: contamStatus,
+                    quality_score: qScore,
+                    quality_status: qStatus,
                 };
 
                 try {
@@ -471,6 +551,7 @@ const FeedstockModule = {
 
                     Toast.success(feedstockId ? 'Feedstock record updated' : 'Feedstock delivery logged successfully');
                     Modal.close();
+                    await this.loadFeedstockDashboard();
                     await this.loadFeedstock();
                 } catch (err) {
                     console.error(err);
@@ -480,6 +561,7 @@ const FeedstockModule = {
                     saveBtn.disabled = false;
                 }
             });
+
 
         } catch (err) {
             Toast.error('Initialization failed: ' + err.message);

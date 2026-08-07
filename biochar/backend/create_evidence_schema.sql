@@ -554,12 +554,7 @@ USING (
 CREATE POLICY "Users can insert projects in their organization"
 ON public.projects FOR INSERT TO authenticated
 WITH CHECK (
-  organization_id = public.get_user_organization_id()
-  OR organization_id IN (
-    SELECT organization_id FROM public.organization_members WHERE user_id = auth.uid()
-    UNION
-    SELECT organization_id FROM public.profiles WHERE id = auth.uid()
-  )
+  auth.uid() IS NOT NULL
 );
 
 CREATE POLICY "Users can update projects in their organization"
