@@ -387,13 +387,23 @@
 
                     if (orgError) {
                         console.warn("organizations insert warning:", orgError);
-                        // If unique constraint error on email, fetch existing organization by email or limit
-                        const { data: fallbackOrgs } = await supabaseClient
+                        // If unique constraint error on email, fetch existing organization by email to link it properly
+                        const { data: matchedOrg } = await supabaseClient
                             .from('organizations')
                             .select('id')
-                            .limit(1);
-                        if (fallbackOrgs && fallbackOrgs.length > 0) {
-                            activeOrgId = fallbackOrgs[0].id;
+                            .eq('email', email)
+                            .maybeSingle();
+                        
+                        if (matchedOrg) {
+                            activeOrgId = matchedOrg.id;
+                        } else {
+                            const { data: fallbackOrgs } = await supabaseClient
+                                .from('organizations')
+                                .select('id')
+                                .limit(1);
+                            if (fallbackOrgs && fallbackOrgs.length > 0) {
+                                activeOrgId = fallbackOrgs[0].id;
+                            }
                         }
                     }
                 }

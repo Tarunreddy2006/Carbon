@@ -447,6 +447,12 @@ const SettingsModule = {
                     currentOrgId = await Auth.getOrFetchOrgId();
                 }
 
+                // Clean and validate currentOrgId to prevent UUID syntax error
+                const isUuid = (id) => id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+                if (!isUuid(currentOrgId)) {
+                    currentOrgId = null;
+                }
+
                 let resolvedOrg = null;
 
                 // Step 1: Try to find existing org by ID
