@@ -6,11 +6,15 @@ class SupabaseQueryBuilder {
         this.payload = null;
         this.selectColumns = '*';
         this.isSingle = false;
+        this.selectCalled = false;
     }
 
     select(columns) {
-        this.mutationType = 'SELECT';
+        if (!this.mutationType) {
+            this.mutationType = 'SELECT';
+        }
         this.selectColumns = columns || '*';
+        this.selectCalled = true;
         return this;
     }
 
@@ -83,8 +87,14 @@ class SupabaseQueryBuilder {
                     query = query.select(this.selectColumns || '*');
                 } else if (this.mutationType === 'INSERT') {
                     query = query.insert(this.payload);
+                    if (this.selectCalled) {
+                        query = query.select(this.selectColumns);
+                    }
                 } else if (this.mutationType === 'UPDATE') {
                     query = query.update(this.payload);
+                    if (this.selectCalled) {
+                        query = query.select(this.selectColumns);
+                    }
                 } else if (this.mutationType === 'DELETE') {
                     query = query.delete();
                 }
