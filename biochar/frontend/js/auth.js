@@ -71,16 +71,52 @@ const Auth = {
     },
 
     get displayName() {
-        if (!this._profile) return 'User';
-        const first = this._profile.first_name || '';
-        const last = this._profile.last_name || '';
-        return (first + ' ' + last).trim() || this._user?.email || 'User';
+        // 1. Try profile names
+        let first = this._profile?.first_name || '';
+        let last = this._profile?.last_name || '';
+        let name = (first + ' ' + last).trim();
+        if (name) return name;
+
+        // 2. Try user_metadata names
+        if (this._user?.user_metadata) {
+            const meta = this._user.user_metadata;
+            first = meta.first_name || '';
+            last = meta.last_name || '';
+            name = (first + ' ' + last).trim();
+            if (name) return name;
+
+            const fullName = meta.full_name || meta.name || '';
+            if (fullName.trim()) return fullName.trim();
+        }
+
+        // 3. Fallback to email prefix (before @)
+        if (this._user?.email) {
+            return this._user.email.split('@')[0];
+        }
+
+        return 'User';
     },
 
     get initials() {
-        if (!this._profile) return '?';
-        const f = (this._profile.first_name || 'U')[0].toUpperCase();
-        const l = (this._profile.last_name || '')[0]?.toUpperCase() || '';
+        // Try getting first letters from displayName
+        const name = this.displayName;
+        if (name && name !== 'User' && name.includes(' ')) {
+            const parts = name.split(/\s+/);
+            const f = parts[0]?.[0]?.toUpperCase() || '';
+            const l = parts[parts.length - 1]?.[0]?.toUpperCase() || '';
+            return f + l;
+        }
+        
+        let first = this._profile?.first_name || '';
+        let last = this._profile?.last_name || '';
+        
+        if (!first && this._user?.user_metadata) {
+            first = this._user.user_metadata.first_name || '';
+            last = this._user.user_metadata.last_name || '';
+        }
+
+        const f = (first || 'U')[0].toUpperCase();
+        const l = (last || '')[0]?.toUpperCase() || '';
         return f + l;
     },
 

@@ -36,6 +36,26 @@ const AuthRepository = {
                 return await this.restoreFromCache(user);
             }
 
+            const meta = user.user_metadata || {};
+            let metaFirst = meta.first_name || '';
+            let metaLast = meta.last_name || '';
+            if (!metaFirst && !metaLast && (meta.full_name || meta.name)) {
+                const fullName = (meta.full_name || meta.name).trim();
+                const spaceIdx = fullName.indexOf(' ');
+                if (spaceIdx > 0) {
+                    metaFirst = fullName.slice(0, spaceIdx);
+                    metaLast = fullName.slice(spaceIdx + 1);
+                } else {
+                    metaFirst = fullName;
+                }
+            }
+            if (!profile.first_name && metaFirst) {
+                profile.first_name = metaFirst;
+            }
+            if (!profile.last_name && metaLast) {
+                profile.last_name = metaLast;
+            }
+
             // 2. Fetch membership, org, and roles
             const { data: members, error: memberErr } = await client
                 .from('organization_members')
@@ -136,6 +156,26 @@ const AuthRepository = {
 
             if (!profile) {
                 profile = this.createFallbackProfile(user, targetOrgId);
+            } else {
+                const meta = user.user_metadata || {};
+                let metaFirst = meta.first_name || '';
+                let metaLast = meta.last_name || '';
+                if (!metaFirst && !metaLast && (meta.full_name || meta.name)) {
+                    const fullName = (meta.full_name || meta.name).trim();
+                    const spaceIdx = fullName.indexOf(' ');
+                    if (spaceIdx > 0) {
+                        metaFirst = fullName.slice(0, spaceIdx);
+                        metaLast = fullName.slice(spaceIdx + 1);
+                    } else {
+                        metaFirst = fullName;
+                    }
+                }
+                if (!profile.first_name && metaFirst) {
+                    profile.first_name = metaFirst;
+                }
+                if (!profile.last_name && metaLast) {
+                    profile.last_name = metaLast;
+                }
             }
 
             profile.organization_members = members || [];
@@ -161,10 +201,24 @@ const AuthRepository = {
         const meta = user.user_metadata || {};
         const isValidUuid = (str) => typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(str) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
         const validOrgId = isValidUuid(orgId) ? orgId : (isValidUuid(meta.org_id) ? meta.org_id : null);
+        
+        let metaFirst = meta.first_name || '';
+        let metaLast = meta.last_name || '';
+        if (!metaFirst && !metaLast && (meta.full_name || meta.name)) {
+            const fullName = (meta.full_name || meta.name).trim();
+            const spaceIdx = fullName.indexOf(' ');
+            if (spaceIdx > 0) {
+                metaFirst = fullName.slice(0, spaceIdx);
+                metaLast = fullName.slice(spaceIdx + 1);
+            } else {
+                metaFirst = fullName;
+            }
+        }
+
         return {
             id: user.id,
-            first_name: meta.first_name || 'Offline',
-            last_name: meta.last_name || 'User',
+            first_name: metaFirst || 'Offline',
+            last_name: metaLast || 'User',
             phone: meta.phone || '',
             email: user.email || '',
             organization_id: validOrgId,

@@ -183,6 +183,26 @@ async function getUserProfile() {
             throw profileErr || new Error("Profile not found");
         }
 
+        const meta = user.user_metadata || {};
+        let metaFirst = meta.first_name || '';
+        let metaLast = meta.last_name || '';
+        if (!metaFirst && !metaLast && (meta.full_name || meta.name)) {
+            const fullName = (meta.full_name || meta.name).trim();
+            const spaceIdx = fullName.indexOf(' ');
+            if (spaceIdx > 0) {
+                metaFirst = fullName.slice(0, spaceIdx);
+                metaLast = fullName.slice(spaceIdx + 1);
+            } else {
+                metaFirst = fullName;
+            }
+        }
+        if (!profile.first_name && metaFirst) {
+            profile.first_name = metaFirst;
+        }
+        if (!profile.last_name && metaLast) {
+            profile.last_name = metaLast;
+        }
+
         let org = null;
         const isValidOrgId = profile.organization_id && (typeof Utils !== 'undefined' && Utils.isValidUuid ? Utils.isValidUuid(profile.organization_id) : /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(profile.organization_id));
         if (isValidOrgId) {
