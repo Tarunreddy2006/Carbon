@@ -82,6 +82,26 @@ const DashboardModule = {
                 </div>
             </div>
 
+            <!-- Secondary KPI Cards -->
+            <div class="kpi-grid animate-fade-up" style="grid-template-columns: repeat(2, 1fr); margin-top: var(--space-4);">
+                <div class="kpi-card">
+                    <div class="kpi-card-header">
+                        <span class="kpi-card-label">Net Carbon Removal</span>
+                        <span class="kpi-card-icon">🌱</span>
+                    </div>
+                    <div class="kpi-card-value text-success" id="kpi-net-carbon">—</div>
+                    <small>Approx. net sequestered carbon (tCO2e)</small>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-card-header">
+                        <span class="kpi-card-label">Evidence Files Locker</span>
+                        <span class="kpi-card-icon">📁</span>
+                    </div>
+                    <div class="kpi-card-value" id="kpi-evidence-count">—</div>
+                    <small>Verified document records</small>
+                </div>
+            </div>
+
 
             <!-- Charts & Alerts Grid -->
             <div class="charts-grid animate-fade-up" style="margin-bottom: var(--space-6);">
@@ -138,7 +158,7 @@ const DashboardModule = {
         // Setup connectivity auto-refresh listener once
         if (!this._connectivityListenerBound) {
             window.addEventListener('connectivity-change', (e) => {
-                if (e.detail?.isOnline && document.getElementById('kpi-projects')) {
+                if (e.detail?.isOnline && document.getElementById('kpi-wet-biomass')) {
                     DashboardModule.loadData();
                 }
             });
@@ -241,6 +261,39 @@ const DashboardModule = {
 
         const alertsEl = document.getElementById('kpi-active-anomalies');
         if (alertsEl) alertsEl.textContent = alerts.length;
+
+        // Net Carbon Removal — approximate calculation
+        // Formula: biochar_produced_kg × carbon_fraction × CO2_conversion_factor
+        // Using conservative estimates: ~80% fixed carbon in biochar, × 3.67 (CO2/C ratio)
+        // Adjusted by average yield as a quality indicator
+        const carbonFraction = 0.80; // 80% fixed carbon (conservative for quality biochar)
+        const co2ConversionFactor = 3.67; // molecular weight ratio CO2/C
+        const yieldQualityFactor = avgYield > 0 ? Math.min(avgYield / 30, 1.0) : 1.0; // normalize around 30% target yield
+        const netCarbonTco2e = (totalProducedKg / 1000) * carbonFraction * co2ConversionFactor * yieldQualityFactor;
+        const netCarbonEl = document.getElementById('kpi-net-carbon');
+        if (netCarbonEl) netCarbonEl.textContent = `${netCarbonTco2e.toFixed(2)} tCO2e`;
+
+        // Evidence Files Locker — count of uploaded evidence documents
+        let evidenceCount = 0;
+        try {
+            const { data: evidenceData, error: evidenceErr } = await supabase
+                .from('evidence_files')
+                .select('id', { count: 'exact', head: true });
+            if (!evidenceErr && evidenceData !== null) {
+                evidenceCount = evidenceData.length || 0;
+            }
+            // Fallback: if head mode returns count in response
+            if (evidenceCount === 0) {
+                const { count, error: countErr } = await supabase
+                    .from('evidence_files')
+                    .select('id', { count: 'exact', head: true });
+                if (!countErr && count != null) evidenceCount = count;
+            }
+        } catch (evErr) {
+            console.warn('[DashboardModule] Evidence count warning:', evErr);
+        }
+        const evidenceEl = document.getElementById('kpi-evidence-count');
+        if (evidenceEl) evidenceEl.textContent = `${evidenceCount} files`;
 
         const badgeEl = document.getElementById('alerts-badge');
         if (badgeEl) badgeEl.textContent = `${alerts.length} Active Alert${alerts.length === 1 ? '' : 's'}`;

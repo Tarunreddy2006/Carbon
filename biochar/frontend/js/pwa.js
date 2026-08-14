@@ -9,7 +9,7 @@ const PWA = {
 
     init() {
         // Force update service worker cache to pull fresh client files
-        const FORCE_SW_VERSION = 'v1.0.5';
+        const FORCE_SW_VERSION = 'v1.0.6';
         const SW_VERSION_KEY = 'stomata_sw_version_forced';
         if (typeof window !== 'undefined' && 'serviceWorker' in navigator && localStorage.getItem(SW_VERSION_KEY) !== FORCE_SW_VERSION) {
             console.log("🔄 Clearing stale PWA service worker cache and registering new version...");
