@@ -9,6 +9,13 @@
  */
 async function handleLogout() {
     try {
+        // Clear demo mode flags
+        localStorage.removeItem('stomata_demo_mode');
+        localStorage.removeItem('stomata_demo_user_id');
+        localStorage.removeItem('sb-demo-auth-token');
+    } catch (e) { }
+
+    try {
         if (typeof supabase !== 'undefined' && supabase && supabase.auth) {
             await supabase.auth.signOut();
         }

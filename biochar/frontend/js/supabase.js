@@ -42,6 +42,24 @@ if (typeof window !== 'undefined' && supabaseClient) {
  * Get the current session. Returns null if not authenticated.
  */
 async function getSession() {
+    // Demo mode: return synthetic session
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('stomata_demo_mode') === 'true') {
+        const demoUserId = localStorage.getItem('stomata_demo_user_id') || 'demo-user-000000000000';
+        const demoOrgId = localStorage.getItem('stomata_active_org_id') || '00000000-demo-0000-0000-000000000000';
+        return {
+            access_token: 'demo-token',
+            user: {
+                id: demoUserId,
+                email: 'demo@stomata.tech',
+                user_metadata: {
+                    first_name: 'Demo',
+                    last_name: 'User',
+                    org_name: 'Demo Organization'
+                }
+            }
+        };
+    }
+
     if (supabaseClient && supabaseClient.auth) {
         try {
             const { data: { session }, error } = await supabaseClient.auth.getSession();
@@ -105,6 +123,39 @@ if (typeof window !== 'undefined' && supabaseClient) {
  */
 async function getUserProfile() {
     if (_cachedProfile) return _cachedProfile;
+
+    // Demo mode: return synthetic profile
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('stomata_demo_mode') === 'true') {
+        const demoUserId = localStorage.getItem('stomata_demo_user_id') || 'demo-user-000000000000';
+        const demoOrgId = localStorage.getItem('stomata_active_org_id') || '00000000-demo-0000-0000-000000000000';
+        const demoProfile = {
+            id: demoUserId,
+            first_name: 'Demo',
+            last_name: 'User',
+            phone: '',
+            organization_id: demoOrgId,
+            organizations: {
+                id: demoOrgId,
+                name: 'Demo Organization',
+                email: 'demo@stomata.tech',
+                subscription_plan: 'Demo',
+                subscription_status: 'Active'
+            },
+            organization_members: [{
+                organization_id: demoOrgId,
+                user_id: demoUserId,
+                role_id: 1,
+                status: 'Active',
+                roles: { id: 1, name: 'Owner' }
+            }],
+            role: { id: 1, name: 'Owner' },
+            role_id: 1,
+            member_status: 'Active'
+        };
+        _cachedProfile = demoProfile;
+        _cachedOrgId = demoOrgId;
+        return demoProfile;
+    }
 
     const user = await getUser();
     if (!user) return null;
@@ -383,6 +434,10 @@ function clearProfileCache() {
  */
 async function signOut() {
     clearProfileCache();
+    // Clear demo mode flags
+    localStorage.removeItem('stomata_demo_mode');
+    localStorage.removeItem('stomata_demo_user_id');
+    localStorage.removeItem('sb-demo-auth-token');
     if (supabaseClient) {
         await supabaseClient.auth.signOut();
     }

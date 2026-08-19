@@ -27,15 +27,24 @@
     <script>
         (function () {
             var hasSession = false;
+            // Check for demo mode
             try {
-                var keys = Object.keys(localStorage);
-                for (var i = 0; i < keys.length; i++) {
-                    if (keys[i].indexOf('sb-') === 0 && keys[i].indexOf('-auth-token') !== -1) {
-                        hasSession = true;
-                        break;
-                    }
+                if (localStorage.getItem('stomata_demo_mode') === 'true') {
+                    hasSession = true;
                 }
             } catch (e) { }
+            // Check for real Supabase session
+            if (!hasSession) {
+                try {
+                    var keys = Object.keys(localStorage);
+                    for (var i = 0; i < keys.length; i++) {
+                        if (keys[i].indexOf('sb-') === 0 && keys[i].indexOf('-auth-token') !== -1) {
+                            hasSession = true;
+                            break;
+                        }
+                    }
+                } catch (e) { }
+            }
             if (!hasSession) {
                 window.location.replace('/pages/auth/login.html');
             }
@@ -493,12 +502,40 @@
             // Initialize appearance themes
             Theme.init();
 
+            // Detect demo mode
+            const isDemoMode = localStorage.getItem('stomata_demo_mode') === 'true';
+
             // Invoke Auth guard to load session, profile, organization, and role context
             let profile = await Auth.guard();
-            if (!profile) return; // Auth.guard handles redirect to login if no session
+            if (!profile) {
+                if (isDemoMode) {
+                    // In demo mode, force synthetic profile if guard returned null
+                    const demoUserId = localStorage.getItem('stomata_demo_user_id') || 'demo-user-000000000000';
+                    const demoOrgId = localStorage.getItem('stomata_active_org_id') || '00000000-demo-0000-0000-000000000000';
+                    Auth._user = {
+                        id: demoUserId,
+                        email: 'demo@stomata.tech',
+                        user_metadata: { first_name: 'Demo', last_name: 'User', org_name: 'Demo Organization' }
+                    };
+                    Auth._profile = {
+                        id: demoUserId,
+                        first_name: 'Demo',
+                        last_name: 'User',
+                        organization_id: demoOrgId,
+                        organizations: { id: demoOrgId, name: 'Demo Organization' },
+                        organization_members: [{ organization_id: demoOrgId, user_id: demoUserId, role_id: 1, status: 'Active', roles: { id: 1, name: 'Owner' } }],
+                        role: { id: 1, name: 'Owner' },
+                        role_id: 1,
+                        member_status: 'Active'
+                    };
+                    profile = Auth._profile;
+                } else {
+                    return; // Auth.guard handles redirect to login if no session
+                }
+            }
 
-            // If profile does not have an organization resolved, execute onboarding
-            if (!profile.organization_id) {
+            // If profile does not have an organization resolved, execute onboarding (skip in demo mode)
+            if (!isDemoMode && !profile.organization_id) {
                 profile = await completeLazyOnboarding(Auth.user);
                 if (!profile) return; // onboarding failed
                 // Re-initialize Auth with the new profile containing organization
