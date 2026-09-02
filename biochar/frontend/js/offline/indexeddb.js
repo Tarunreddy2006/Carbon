@@ -26,12 +26,24 @@ const OfflineDB = {
 
     open() {
         return new Promise((resolve, reject) => {
-            if (this.db) return resolve(this.db);
+            if (this.db && this.db.objectStoreNames.contains('offline_credentials')) {
+                return resolve(this.db);
+            } else if (this.db) {
+                try { this.db.close(); } catch (e) { }
+                this.db = null;
+            }
+
             const request = indexedDB.open(this.dbName, this.dbVersion);
 
             request.onerror = (e) => reject(e.target.error);
             request.onsuccess = (e) => {
                 this.db = e.target.result;
+                this.db.onversionchange = () => {
+                    if (this.db) {
+                        try { this.db.close(); } catch (e) { }
+                        this.db = null;
+                    }
+                };
                 resolve(this.db);
             };
 

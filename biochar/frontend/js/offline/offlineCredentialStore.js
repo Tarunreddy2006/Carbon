@@ -105,22 +105,56 @@ const OfflineCredentialStore = {
      * @returns {Promise<{id: string, email: string, password_hash: string, user_id: string}|null>}
      */
     async getCachedRecord() {
-        // 1. Try IndexedDB first
+        // 1. Try OfflineDB wrapper
         try {
             if (typeof OfflineDB !== 'undefined') {
-                if (!OfflineDB.db) {
-                    await OfflineDB.open();
-                }
+                await OfflineDB.open();
                 const record = await OfflineDB.get(this.STORE_NAME, this.SINGLETON_KEY);
                 if (record && record.email && record.password_hash) {
                     return record;
                 }
             }
         } catch (idbErr) {
-            console.warn('[OfflineCredentialStore] IndexedDB read error, falling back to vault:', idbErr);
+            console.warn('[OfflineCredentialStore] OfflineDB read error:', idbErr);
         }
 
-        // 2. Fallback to LocalStorage vault
+        // 2. Try direct raw IndexedDB query (bypassing any wrapper cache issues)
+        try {
+            const rawRecord = await new Promise((resolve) => {
+                const req = indexedDB.open('stomata_offline_db');
+                req.onerror = () => resolve(null);
+                req.onsuccess = (e) => {
+                    const db = e.target.result;
+                    if (!db || !db.objectStoreNames.contains('offline_credentials')) {
+                        if (db) try { db.close(); } catch (ce) { }
+                        return resolve(null);
+                    }
+                    try {
+                        const tx = db.transaction('offline_credentials', 'readonly');
+                        const store = tx.objectStore('offline_credentials');
+                        const getReq = store.get('singleton');
+                        getReq.onsuccess = () => {
+                            try { db.close(); } catch (ce) { }
+                            resolve(getReq.result || null);
+                        };
+                        getReq.onerror = () => {
+                            try { db.close(); } catch (ce) { }
+                            resolve(null);
+                        };
+                    } catch (err) {
+                        try { db.close(); } catch (ce) { }
+                        resolve(null);
+                    }
+                };
+            });
+            if (rawRecord && rawRecord.email && rawRecord.password_hash) {
+                return rawRecord;
+            }
+        } catch (rawErr) {
+            console.warn('[OfflineCredentialStore] Direct IndexedDB query error:', rawErr);
+        }
+
+        // 3. Fallback to LocalStorage vault
         try {
             const rawVault = localStorage.getItem(this.VAULT_STORAGE_KEY);
             if (rawVault) {
