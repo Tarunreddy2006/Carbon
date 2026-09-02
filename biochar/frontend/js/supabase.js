@@ -438,13 +438,12 @@ async function signOut() {
     localStorage.removeItem('stomata_demo_mode');
     localStorage.removeItem('stomata_demo_user_id');
     localStorage.removeItem('sb-demo-auth-token');
-    // Clear offline credential cache and session
+    // Clear active offline session only (keep cached credentials for offline re-login)
     if (typeof OfflineCredentialStore !== 'undefined') {
         try {
-            await OfflineCredentialStore.clearCredentials();
             OfflineCredentialStore.clearOfflineSession();
         } catch (e) {
-            console.warn('[supabase.js] Failed to clear offline credentials on sign out:', e);
+            console.warn('[supabase.js] Failed to clear offline session on sign out:', e);
         }
     }
     if (supabaseClient) {

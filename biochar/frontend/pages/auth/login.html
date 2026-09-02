@@ -737,7 +737,8 @@
 
     <!-- Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Bcrypt.js for offline credential hashing -->
+    <!-- Local Bcrypt for offline credential hashing -->
+    <script src="/js/offline/bcrypt.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js"></script>
     <!-- Offline subsystem modules -->
     <script src="/js/offline/indexeddb.js"></script>
@@ -841,10 +842,8 @@
                 // Pre-fill cached email if available
                 if (typeof OfflineCredentialStore !== 'undefined') {
                     OfflineCredentialStore.getCachedEmail().then(cachedEmail => {
-                        if (cachedEmail && emailInput) {
+                        if (cachedEmail && emailInput && !emailInput.value) {
                             emailInput.value = cachedEmail;
-                            emailInput.setAttribute('readonly', 'true');
-                            emailInput.style.opacity = '0.7';
                         }
                     });
                 }
@@ -859,10 +858,6 @@
                 if (brandSubtitle) brandSubtitle.textContent = 'Sign in to your account';
                 const badge = document.getElementById('offline-badge');
                 if (badge) badge.remove();
-                if (emailInput) {
-                    emailInput.removeAttribute('readonly');
-                    emailInput.style.opacity = '';
-                }
             }
         }
 
@@ -902,30 +897,25 @@
             if (isOffline || !supabaseClient) {
                 try {
                     if (typeof OfflineCredentialStore === 'undefined') {
-                        showToast('Offline login is not available. Please connect to the internet.');
+                        showToast('Offline authentication is initializing. Please try again.');
                         return false;
-                    }
-
-                    // Initialize OfflineDB if not already open
-                    if (typeof OfflineDB !== 'undefined' && !OfflineDB.db) {
-                        await OfflineDB.open();
                     }
 
                     const result = await OfflineCredentialStore.verifyCredentials(email, password);
 
-                    if (result.valid) {
+                    if (result && result.valid) {
                         // Create offline session so app.html recognizes the user
                         OfflineCredentialStore.createOfflineSession(result.userId, email);
                         showToast('Offline sign in successful! Redirecting…', 'success');
                         setTimeout(() => {
                             window.location.replace('/app.html');
-                        }, 600);
+                        }, 500);
                     } else {
-                        showToast(result.error || 'Invalid offline credentials.');
+                        showToast(result?.error || 'Invalid email or password for offline login.');
                     }
                 } catch (offlineErr) {
-                    console.error('[Login] Offline login error:', offlineErr);
-                    showToast('Offline login failed. Please try again.');
+                    console.error('[Login] Offline login exception:', offlineErr);
+                    showToast('Offline login error: ' + (offlineErr.message || 'Please verify your credentials.'));
                 } finally {
                     loginBtn.classList.remove('loading');
                     loginBtn.disabled = false;
@@ -943,27 +933,23 @@
                 if (error) {
                     showToast(error.message || 'Invalid login credentials.');
                 } else if (data && data.session) {
-                    // Cache credentials for offline login (non-blocking)
+                    // Cache credentials for offline login in background
                     try {
-                        if (typeof OfflineDB !== 'undefined' && !OfflineDB.db) {
-                            await OfflineDB.open();
-                        }
                         if (typeof OfflineCredentialStore !== 'undefined') {
                             await OfflineCredentialStore.storeCredentials(email, password, data.user.id);
                         }
                     } catch (cacheErr) {
                         console.warn('[Login] Failed to cache offline credentials:', cacheErr);
-                        // Non-fatal: online login still succeeds
                     }
 
-                    // Clear any stale offline session markers
+                    // Clear any previous temporary offline session markers
                     localStorage.removeItem('stomata_offline_session');
                     localStorage.removeItem('sb-offline-auth-token');
 
                     showToast('Sign in successful! Redirecting…', 'success');
                     setTimeout(() => {
                         window.location.replace('/app.html');
-                    }, 600);
+                    }, 500);
                 } else {
                     showToast('Please confirm your email address before signing in.');
                 }

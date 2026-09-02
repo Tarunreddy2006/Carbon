@@ -13,6 +13,18 @@ async function handleLogout() {
         localStorage.removeItem('stomata_demo_mode');
         localStorage.removeItem('stomata_demo_user_id');
         localStorage.removeItem('sb-demo-auth-token');
+        localStorage.removeItem('stomata_offline_session');
+        localStorage.removeItem('sb-offline-auth-token');
+
+        // Remove Supabase auth token keys selectively without wiping the credential vault
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
     } catch (e) { }
 
     try {
@@ -24,10 +36,9 @@ async function handleLogout() {
     }
 
     try {
-        localStorage.clear();
         sessionStorage.clear();
     } catch (e) {
-        console.error("Error clearing local session storage:", e);
+        console.error("Error clearing session storage:", e);
     }
 
     window.location.href = "/pages/auth/login.html";

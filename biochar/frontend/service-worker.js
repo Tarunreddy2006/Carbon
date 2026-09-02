@@ -3,8 +3,8 @@
  * Version: 1.0.0
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-const CACHE_NAME = 'stomata-biochar-v1.2.0';
-const RUNTIME_CACHE = 'stomata-runtime-v1.2.0';
+const CACHE_NAME = 'stomata-biochar-v1.3.0';
+const RUNTIME_CACHE = 'stomata-runtime-v1.3.0';
 
 // Core Application Shell Assets to Pre-cache
 const PRECACHE_ASSETS = [
@@ -47,6 +47,8 @@ const PRECACHE_ASSETS = [
     '/js/modules/evidence.js',
 
     // Offline Subsystem
+    '/js/offline/bcrypt.js',
+    '/js/offline/offlineCredentialStore.js',
     '/js/offline/indexeddb.js',
     '/js/offline/connectivity.js',
     '/js/offline/queue.js',
