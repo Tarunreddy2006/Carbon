@@ -840,6 +840,11 @@
 
     <!-- Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Bcrypt.js for offline credential hashing -->
+    <script src="https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js"></script>
+    <!-- Offline subsystem modules -->
+    <script src="/js/offline/indexeddb.js"></script>
+    <script src="/js/offline/offlineCredentialStore.js"></script>
     <script>
         // ─── Supabase Configuration ─────────────────────────────
         const SUPABASE_URL = 'https://yrjiiacdxknesvpaxdjr.supabase.co';
@@ -896,6 +901,59 @@
                 }
             }).catch(e => console.error("Session check error:", e));
         }
+
+        // ─── Offline Mode: Disable Signup ────────────────────────
+        function updateSignupOfflineUI() {
+            const isOffline = !navigator.onLine;
+            const signupCard = document.querySelector('.auth-card');
+            const loginFooter = document.querySelector('.auth-footer');
+
+            if (isOffline) {
+                // Show offline notice and disable the form
+                let offlineNotice = document.getElementById('signup-offline-notice');
+                if (!offlineNotice) {
+                    offlineNotice = document.createElement('div');
+                    offlineNotice.id = 'signup-offline-notice';
+                    offlineNotice.style.cssText = 'text-align:center;padding:1.5rem;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:12px;color:#f87171;font-size:0.9rem;margin-bottom:1rem;';
+                    offlineNotice.innerHTML = '<div style="font-size:2rem;margin-bottom:0.5rem;">⚡</div><strong>You are offline</strong><br><span style="color:var(--text-secondary);font-size:0.85rem;">Account creation requires internet connectivity.<br>Please connect to the internet and try again.</span><br><br><a href="login.html" style="color:var(--accent);text-decoration:none;font-weight:600;">← Go to Login (offline login available)</a>';
+                    if (signupCard) signupCard.insertBefore(offlineNotice, signupCard.firstChild);
+                }
+
+                // Disable all form inputs and buttons
+                if (signupForm) {
+                    const inputs = signupForm.querySelectorAll('input, button, select');
+                    inputs.forEach(el => { el.disabled = true; el.style.opacity = '0.4'; });
+                }
+
+                // Hide OAuth and demo sections
+                const dividers = document.querySelectorAll('.divider, .demo-divider');
+                dividers.forEach(d => d.style.display = 'none');
+                const oauthGrid = document.querySelector('.oauth-grid');
+                if (oauthGrid) oauthGrid.style.display = 'none';
+                const demoBtn = document.getElementById('demo-signup-btn');
+                if (demoBtn) demoBtn.style.display = 'none';
+            } else {
+                // Restore form when back online
+                const offlineNotice = document.getElementById('signup-offline-notice');
+                if (offlineNotice) offlineNotice.remove();
+
+                if (signupForm) {
+                    const inputs = signupForm.querySelectorAll('input, button, select');
+                    inputs.forEach(el => { el.disabled = false; el.style.opacity = ''; });
+                }
+
+                const dividers = document.querySelectorAll('.divider, .demo-divider');
+                dividers.forEach(d => d.style.display = '');
+                const oauthGrid = document.querySelector('.oauth-grid');
+                if (oauthGrid) oauthGrid.style.display = '';
+                const demoBtn = document.getElementById('demo-signup-btn');
+                if (demoBtn) demoBtn.style.display = '';
+            }
+        }
+
+        updateSignupOfflineUI();
+        window.addEventListener('online', updateSignupOfflineUI);
+        window.addEventListener('offline', updateSignupOfflineUI);
 
         // ─── Password Strength Meter ────────────────────────────
         function evaluateStrength(password) {
@@ -1015,6 +1073,19 @@
 
                     if (session) {
                         console.log("Authenticated session confirmed. Redirecting to onboarding/dashboard...");
+
+                        // Cache credentials for offline login (non-blocking)
+                        try {
+                            if (typeof OfflineDB !== 'undefined' && !OfflineDB.db) {
+                                await OfflineDB.open();
+                            }
+                            if (typeof OfflineCredentialStore !== 'undefined') {
+                                await OfflineCredentialStore.storeCredentials(email, password, data.user.id);
+                            }
+                        } catch (cacheErr) {
+                            console.warn('[Signup] Failed to cache offline credentials:', cacheErr);
+                        }
+
                         showToast('Signup successful! Redirecting...', 'success');
                         setTimeout(() => {
                             window.location.replace('/app.html');

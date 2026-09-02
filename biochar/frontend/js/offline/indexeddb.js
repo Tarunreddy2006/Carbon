@@ -1,6 +1,6 @@
 const OfflineDB = {
     dbName: 'stomata_offline_db',
-    dbVersion: 4,
+    dbVersion: 5,
     db: null,
 
     tables: [
@@ -20,7 +20,8 @@ const OfflineDB = {
         'organizations',
         'organization_members',
         'roles',
-        'invitations'
+        'invitations',
+        'offline_credentials'
     ],
 
     open() {

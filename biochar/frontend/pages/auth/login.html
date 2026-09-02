@@ -737,6 +737,11 @@
 
     <!-- Supabase JS SDK -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Bcrypt.js for offline credential hashing -->
+    <script src="https://cdn.jsdelivr.net/npm/bcryptjs@2.4.3/dist/bcrypt.min.js"></script>
+    <!-- Offline subsystem modules -->
+    <script src="/js/offline/indexeddb.js"></script>
+    <script src="/js/offline/offlineCredentialStore.js"></script>
     <script>
         // ─── Supabase Configuration ─────────────────────────────
         const SUPABASE_URL = 'https://yrjiiacdxknesvpaxdjr.supabase.co';
@@ -777,13 +782,94 @@
         }
 
         // ─── Check existing session ─────────────────────────────
-        if (supabaseClient) {
-            supabaseClient.auth.getSession().then(({ data: { session } }) => {
-                if (session) {
+        async function checkExistingSession() {
+            // Check for offline session
+            try {
+                const offlineSession = localStorage.getItem('stomata_offline_session');
+                if (offlineSession) {
                     window.location.replace('/app.html');
+                    return;
                 }
-            }).catch(e => console.error("Session check error:", e));
+            } catch (e) { }
+
+            if (supabaseClient) {
+                try {
+                    const { data: { session } } = await supabaseClient.auth.getSession();
+                    if (session) {
+                        window.location.replace('/app.html');
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Session check error:", e);
+                }
+            }
         }
+        checkExistingSession();
+
+        // ─── Offline Mode UI Detection ──────────────────────────
+        function updateOfflineUI() {
+            const isOffline = !navigator.onLine;
+            const oauthGrid = document.querySelector('.oauth-grid');
+            const oauthDivider = document.querySelector('.divider');
+            const demoDivider = document.querySelector('.demo-divider');
+            const demoBtn = document.getElementById('demo-login-btn');
+            const signupFooter = document.querySelector('.auth-footer');
+            const forgotLink = document.getElementById('forgot-password-link');
+            const brandSubtitle = document.querySelector('.brand p');
+
+            if (isOffline) {
+                // Hide online-only elements
+                if (oauthGrid) oauthGrid.style.display = 'none';
+                if (oauthDivider) oauthDivider.style.display = 'none';
+                if (demoDivider) demoDivider.style.display = 'none';
+                if (demoBtn) demoBtn.style.display = 'none';
+                if (signupFooter) signupFooter.innerHTML = '<span style="color: var(--text-muted);">⚡ Offline Mode — Only previously authenticated users can sign in</span>';
+                if (forgotLink) forgotLink.style.display = 'none';
+                if (brandSubtitle) brandSubtitle.textContent = 'Sign in offline';
+
+                // Show offline indicator badge
+                let badge = document.getElementById('offline-badge');
+                if (!badge) {
+                    badge = document.createElement('div');
+                    badge.id = 'offline-badge';
+                    badge.style.cssText = 'text-align:center;padding:0.5rem 1rem;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:8px;color:#f87171;font-size:0.8rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:center;gap:0.4rem;';
+                    badge.innerHTML = '<span>⚡</span> You are offline — login with cached credentials';
+                    const authCard = document.querySelector('.auth-card');
+                    if (authCard) authCard.insertBefore(badge, authCard.firstChild);
+                }
+
+                // Pre-fill cached email if available
+                if (typeof OfflineCredentialStore !== 'undefined') {
+                    OfflineCredentialStore.getCachedEmail().then(cachedEmail => {
+                        if (cachedEmail && emailInput) {
+                            emailInput.value = cachedEmail;
+                            emailInput.setAttribute('readonly', 'true');
+                            emailInput.style.opacity = '0.7';
+                        }
+                    });
+                }
+            } else {
+                // Restore online elements
+                if (oauthGrid) oauthGrid.style.display = '';
+                if (oauthDivider) oauthDivider.style.display = '';
+                if (demoDivider) demoDivider.style.display = '';
+                if (demoBtn) demoBtn.style.display = '';
+                if (signupFooter) signupFooter.innerHTML = 'Don\'t have an account? <a href="signup.html">Create one</a>';
+                if (forgotLink) forgotLink.style.display = '';
+                if (brandSubtitle) brandSubtitle.textContent = 'Sign in to your account';
+                const badge = document.getElementById('offline-badge');
+                if (badge) badge.remove();
+                if (emailInput) {
+                    emailInput.removeAttribute('readonly');
+                    emailInput.style.opacity = '';
+                }
+            }
+        }
+
+        // Initialize offline UI and listen for connectivity changes
+        updateOfflineUI();
+        window.addEventListener('online', updateOfflineUI);
+        window.addEventListener('offline', updateOfflineUI);
 
         // ─── Toggle Password Visibility ─────────────────────────
         togglePassword.addEventListener('click', () => {
@@ -799,11 +885,6 @@
             if (e) e.preventDefault();
             hideToast();
 
-            if (!supabaseClient) {
-                showToast('Database SDK failed to load. Please check your network.');
-                return false;
-            }
-
             const email = emailInput.value.trim();
             const password = passwordInput.value;
 
@@ -815,6 +896,44 @@
             loginBtn.classList.add('loading');
             loginBtn.disabled = true;
 
+            const isOffline = !navigator.onLine;
+
+            // ─── OFFLINE LOGIN PATH ─────────────────────────────
+            if (isOffline || !supabaseClient) {
+                try {
+                    if (typeof OfflineCredentialStore === 'undefined') {
+                        showToast('Offline login is not available. Please connect to the internet.');
+                        return false;
+                    }
+
+                    // Initialize OfflineDB if not already open
+                    if (typeof OfflineDB !== 'undefined' && !OfflineDB.db) {
+                        await OfflineDB.open();
+                    }
+
+                    const result = await OfflineCredentialStore.verifyCredentials(email, password);
+
+                    if (result.valid) {
+                        // Create offline session so app.html recognizes the user
+                        OfflineCredentialStore.createOfflineSession(result.userId, email);
+                        showToast('Offline sign in successful! Redirecting…', 'success');
+                        setTimeout(() => {
+                            window.location.replace('/app.html');
+                        }, 600);
+                    } else {
+                        showToast(result.error || 'Invalid offline credentials.');
+                    }
+                } catch (offlineErr) {
+                    console.error('[Login] Offline login error:', offlineErr);
+                    showToast('Offline login failed. Please try again.');
+                } finally {
+                    loginBtn.classList.remove('loading');
+                    loginBtn.disabled = false;
+                }
+                return false;
+            }
+
+            // ─── ONLINE LOGIN PATH ──────────────────────────────
             try {
                 const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email,
@@ -824,6 +943,23 @@
                 if (error) {
                     showToast(error.message || 'Invalid login credentials.');
                 } else if (data && data.session) {
+                    // Cache credentials for offline login (non-blocking)
+                    try {
+                        if (typeof OfflineDB !== 'undefined' && !OfflineDB.db) {
+                            await OfflineDB.open();
+                        }
+                        if (typeof OfflineCredentialStore !== 'undefined') {
+                            await OfflineCredentialStore.storeCredentials(email, password, data.user.id);
+                        }
+                    } catch (cacheErr) {
+                        console.warn('[Login] Failed to cache offline credentials:', cacheErr);
+                        // Non-fatal: online login still succeeds
+                    }
+
+                    // Clear any stale offline session markers
+                    localStorage.removeItem('stomata_offline_session');
+                    localStorage.removeItem('sb-offline-auth-token');
+
                     showToast('Sign in successful! Redirecting…', 'success');
                     setTimeout(() => {
                         window.location.replace('/app.html');

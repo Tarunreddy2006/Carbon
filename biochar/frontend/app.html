@@ -33,6 +33,14 @@
                     hasSession = true;
                 }
             } catch (e) { }
+            // Check for offline session (authenticated via cached credentials)
+            if (!hasSession) {
+                try {
+                    if (localStorage.getItem('stomata_offline_session')) {
+                        hasSession = true;
+                    }
+                } catch (e) { }
+            }
             // Check for real Supabase session
             if (!hasSession) {
                 try {
