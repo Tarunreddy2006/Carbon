@@ -5,10 +5,6 @@ config_private.json
 api_keys.json
 detrixai.json
 .hintrc
-# Database
-*.db
-*.sqlite3
-.ini
 # Logs
 *.log
 
